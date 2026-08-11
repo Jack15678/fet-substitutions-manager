@@ -1,0 +1,109 @@
+{
+  "common": {
+    "save": "儲存", "cancel": "取消", "close": "關閉", "add": "新增", "delete": "刪除", "edit": "編輯",
+    "actions": "操作", "all": "全部", "loading": "載入中……", "error": "錯誤", "warning": "警告",
+    "saved": "已儲存", "deleted": "已刪除", "confirmation": "確認", "selectOption": "請選擇", "noData": "沒有資料"
+  },
+  "app": {
+    "title": "學校調課管理系統",
+    "footer": "學校調課管理系統",
+    "login": {
+      "title": "學校調課管理系統", "subtitle": "請登入以繼續", "username": "用戶名稱", "password": "密碼",
+      "submit": "登入", "error": "用戶名稱或密碼不正確", "rateLimitWithWait": "登入嘗試次數過多，請於 {seconds} 秒後再試。"
+    },
+    "errors": { "title": "錯誤", "connection": "無法連接伺服器", "server": "伺服器內部錯誤", "unexpected": "發生未預期的錯誤" },
+    "nav": {
+      "prevDay": "前一日", "nextDay": "下一日", "selectDate": "選擇日期", "menu": "選單", "settings": "系統設定",
+      "profile": "個人資料", "logout": "登出", "course": "所選日期的學年", "courseNone": "不屬於任何學年", "language": "介面語言"
+    },
+    "pages": { "workbench": "調課工作台", "records": "記錄", "import": "課表匯入" }
+  },
+  "profile": {
+    "title": "個人資料", "username": "用戶名稱", "currentPassword": "現時密碼", "newPassword": "新密碼",
+    "confirmPassword": "確認新密碼", "passwordMismatch": "兩次輸入的新密碼不一致。", "passwordUpdated": "密碼已更新。", "passwordError": "無法更新密碼。"
+  },
+  "config": {
+    "title": "系統設定",
+    "tabs": { "coursesLine1": "學年", "dataLine1": "資料", "dataLine2": "管理", "usersLine1": "用戶" },
+    "system": {
+      "demoBannerTitle": "示範環境", "demoBannerText": "資料每日凌晨四時重設，其他使用者可能看到你輸入的內容，請勿輸入真實個人資料。"
+    },
+    "courses": {
+      "title": "學年", "new": "新增學年", "help": "學年是一段有名稱的日期範圍。只需設定開始日期；系統會以後一個學年的前一日作為結束日期。",
+      "empty": "尚未設定學年", "name": "名稱", "namePlaceholder": "例如：2025–2026", "start": "開始日期",
+      "startHint": "上一個學年會自動於此前一日結束", "end": "結束日期（自動計算）", "open": "未設定結束日期",
+      "newTitle": "新增學年", "editTitle": "編輯學年", "loadError": "無法載入學年", "saveError": "無法儲存學年",
+      "deleteConfirm": "刪除學年「{nom}」？這不會刪除調課資料。"
+    },
+    "users": {
+      "title": "用戶管理", "add": "新增用戶", "addTitle": "新增用戶", "editTitle": "編輯用戶", "username": "用戶名稱",
+      "password": "密碼", "passwordOptional": "留空以保留現有密碼", "role": "權限", "institucio": "學校", "active": "啟用",
+      "activeYes": "是", "activeNo": "否", "saved": "用戶已儲存", "loadError": "無法載入用戶", "saveError": "無法儲存用戶",
+      "deleteError": "無法停用用戶", "deleted": "用戶已刪除", "deactivated": "用戶已停用", "deactivateTitle": "停用用戶",
+      "deactivateConfirm": "停用用戶 {username}？", "deactivateAction": "停用", "deleteTitle": "刪除用戶",
+      "deleteConfirm": "刪除用戶 {username}？此操作無法復原。", "sort": "按名稱排序", "filterInstitution": "按學校篩選",
+      "superAdminLocked": "不可編輯超級管理員"
+    },
+    "dataManagement": {
+      "title": "按日期範圍清理資料", "description": "永久刪除指定日期範圍內的舊資料。請先分析影響，再確認執行。",
+      "startDate": "開始日期", "endDate": "結束日期", "analyze": "分析", "manifestTitle": "將刪除的資料（{start} → {end}）",
+      "substitutions": "代課記錄", "vigilances": "監考記錄", "freedGroups": "停課班別", "absences": "缺席記錄",
+      "pdfsToDelete": "將刪除的 PDF", "pdfsManual": "需人工核對的 PDF", "xmlAffected": "受影響的舊課表版本：",
+      "xmlOpen": "仍然生效", "xmlKept": "保留（已鎖定）", "xmlWillDelete": "將會刪除", "purgeButton": "永久清理",
+      "nothingToDelete": "此日期範圍沒有可刪除資料。", "confirmHeader": "確認永久清理",
+      "confirmMessage": "將刪除 {start} 至 {end} 的 {bd} 筆資料、{pdf} 份 PDF 及 {xml} 個課表版本。此操作無法復原，是否繼續？",
+      "accept": "確認清理", "reject": "取消", "resultSuccess": "已完成清理（{start} → {end}）：刪除 {bd} 筆資料、{pdf} 份 PDF 及 {xml} 個課表版本。",
+      "resultErrors": "發生錯誤：{errors}", "errorSummary": "錯誤", "successSummary": "清理完成", "successDetail": "已刪除 {n} 筆資料",
+      "warnXmlActive": "由 {start} 開始的課表目前仍然生效，系統會保留該版本。", "warnXmlExtends": "課表版本 {start} → {end} 超出清理範圍，系統會保留該版本。",
+      "warnPdfsManual": "有 {n} 份報告 PDF 的檔名沒有日期，系統不會自動刪除，請人工核對。", "anonTitle": "匿名化教師",
+      "anonDescription": "把已離校教師重新命名，以移除歷史資料中的身分，同時保留統計數字。", "anonSelect": "要匿名化的教師",
+      "anonNewName": "新名稱", "anonNoInactive": "沒有可匿名化的已停用教師。", "anonHint": "只可處理已停用教師。",
+      "anonButton": "重新命名", "anonConfirmHeader": "確認重新命名", "anonConfirmMessage": "所有記錄中的「{old}」會改為「{new}」，是否繼續？",
+      "anonSuccessSummary": "教師名稱已更新", "anonSuccessDetail": "已更新 {n} 筆資料", "anonAccept": "確認重新命名"
+    }
+  },
+  "records": {
+    "eyebrow": "調課檔案", "title": "未來、今日及過往記錄", "description": "已確認、未解決及已撤銷的安排都會保留。",
+    "today": "香港今日：{date}", "scopes": { "future": "未來", "today": "今日", "past": "過往" }, "empty": "此分頁暫時沒有記錄。",
+    "manual": "人工互調", "period": "第 {period} 節", "createdBy": "建立者：{user}", "noAdjustment": "尚未確認任何調課安排。",
+    "previous": "上一頁", "next": "下一頁", "page": "第 {page}／{pages} 頁，共 {total} 項",
+    "statuses": { "open": "待處理", "resolved": "已解決", "cancelled": "已取消", "confirmed": "已確認", "reverted": "已撤銷" },
+    "editReason": "修改原因", "reason": "原因：{reason}", "reasonPrompt": "輸入調課原因（可留空）", "editRemovesAdjustments": "修改缺席後，原有調課方案會失效並被刪除。繼續？", "deleteAbsenceConfirm": "完整刪除此缺席及其所有調課記錄？", "deleteAdjustmentConfirm": "完整刪除此調課記錄並回復基礎課表？",
+    "kinds": { "direct_swap": "直接互調", "three_cycle": "同班三堂連鎖", "emergency_cover": "同科緊急代課", "manual_swap": "人工互調", "manual_three_cycle": "人工三堂連鎖" }
+  },
+  "leave": {
+    "title": "長期缺席", "description": "日期範圍內的教師會被視為全日不可調動；不儲存醫療詳情。", "teacher": "教師", "type": "類型",
+    "startDate": "開始日期", "endDate": "結束日期", "add": "新增長期缺席", "update": "更新記錄", "cancelEdit": "取消編輯", "empty": "尚未有長期缺席記錄。",
+    "types": { "sick": "長期病假", "maternity": "產假", "other": "其他長期缺席" }
+  },
+  "rescheduling": {
+    "eyebrow": "學校代課推薦系統", "title": "調課工作台", "description": "先找同班課堂互調；五個上課日內都不可行，才顯示同科緊急代課。",
+    "revision": "課表版本 {revision}", "noTimetable": "所選日期尚未有已生效課表，請由管理員前往「課表匯入」。",
+    "steps": { "absence": "輸入缺席", "recommendations": "查看並確認建議", "effective": "有效課表" },
+    "teacher": "缺席教師", "date": "日期", "absentPeriods": "缺席節次", "analyzeAll": "分析全部課堂",
+    "counts": "已解決 {resolved} · 未解決 {unresolved}", "cancelAbsence": "取消這次缺席",
+    "analysisEmpty": "選擇教師、日期和節次後，系統會協調計算全部受影響課堂。", "noTasks": "所選節次已沒有需要處理的課堂。",
+    "originalTeacher": "原任：{teachers}", "recommendable": "可處理", "unresolved": "未解決", "candidates": "候選方案",
+    "confirmArrangement": "確認這個安排", "noCandidate": "五個上課日內沒有可行互調，也沒有空閒的同科緊急代課教師，需要人工處理。",
+    "manualSwap": "人工互調", "period": "節次", "class": "班別", "subject": "科目", "teacherColumn": "教師", "status": "狀態", "noLessons": "當日沒有課堂資料",
+    "manualSelected": "人工互調：已選 {count} 堂", "manualHint": "可切換日期繼續選擇；只允許同班 2 或 3 堂完整互調。",
+    "manualReason": "調課原因（必填）", "clear": "清除", "confirmManual": "確認人工互調", "history": "已確認／已撤銷調課",
+    "confirmedLocked": "已確認並鎖定", "revert": "撤銷", "noHistory": "尚未有調課紀錄。", "closures": "停課／假期日期",
+    "closureHint": "每行一個日期（YYYY-MM-DD）；搜尋下一上課日會自動跳過。", "saveDates": "儲存日期",
+    "sources": { "base": "基礎課表", "base_conflict": "兩表不一致・已鎖定", "teacher_workbook": "教師表忙碌", "direct_swap": "已互調", "three_cycle": "三堂連鎖", "emergency_cover": "緊急代課", "manual_swap": "人工互調", "manual_three_cycle": "人工連鎖" }
+  },
+  "importCenter": {
+    "eyebrow": "管理員", "title": "課表匯入中心", "description": "先檢查兩份課表；資料不一致的課堂會逐項列出並鎖定。",
+    "baseTitle": "匯入基礎課表", "classFile": "班別時間表（.xls）", "teacherFile": "教師時間表（.xlsx，非值日版）", "effectiveFrom": "開始適用日期（必須選擇）", "effectiveTo": "結束適用日期（必須選擇）", "check": "檢查課表",
+    "currentFiles": "查詢日期 {date} 使用：{classFile} + {teacherFile}", "noCurrent": "目前日期尚未有已生效的課表。",
+    "classes": "班別", "teachers": "教師", "lessons": "班別課堂", "blocked": "鎖定課堂", "resultTitle": "核對結果",
+    "resultHint": "修正原 Excel 後可重新檢查；不在網頁另建第三份課表。", "activate": "確認啟用", "errorsBlock": "存在無法辨識的教師資料，修正 Excel 後才能啟用。",
+    "severity": "級別", "weekdayPeriod": "星期／節次", "classWorkbook": "班別表", "teacherWorkbook": "教師表", "review": "需核對",
+    "perfectMatch": "兩份課表完全吻合，可以啟用。", "activated": "課表已設定於 {start} 至 {end} 適用。",
+    "versionsTitle": "已上傳課表版本", "versionsHint": "日期範圍可修改，但必須保留所有相關記錄；有記錄的版本不可刪除。課堂內容修改請匯入新版本。",
+    "startDate": "開始適用", "endDate": "適用至", "ongoing": "以後", "files": "來源檔案", "scale": "課表資料", "linkedRecords": "相關記錄", "status": "狀態", "actions": "操作",
+    "scaleValue": "{lessons} 堂／{teachers} 位教師", "recordValue": "{absences} 個缺席／{adjustments} 個調課", "locked": "不可刪除", "available": "未被使用", "current": "目前使用", "noVersions": "尚未上傳課表版本。",
+    "versionUpdated": "課表版本日期已更新。", "versionDeleted": "未使用的課表版本已刪除。", "deleteConfirm": "刪除從 {date} 開始適用的課表版本？此操作無法復原。",
+    "weekdays": { "0": "星期一", "1": "星期二", "2": "星期三", "3": "星期四", "4": "星期五" }
+  }
+}

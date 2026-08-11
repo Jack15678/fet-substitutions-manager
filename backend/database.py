@@ -97,6 +97,17 @@ def _ensure_substitucions_aula_column(engine):
         pass
 
 
+def _ensure_timetable_version_end_column(engine):
+    """Add the explicit end date to databases created before timetable ranges."""
+    try:
+        with engine.begin() as conn:
+            columns = conn.exec_driver_sql("PRAGMA table_info(timetable_versions);").fetchall()
+            if columns and "effective_to" not in {column[1] for column in columns}:
+                conn.exec_driver_sql("ALTER TABLE timetable_versions ADD COLUMN effective_to DATE")
+    except Exception:
+        pass
+
+
 @lru_cache(maxsize=None)
 def get_engine_for_institucio(institucio: str):
     data_dir = get_data_dir_for_institucio(institucio)
@@ -105,6 +116,7 @@ def get_engine_for_institucio(institucio: str):
     engine = _create_engine(db_path)
     create_data_tables(engine)
     _ensure_substitucions_aula_column(engine)
+    _ensure_timetable_version_end_column(engine)
     return engine
 
 

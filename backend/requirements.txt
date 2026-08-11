@@ -26,3 +26,7 @@ babel==2.18.0
 
 # XML parsing (per processar horari FET)
 lxml==6.1.1
+
+# Importació dels horaris reals de l'escola (.xlsx de professors i .xls de classes)
+openpyxl==3.1.5
+xlrd==2.0.2

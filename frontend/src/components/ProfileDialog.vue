@@ -19,27 +19,6 @@
         <span class="profile-value">{{ username || '—' }}</span>
       </div>
 
-      <div v-if="isSuperAdmin" class="field">
-        <label for="institucio-select">{{ $t('profile.institution') }}</label>
-        <Dropdown
-          id="institucio-select"
-          v-model="institucioSeleccionada"
-          :options="institucionsOptions"
-          optionLabel="label"
-          optionValue="value"
-          class="w-full"
-        />
-        <div class="profile-actions">
-          <Button
-            :label="$t('profile.switchInstitution')"
-            class="p-button-secondary"
-            :loading="canviantInstitucio"
-            :disabled="!institucioSeleccionada || institucioSeleccionada === institucio"
-            @click="canviarInstitucio"
-          />
-        </div>
-      </div>
-
       <div class="field">
         <label for="current-password">{{ $t('profile.currentPassword') }}</label>
         <Password
@@ -107,7 +86,6 @@ import axios from 'axios'
 import Dialog from 'primevue/dialog'
 import Password from 'primevue/password'
 import Button from 'primevue/button'
-import Dropdown from 'primevue/dropdown'
 
 const { t } = useI18n()
 
@@ -119,18 +97,10 @@ const props = defineProps({
   username: {
     type: String,
     default: ''
-  },
-  role: {
-    type: String,
-    default: ''
-  },
-  institucio: {
-    type: String,
-    default: ''
   }
 })
 
-const emit = defineEmits(['update:visible', 'institucio-canviada'])
+const emit = defineEmits(['update:visible'])
 
 const currentPassword = ref('')
 const newPassword = ref('')
@@ -138,19 +108,6 @@ const confirmPassword = ref('')
 const errorMessage = ref('')
 const successMessage = ref('')
 const saving = ref(false)
-const institucions = ref([])
-const institucioSeleccionada = ref('')
-const canviantInstitucio = ref(false)
-
-const isSuperAdmin = computed(() => props.role === 'super_admin')
-
-const institucionsOptions = computed(() => {
-  return institucions.value.map(inst => ({
-    label: inst.display_name || inst.slug,
-    value: inst.slug
-  }))
-})
-
 const canSave = computed(() => {
   return currentPassword.value && newPassword.value && confirmPassword.value && newPassword.value === confirmPassword.value
 })
@@ -162,7 +119,6 @@ const resetForm = () => {
   errorMessage.value = ''
   successMessage.value = ''
   saving.value = false
-  canviantInstitucio.value = false
 }
 
 const handleVisibleChange = (value) => {
@@ -203,41 +159,8 @@ watch(
     if (!next) {
       resetForm()
     }
-    if (next && isSuperAdmin.value) {
-      carregarInstitucions()
-    }
   }
 )
-
-const carregarInstitucions = async () => {
-  try {
-    const response = await axios.get('/api/settings/institucions')
-    institucions.value = response.data?.institucions || []
-    institucioSeleccionada.value = props.institucio || response.data?.actual || ''
-  } catch (error) {
-    console.error('Error carregant institucions:', error)
-  }
-}
-
-const canviarInstitucio = async () => {
-  if (!institucioSeleccionada.value || institucioSeleccionada.value === props.institucio) {
-    return
-  }
-  canviantInstitucio.value = true
-  errorMessage.value = ''
-  successMessage.value = ''
-  try {
-    const response = await axios.post('/api/users/profile/institucio', {
-      institucio: institucioSeleccionada.value
-    })
-    successMessage.value = t('profile.institutionSwitched')
-    emit('institucio-canviada')
-  } catch (error) {
-    errorMessage.value = error.response?.data?.detail || t('profile.institutionError')
-  } finally {
-    canviantInstitucio.value = false
-  }
-}
 </script>
 
 <style scoped>

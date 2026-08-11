@@ -18,7 +18,7 @@ const pinia = createPinia()
 
 app.use(pinia)
 app.use(PrimeVue, {
-  locale: primeLocales[i18n.global.locale.value] || primeLocales.ca,
+  locale: primeLocales[i18n.global.locale.value] || primeLocales['zh-HK'],
   zIndex: { modal: 1200, overlay: 1200, menu: 1200, tooltip: 1100, toast: 1300 }
 })
 app.use(ToastService)
@@ -47,7 +47,7 @@ if (rawToastService?.add) {
 watch(i18n.global.locale, (nextLocale) => {
   const primevue = app.config.globalProperties.$primevue
   if (primevue?.config) {
-    primevue.config.locale = primeLocales[nextLocale] || primeLocales.ca
+    primevue.config.locale = primeLocales[nextLocale] || primeLocales['zh-HK']
   }
 })
 

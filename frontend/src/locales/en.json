@@ -1,9 +1,9 @@
 {
   "app": {
-    "title": "📚 Substitution Manager",
-    "footer": "FastAPI + Vue 3 Prototype | FET Substitution Manager",
+  "title": "School Rescheduling Management System",
+  "footer": "School Rescheduling Management System",
     "login": {
-      "title": "Substitution Manager",
+    "title": "School Rescheduling Management System",
       "subtitle": "Sign in to continue",
       "username": "Username",
       "password": "Password",
@@ -34,9 +34,15 @@
       "logout": "Sign out",
       "pdfToday": "Today PDF",
       "course": "Academic year of the selected date",
-      "courseNone": "Outside any year"
+    "courseNone": "Outside any year",
+    "language": "Interface language"
     },
-    "tabs": {
+  "pages": {
+    "workbench": "Rescheduling workbench",
+    "records": "Records",
+    "import": "Timetable import"
+  },
+  "tabs": {
       "substitucions": "Substitutions",
       "grups": "No-class groups",
       "vigilancies": "Supervisions"
@@ -1687,5 +1693,65 @@
         "optionalName": "Name (optional)"
       }
     }
+  },
+  "records": {
+    "eyebrow": "Rescheduling archive",
+    "title": "Future, today and past records",
+    "description": "Confirmed, unresolved and reverted arrangements remain in the archive.",
+    "today": "Today in Hong Kong: {date}",
+    "scopes": { "future": "Future", "today": "Today", "past": "Past" },
+    "empty": "There are no records on this tab.",
+    "manual": "Manual swap",
+    "period": "Period {period}",
+    "createdBy": "Created by: {user}",
+    "noAdjustment": "No rescheduling arrangement has been confirmed.",
+    "previous": "Previous",
+    "next": "Next",
+    "page": "Page {page} of {pages}, {total} items",
+    "statuses": { "open": "Pending", "resolved": "Resolved", "cancelled": "Cancelled", "confirmed": "Confirmed", "reverted": "Reverted" },
+    "editReason": "Edit reason", "reason": "Reason: {reason}", "reasonPrompt": "Enter the adjustment reason (optional)", "editRemovesAdjustments": "Editing this absence invalidates and deletes its existing adjustments. Continue?", "deleteAbsenceConfirm": "Permanently delete this absence and all its adjustments?", "deleteAdjustmentConfirm": "Permanently delete this adjustment and restore the base timetable?",
+    "kinds": { "direct_swap": "Direct swap", "three_cycle": "Three-lesson cycle", "emergency_cover": "Emergency subject cover", "manual_swap": "Manual swap", "manual_three_cycle": "Manual three-lesson cycle" }
+  },
+  "leave": {
+    "title": "Long-term absence",
+    "description": "Teachers are unavailable for the full day throughout the date range. Medical details are not stored.",
+    "teacher": "Teacher", "type": "Type", "startDate": "Start date", "endDate": "End date",
+    "add": "Add long-term absence", "update": "Update record", "cancelEdit": "Cancel editing", "empty": "No long-term absence records.",
+    "types": { "sick": "Long-term sick leave", "maternity": "Maternity leave", "other": "Other long-term absence" }
+  },
+  "rescheduling": {
+    "eyebrow": "School cover recommendation system",
+    "title": "Rescheduling workbench",
+    "description": "Try swaps within the same class first; only show emergency subject cover when no swap is possible within five teaching days.",
+    "revision": "Timetable revision {revision}",
+    "noTimetable": "No timetable is in effect on the selected date. Ask an administrator to use Timetable import.",
+    "steps": { "absence": "Enter absence", "recommendations": "Review and confirm suggestions", "effective": "Effective timetable" },
+    "teacher": "Absent teacher", "date": "Date", "absentPeriods": "Absent periods", "analyzeAll": "Analyse all lessons",
+    "counts": "Resolved {resolved} · Unresolved {unresolved}", "cancelAbsence": "Cancel this absence",
+    "analysisEmpty": "Select a teacher, date and periods to analyse all affected lessons together.", "noTasks": "There are no lessons left to handle in the selected periods.",
+    "originalTeacher": "Original teacher: {teachers}", "recommendable": "Can be resolved", "unresolved": "Unresolved", "candidates": "Candidate arrangements",
+    "confirmArrangement": "Confirm this arrangement", "noCandidate": "No valid swap was found within five teaching days and no same-subject emergency teacher is free. Manual handling is required.",
+    "manualSwap": "Manual swap", "period": "Period", "class": "Class", "subject": "Subject", "teacherColumn": "Teacher", "status": "Status", "noLessons": "No lessons on this date",
+    "manualSelected": "Manual swap: {count} lessons selected", "manualHint": "You can change dates while selecting. Only complete two- or three-lesson swaps in the same class are allowed.",
+    "manualReason": "Reason for change (required)", "clear": "Clear", "confirmManual": "Confirm manual swap", "history": "Confirmed and reverted adjustments",
+    "confirmedLocked": "Confirmed and locked", "revert": "Revert", "noHistory": "No rescheduling records yet.", "closures": "School closure and holiday dates",
+    "closureHint": "Enter one date per line (YYYY-MM-DD). Searches automatically skip these dates.", "saveDates": "Save dates",
+    "sources": { "base": "Base timetable", "base_conflict": "Workbook mismatch · locked", "teacher_workbook": "Busy in teacher workbook", "direct_swap": "Swapped", "three_cycle": "Three-lesson cycle", "emergency_cover": "Emergency cover", "manual_swap": "Manual swap", "manual_three_cycle": "Manual cycle" }
+  },
+  "importCenter": {
+    "eyebrow": "Administrator",
+    "title": "Timetable import centre",
+    "description": "Check both workbooks first. Mismatched lessons are listed and locked.",
+    "baseTitle": "Import base timetable", "classFile": "Class timetable (.xls)", "teacherFile": "Teacher timetable (.xlsx, without duty sheet)", "effectiveFrom": "Start date (required)", "effectiveTo": "End date (required)", "check": "Check timetable",
+    "currentFiles": "Date {date} uses: {classFile} + {teacherFile}", "noCurrent": "No timetable is currently in effect.",
+    "classes": "Classes", "teachers": "Teachers", "lessons": "Class lessons", "blocked": "Locked lessons", "resultTitle": "Validation result",
+    "resultHint": "Correct the original Excel files and check again. The website does not create a third timetable.", "activate": "Activate", "errorsBlock": "Some teacher data cannot be identified. Correct the Excel files before activation.",
+    "severity": "Severity", "weekdayPeriod": "Day / period", "classWorkbook": "Class workbook", "teacherWorkbook": "Teacher workbook", "review": "Review",
+    "perfectMatch": "Both timetables match and can be activated.", "activated": "The timetable will apply from {start} to {end}.",
+    "versionsTitle": "Uploaded timetable versions", "versionsHint": "Date ranges remain editable but must retain every linked record. Used versions cannot be deleted. Import a new version to change lesson content.",
+    "startDate": "Starts", "endDate": "Ends", "ongoing": "Ongoing", "files": "Source files", "scale": "Timetable data", "linkedRecords": "Linked records", "status": "Status", "actions": "Actions",
+    "scaleValue": "{lessons} lessons / {teachers} teachers", "recordValue": "{absences} absences / {adjustments} adjustments", "locked": "Cannot delete", "available": "Unused", "current": "Current", "noVersions": "No timetable versions uploaded.",
+    "versionUpdated": "Timetable version date updated.", "versionDeleted": "Unused timetable version deleted.", "deleteConfirm": "Delete the timetable version starting on {date}? This cannot be undone.",
+    "weekdays": { "0": "Monday", "1": "Tuesday", "2": "Wednesday", "3": "Thursday", "4": "Friday" }
   }
 }

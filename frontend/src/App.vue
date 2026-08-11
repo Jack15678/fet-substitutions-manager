@@ -4,6 +4,13 @@
 
     <div v-if="!autenticat" class="login-screen">
       <div class="login-card">
+        <div class="language-control login-language">
+          <label for="login-language">{{ $t('app.nav.language') }}</label>
+          <select id="login-language" v-model="currentLocale">
+            <option value="zh-HK">繁體中文（香港）</option>
+            <option value="en">English</option>
+          </select>
+        </div>
         <h1 class="login-title">{{ $t('app.login.title') }}</h1>
         <p class="login-subtitle">{{ $t('app.login.subtitle') }}</p>
 
@@ -44,11 +51,6 @@
     </div>
 
     <div v-else>
-      <SchedulerView
-        v-if="isSchedulerRoute"
-        @tornar-gestor="tornarAlGestor"
-      />
-      <template v-else>
       <!-- Navbar superior -->
       <header v-if="!isMobile" class="navbar">
         <div class="navbar-left">
@@ -78,9 +80,7 @@
 
         <div class="navbar-center">
           <h1 class="logo">{{ $t('app.title') }}</h1>
-          <div class="config-info" v-if="config">
-            <span>👥 {{ $t('app.nav.teachers') }} {{ config.num_professors }}</span>
-            <span>🕐 {{ $t('app.nav.hours') }} {{ config.num_hores }}</span>
+          <div class="config-info" v-if="cursos.length">
             <span
               v-if="cursos.length"
               class="curs-indicador"
@@ -93,6 +93,13 @@
         </div>
 
         <div class="navbar-right">
+          <div class="language-control navbar-language">
+            <label for="navbar-language" class="sr-only">{{ $t('app.nav.language') }}</label>
+            <select id="navbar-language" v-model="currentLocale">
+              <option value="zh-HK">繁中</option>
+              <option value="en">EN</option>
+            </select>
+          </div>
           <Button
             v-if="isAdmin"
             icon="pi pi-cog"
@@ -101,37 +108,10 @@
             @click="obrirConfiguracio"
           />
           <Button
-            v-if="isAdmin"
-            icon="pi pi-bolt"
-            class="p-button-rounded p-button-text p-button-plain"
-            v-tooltip.bottom="$t('app.nav.examSettings')"
-            @click="obrirConfiguracioExamens"
-          />
-          <Button
-            v-if="isAdmin"
-            icon="pi pi-calendar"
-            class="p-button-rounded p-button-text p-button-plain"
-            v-tooltip.bottom="$t('app.nav.scheduler')"
-            @click="anarScheduler"
-          />
-          <Button
-            v-if="isAdmin"
-            icon="pi pi-chart-bar"
-            class="p-button-rounded p-button-text p-button-plain"
-            v-tooltip.bottom="$t('app.nav.stats')"
-            @click="obrirEstadistiques"
-          />
-          <Button
             icon="pi pi-user"
             class="p-button-rounded p-button-text p-button-plain"
             v-tooltip.bottom="$t('app.nav.profile')"
             @click="obrirPerfil"
-          />
-          <Button
-            icon="pi pi-question-circle"
-            class="p-button-rounded p-button-text p-button-plain"
-            v-tooltip.bottom="$t('app.nav.help')"
-            @click="obrirAjuda"
           />
           <Button
             icon="pi pi-sign-out"
@@ -145,12 +125,13 @@
       <header v-else class="mobile-header">
         <div class="mobile-header-top">
           <h1 class="logo">{{ $t('app.title') }}</h1>
-          <Button
-            icon="pi pi-bars"
-            class="p-button-rounded p-button-text p-button-plain"
-            v-tooltip.bottom="$t('app.nav.menu')"
-            @click="mostrarMenuMobil = true"
-          />
+          <div class="mobile-header-actions">
+            <select v-model="currentLocale" :aria-label="$t('app.nav.language')">
+              <option value="zh-HK">繁中</option>
+              <option value="en">EN</option>
+            </select>
+            <Button icon="pi pi-bars" class="p-button-rounded p-button-text p-button-plain" v-tooltip.bottom="$t('app.nav.menu')" @click="mostrarMenuMobil = true" />
+          </div>
         </div>
         <div class="mobile-date-row">
           <Button
@@ -176,30 +157,11 @@
         </div>
       </header>
 
-      <!-- Tabs de navegació -->
-      <div v-if="!isMobile" class="tabs-container">
+      <div class="tabs-container">
         <div class="tabs">
-          <button
-            class="tab"
-            :class="{ active: tabActiu === 'substitucions' }"
-            @click="tabActiu = 'substitucions'"
-          >
-            {{ $t('app.tabs.substitucions') }}
-          </button>
-          <button
-            class="tab"
-            :class="{ active: tabActiu === 'grups' }"
-            @click="tabActiu = 'grups'"
-          >
-            {{ $t('app.tabs.grups') }}
-          </button>
-          <button
-            class="tab"
-            :class="{ active: tabActiu === 'vigilancies' }"
-            @click="tabActiu = 'vigilancies'"
-          >
-            {{ $t('app.tabs.vigilancies') }}
-          </button>
+          <button class="tab" :class="{ active: paginaActiva === 'workbench' }" @click="paginaActiva = 'workbench'">{{ $t('app.pages.workbench') }}</button>
+          <button class="tab" :class="{ active: paginaActiva === 'records' }" @click="paginaActiva = 'records'">{{ $t('app.pages.records') }}</button>
+          <button v-if="isAdmin" class="tab" :class="{ active: paginaActiva === 'import' }" @click="paginaActiva = 'import'">{{ $t('app.pages.import') }}</button>
         </div>
       </div>
 
@@ -215,47 +177,14 @@
 
       <!-- Contingut -->
       <main class="main-content">
-        <SubstitucionsView
-          ref="substitucionsRef"
-          v-if="tabActiu === 'substitucions'"
-          :key="institucioKey"
+        <ReschedulingView
+          v-if="paginaActiva === 'workbench'"
           :dataGlobal="dataSeleccionada"
-          @anar-vigilancies="tabActiu = 'vigilancies'"
+          :isAdmin="isAdmin"
         />
-        <GrupsView v-if="tabActiu === 'grups'" :key="institucioKey" :dataGlobal="dataSeleccionada" />
-        <VigilanciesView v-if="tabActiu === 'vigilancies'" :key="institucioKey" :dataGlobal="dataSeleccionada" @anar-substitucions="tabActiu = 'substitucions'" />
+        <RecordsView v-else-if="paginaActiva === 'records'" :isAdmin="isAdmin" />
+        <TimetableImportView v-else-if="paginaActiva === 'import' && isAdmin" />
       </main>
-
-      <nav v-if="isMobile" class="mobile-nav">
-        <button
-          class="mobile-nav-item"
-          :class="{ active: tabActiu === 'substitucions' }"
-          @click="tabActiu = 'substitucions'"
-        >
-          <i class="pi pi-list"></i>
-          <span>{{ $t('app.tabs.substitucions') }}</span>
-        </button>
-        <button
-          class="mobile-nav-item"
-          :class="{ active: tabActiu === 'vigilancies' }"
-          @click="tabActiu = 'vigilancies'"
-        >
-          <i class="pi pi-eye"></i>
-          <span>{{ $t('app.tabs.vigilancies') }}</span>
-        </button>
-        <button
-          class="mobile-nav-item"
-          :class="{ active: tabActiu === 'grups' }"
-          @click="tabActiu = 'grups'"
-        >
-          <i class="pi pi-users"></i>
-          <span>{{ $t('app.tabs.grups') }}</span>
-        </button>
-        <button class="mobile-nav-item" @click="obrirPdfDia">
-          <i class="pi pi-file-pdf"></i>
-          <span>{{ $t('app.nav.pdfToday') }}</span>
-        </button>
-      </nav>
 
       <footer class="footer">
         <p>{{ $t('app.footer') }}</p>
@@ -269,20 +198,9 @@
         :dataGlobal="dataSeleccionada"
         @cursos-canviats="carregarCursos"
       />
-      <ConfiguracioExamensDialog v-model:visible="mostrarConfiguracioExamens" />
-      <EstadistiquesDialog
-        v-model:visible="mostrarEstadistiques"
-        :curs="cursDeLaData"
-        :cursos="cursos"
-        :dataTreball="dataSeleccionada"
-      />
-      <AjudaDialog v-model:visible="mostrarAjuda" />
       <ProfileDialog
         v-model:visible="mostrarPerfil"
         :username="userProfile?.username"
-        :role="userProfile?.role"
-        :institucio="userProfile?.institucio"
-        @institucio-canviada="handleInstitucioCanviada"
       />
 
       <Dialog
@@ -300,37 +218,10 @@
             @click="obrirConfiguracio(); mostrarMenuMobil = false"
           />
           <Button
-            v-if="isAdmin"
-            icon="pi pi-bolt"
-            class="p-button-text"
-            :label="$t('app.nav.examSettings')"
-            @click="obrirConfiguracioExamens(); mostrarMenuMobil = false"
-          />
-          <Button
-            v-if="isAdmin"
-            icon="pi pi-calendar"
-            class="p-button-text"
-            :label="$t('app.nav.scheduler')"
-            @click="anarScheduler(); mostrarMenuMobil = false"
-          />
-          <Button
-            v-if="isAdmin"
-            icon="pi pi-chart-bar"
-            class="p-button-text"
-            :label="$t('app.nav.stats')"
-            @click="obrirEstadistiques(); mostrarMenuMobil = false"
-          />
-          <Button
             icon="pi pi-user"
             class="p-button-text"
             :label="$t('app.nav.profile')"
             @click="obrirPerfil(); mostrarMenuMobil = false"
-          />
-          <Button
-            icon="pi pi-question-circle"
-            class="p-button-text"
-            :label="$t('app.nav.help')"
-            @click="obrirAjuda(); mostrarMenuMobil = false"
           />
           <Button
             icon="pi pi-sign-out"
@@ -340,13 +231,12 @@
           />
         </div>
       </Dialog>
-      </template>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Toast from 'primevue/toast'
@@ -356,29 +246,30 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
 import Dialog from 'primevue/dialog'
-import SubstitucionsView from './views/SubstitucionsView.vue'
-import GrupsView from './views/GrupsView.vue'
-import VigilanciesView from './views/VigilanciesView.vue'
-import SchedulerView from './views/SchedulerView.vue'
+import ReschedulingView from './views/ReschedulingView.vue'
+import RecordsView from './views/RecordsView.vue'
+import TimetableImportView from './views/TimetableImportView.vue'
 import ConfiguracioDialog from './components/ConfiguracioDialog.vue'
-import ConfiguracioExamensDialog from './components/ConfiguracioExamensDialog.vue'
-import EstadistiquesDialog from './components/EstadistiquesDialog.vue'
-import AjudaDialog from './components/AjudaDialog.vue'
 import ProfileDialog from './components/ProfileDialog.vue'
 import { setLocale } from './i18n'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const toast = useToast()
+const currentLocale = computed({
+  get: () => locale.value,
+  set: (value) => setLocale(value)
+})
 
-const config = ref(null)
 const autenticat = ref(false)
-const tabActiu = ref('substitucions')
-const substitucionsRef = ref(null)
-const dataSeleccionada = ref(new Date())
+const paginaActiva = ref('workbench')
+const hongKongToday = () => {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en', {
+    timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts().filter(part => part.type !== 'literal').map(part => [part.type, part.value]))
+  return new Date(Number(parts.year), Number(parts.month) - 1, Number(parts.day), 12)
+}
+const dataSeleccionada = ref(hongKongToday())
 const mostrarConfiguracio = ref(false)
-const mostrarConfiguracioExamens = ref(false)
-const mostrarEstadistiques = ref(false)
-const mostrarAjuda = ref(false)
 const mostrarPerfil = ref(false)
 const mostrarMenuMobil = ref(false)
 const loginUser = ref('')
@@ -390,18 +281,12 @@ let loginRetryTimer = null
 const isMobile = ref(false)
 let mediaQuery = null
 const userProfile = ref(null)
-const institucioKey = ref(0)
 const isAdmin = computed(() => ['admin', 'super_admin'].includes(userProfile.value?.role || ''))
 const esDemo = computed(() => userProfile.value?.institucio === 'demo')
-const isSchedulerRoute = ref(window.location.pathname === '/scheduler')
 
 const actualitzarModeMobil = () => {
   if (!mediaQuery) return
   isMobile.value = mediaQuery.matches
-}
-
-const actualitzarRuta = () => {
-  isSchedulerRoute.value = window.location.pathname === '/scheduler'
 }
 
 const aplicarToken = () => {
@@ -410,15 +295,8 @@ const aplicarToken = () => {
 
 const netejarToken = () => {
   autenticat.value = false
-  config.value = null
   userProfile.value = null
   axios.post('/api/logout').catch(() => {})
-}
-
-const carregarConfig = async () => {
-  const response = await axios.get('/api/config')
-  config.value = response.data
-  await carregarCursos()
 }
 
 // ===== CURSOS (per institució) =====
@@ -456,27 +334,9 @@ const carregarPerfil = async () => {
   try {
     const response = await axios.get('/api/users/profile')
     userProfile.value = response.data
-    setLocale(response.data.idioma || 'ca')
   } catch (error) {
     console.error('Error carregant perfil:', error)
   }
-}
-
-const handleInstitucioCanviada = async () => {
-  await carregarPerfil()
-  await carregarConfig()   // recarrega també els cursos (són per institució)
-  tabActiu.value = 'substitucions'
-  institucioKey.value += 1
-}
-
-const tornarAlGestor = () => {
-  window.history.pushState({}, '', '/')
-  actualitzarRuta()
-}
-
-const anarScheduler = () => {
-  window.history.pushState({}, '', '/scheduler')
-  actualitzarRuta()
 }
 
 onMounted(async () => {
@@ -484,7 +344,6 @@ onMounted(async () => {
   mediaQuery = window.matchMedia('(max-width: 720px)')
   actualitzarModeMobil()
   mediaQuery.addEventListener('change', actualitzarModeMobil)
-  window.addEventListener('popstate', actualitzarRuta)
 
   axios.interceptors.response.use(
     (response) => response,
@@ -508,7 +367,7 @@ onMounted(async () => {
 
   try {
     await carregarPerfil()
-    await carregarConfig()
+    await carregarCursos()
     aplicarToken()
   } catch (error) {
     // Cookie absent o expirada — es queda a la pantalla de login
@@ -519,7 +378,6 @@ onBeforeUnmount(() => {
   if (mediaQuery) {
     mediaQuery.removeEventListener('change', actualitzarModeMobil)
   }
-  window.removeEventListener('popstate', actualitzarRuta)
   if (loginRetryTimer) {
     clearInterval(loginRetryTimer)
   }
@@ -537,7 +395,7 @@ const ferLogin = async () => {
     const redirectUrl = new URLSearchParams(window.location.search).get('redirect')
     if (redirectUrl) { window.location.href = redirectUrl; return; }
     await carregarPerfil()
-    await carregarConfig()
+    await carregarCursos()
   } catch (error) {
     const status = error.response?.status
     if (status === 429) {
@@ -578,26 +436,8 @@ const obrirConfiguracio = () => {
   mostrarConfiguracio.value = true
 }
 
-const obrirConfiguracioExamens = () => {
-  mostrarConfiguracioExamens.value = true
-}
-
-const obrirEstadistiques = () => {
-  mostrarEstadistiques.value = true
-}
-
 const obrirPerfil = () => {
   mostrarPerfil.value = true
-}
-
-const obrirAjuda = () => {
-  mostrarAjuda.value = true
-}
-
-const obrirPdfDia = async () => {
-  tabActiu.value = 'substitucions'
-  await nextTick()
-  substitucionsRef.value?.mostrarDialegPDF?.()
 }
 
 const diaAnterior = () => {
@@ -781,6 +621,8 @@ input.p-inputtext.p-inputtext-sm {
   box-shadow: 0 20px 40px rgba(31, 41, 55, 0.12);
   border: 1px solid rgba(102, 126, 234, 0.15);
 }
+
+.language-control{display:flex;align-items:center;gap:.45rem}.language-control label{font-size:.78rem}.language-control select,.mobile-header-actions select{border:1px solid #d7dce7;border-radius:7px;background:#fff;color:#243047;padding:.35rem .5rem}.login-language{justify-content:flex-end;margin-bottom:1rem;color:var(--text-color-secondary)}.navbar-language select{border-color:rgba(255,255,255,.45)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.mobile-header-actions{display:flex;align-items:center;gap:.35rem}
 
 .login-title {
   font-size: 1.6rem;
@@ -1255,7 +1097,7 @@ input.p-inputtext.p-inputtext-sm {
   border-top: 1px solid var(--border-color);
   box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.12);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 0.25rem;
   padding: 0.4rem 0.25rem 0.5rem;
   z-index: 20;

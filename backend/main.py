@@ -7,12 +7,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, Depends, Request
-from fastapi.responses import JSONResponse
 import logging
-import os
 import time
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -23,10 +20,8 @@ from auth_utils import ensure_default_users, get_current_user, require_admin
 from config.auth import IS_DEVELOPMENT
 from rate_limit import limiter
 
-# Imports de schemas i helpers
-from schemas import ConfigResponse
-from helpers import get_horari, MissingXmlError
 from auth_utils import decode_access_token
+from time_utils import hong_kong_now
 
 access_logger = logging.getLogger("uvicorn.error")
 access_logger.setLevel(logging.INFO)
@@ -38,23 +33,6 @@ ensure_default_users()
 # Les taules de dades (exam_*, etc.) es creen automàticament
 # dins de get_data_db_session() la primera vegada que s'usa
 
-# Carregar prioritats des de la BD (per web, no usem JSON)
-def _inicialitzar_prioritats():
-    """Carrega prioritats des de la BD en iniciar el backend"""
-    from database import get_data_db_session
-    from config.settings import config
-    from routes.prioritats import _recarregar_prioritats_desde_bd
-
-    try:
-        institucio = os.getenv("APP_INSTITUCIO") or config.global_data.get("institucio") or "exemple"
-        with get_data_db_session(institucio) as db:
-            _recarregar_prioritats_desde_bd(db)
-    except Exception as e:
-        print(f"⚠️  No s'han pogut carregar prioritats des de BD: {e}")
-        print("   Es faran servir les constants del JSON per defecte")
-
-_inicialitzar_prioritats()
-
 # Fora de desenvolupament no es publica ni la documentació interactiva ni
 # l'esquema OpenAPI: donen el mapa complet de l'API a qui no ha entrat.
 app = FastAPI(
@@ -65,18 +43,6 @@ app = FastAPI(
     redoc_url="/redoc" if IS_DEVELOPMENT else None,
     openapi_url="/openapi.json" if IS_DEVELOPMENT else None,
 )
-
-
-@app.exception_handler(MissingXmlError)
-async def missing_xml_exception_handler(request: Request, exc: MissingXmlError):
-    return JSONResponse(
-        status_code=400,
-        content={
-            "detail": str(exc),
-            "xml_missing": True,
-            "institucio": exc.institucio
-        }
-    )
 
 
 @app.middleware("http")
@@ -111,7 +77,7 @@ def _log_request(request: Request, duration_ms: int, status_code: int) -> None:
     query = request.url.query
     full_path = f"{path}?{query}" if query else path
     ip = request.client.host if request.client else "-"
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = hong_kong_now().strftime("%Y-%m-%d %H:%M:%S %Z")
     access_logger.info(
         f"{timestamp} | {username} ({role}@{instit}) | {ip} | {request.method} {full_path} | {status_code} | {duration_ms}ms"
     )
@@ -130,26 +96,14 @@ app.add_middleware(
 )
 
 # ===== Registre de routers modularitzats =====
-from routes import auth, config_examens, grups, grups_amagats, pdf, vigilancies, substitucions, settings, estadistiques, prioritats, horari, files, users, disponibles, scheduler, informes, cursos, dades
+from routes import auth, settings, users, cursos, dades, rescheduling
 
 app.include_router(auth.router)
-app.include_router(config_examens.router, dependencies=[Depends(require_admin)])
-app.include_router(grups.router, dependencies=[Depends(get_current_user)])
-app.include_router(grups_amagats.router, dependencies=[Depends(require_admin)])
-app.include_router(pdf.router, dependencies=[Depends(get_current_user)])
-app.include_router(vigilancies.router, dependencies=[Depends(get_current_user)])
-app.include_router(substitucions.router, dependencies=[Depends(get_current_user)])
 app.include_router(settings.router, dependencies=[Depends(require_admin)])
-app.include_router(estadistiques.router, dependencies=[Depends(require_admin)])
-app.include_router(prioritats.router, dependencies=[Depends(require_admin)])
-app.include_router(horari.router, dependencies=[Depends(get_current_user)])
-app.include_router(files.router, dependencies=[Depends(require_admin)])
 app.include_router(users.router, dependencies=[Depends(get_current_user)])
-app.include_router(disponibles.router, dependencies=[Depends(get_current_user)])
-app.include_router(scheduler.router, dependencies=[Depends(require_admin)])
-app.include_router(informes.router, dependencies=[Depends(require_admin)])
 app.include_router(cursos.router, dependencies=[Depends(get_current_user)])
 app.include_router(dades.router, dependencies=[Depends(require_admin)])
+app.include_router(rescheduling.router, dependencies=[Depends(get_current_user)])
 
 
 # ===== Endpoints generals (no modularitzats) =====
@@ -168,68 +122,6 @@ async def root():
 async def health():
     """Health check per l'API"""
     return {"status": "ok"}
-
-
-@app.get("/api/config", response_model=ConfigResponse, dependencies=[Depends(get_current_user)])
-async def get_config():
-    """Retorna configuració actual del sistema"""
-    try:
-        horari = get_horari()
-    except MissingXmlError:
-        return ConfigResponse(
-            data_actual=datetime.now().strftime("%Y-%m-%d"),
-            horari_carregat=False,
-            num_professors=0,
-            num_hores=0,
-            xml_missing=True
-        )
-
-    return ConfigResponse(
-        data_actual=datetime.now().strftime("%Y-%m-%d"),
-        horari_carregat=True,
-        num_professors=len(horari.professors),
-        num_hores=len(horari.hores)
-    )
-
-
-@app.get("/api/professors", dependencies=[Depends(get_current_user)])
-async def get_professors():
-    """Retorna llista de professors fins l'últim configurat"""
-    try:
-        horari = get_horari()
-    except MissingXmlError:
-        return {
-            "professors": [],
-            "xml_missing": True
-        }
-    # horari.professors ja té el límit aplicat (veure core/horari.py línia 50-62)
-    return {
-        "professors": sorted(horari.professors)
-    }
-
-
-@app.get("/api/hores", dependencies=[Depends(get_current_user)])
-async def get_hores():
-    """Retorna llista d'hores del dia en l'ordre de l'XML (no alfabètic)"""
-    try:
-        horari = get_horari()
-    except MissingXmlError:
-        return {
-            "hores": [],
-            "xml_missing": True
-        }
-    return {
-        "hores": horari.hores  # Ja estan en l'ordre correcte de l'XML
-    }
-
-
-@app.get("/api/config/no-substituir", dependencies=[Depends(get_current_user)])
-async def get_no_substituir():
-    """Retorna llista d'activitats que no necessiten substitució"""
-    from config.constants import NO_SUBST
-    return {
-        "no_substituir": list(NO_SUBST)
-    }
 
 
 # ===== Punt d'entrada per executar amb uvicorn =====

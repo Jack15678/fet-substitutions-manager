@@ -10,51 +10,6 @@
   >
     <div class="config-container">
       <TabView class="app-tabview app-tabview--dialog">
-        <!-- TAB 1: SISTEMA I FITXERS -->
-        <TabPanel>
-          <template #header>
-            <span class="tab-header-lines">
-              <span>{{ $t('config.tabs.systemLine1') }}</span>
-              <span>{{ $t('config.tabs.systemLine2') }}</span>
-            </span>
-          </template>
-          <SystemTab :current-role="currentRole" @update:dirty="systemDirty = $event" />
-        </TabPanel>
-
-      <!-- TAB 2: GRUPS I ABREVIATURES -->
-        <TabPanel>
-          <template #header>
-            <span class="tab-header-lines">
-              <span>{{ $t('config.tabs.groupsLine1') }}</span>
-              <span>{{ $t('config.tabs.groupsLine2') }}</span>
-            </span>
-          </template>
-          <GrupsTab :dataGlobal="dataGlobal" />
-        </TabPanel>
-
-      <!-- TAB 3: PROFESSORS DE BAIXA -->
-        <TabPanel>
-          <template #header>
-            <span class="tab-header-lines">
-              <span>{{ $t('config.tabs.leaveLine1') }}</span>
-              <span>{{ $t('config.tabs.leaveLine2') }}</span>
-            </span>
-          </template>
-          <BaixesTab />
-        </TabPanel>
-
-        <!-- TAB 4: PRIORITATS -->
-        <TabPanel>
-          <template #header>
-            <span class="tab-header-lines">
-              <span>{{ $t('config.tabs.prioritiesLine1') }}</span>
-              <span>&nbsp;</span>
-            </span>
-          </template>
-          <PrioritatsTab :dataGlobal="dataGlobal" />
-        </TabPanel>
-
-        <!-- TAB 5: CURSOS -->
         <TabPanel v-if="canManageUsers">
           <template #header>
             <span class="tab-header-lines">
@@ -87,16 +42,6 @@
           <UsuarisTab :current-role="currentRole" :current-institucio="currentInstitucio" />
         </TabPanel>
 
-        <!-- TAB 6: INSTITUCIONS (SUPER ADMIN) -->
-        <TabPanel v-if="isSuperAdmin">
-          <template #header>
-            <span class="tab-header-lines">
-              <span>{{ $t('config.tabs.institutionsLine1') }}</span>
-              <span>&nbsp;</span>
-            </span>
-          </template>
-          <InstitucionsTab />
-        </TabPanel>
       </TabView>
     </div>
 
@@ -112,24 +57,14 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { useConfirm } from 'primevue/useconfirm'
+import { computed } from 'vue'
 import Dialog from 'primevue/dialog'
 import Button from 'primevue/button'
 import TabView from 'primevue/tabview'
 import TabPanel from 'primevue/tabpanel'
-import SystemTab from './config/SystemTab.vue'
-import GrupsTab from './config/GrupsTab.vue'
-import BaixesTab from './config/BaixesTab.vue'
-import PrioritatsTab from './config/PrioritatsTab.vue'
 import CursosTab from './config/CursosTab.vue'
 import GestioDadesTab from './config/GestioDadesTab.vue'
 import UsuarisTab from './config/UsuarisTab.vue'
-import InstitucionsTab from './config/InstitucionsTab.vue'
-
-const { t } = useI18n()
-const confirm = useConfirm()
 
 const props = defineProps({
   visible: {
@@ -153,33 +88,9 @@ const props = defineProps({
 const emit = defineEmits(['update:visible', 'cursos-canviats'])
 
 const canManageUsers = computed(() => ['admin', 'super_admin'].includes(props.currentRole || ''))
-const isSuperAdmin = computed(() => props.currentRole === 'super_admin')
-
-// Estat "hi ha canvis sense desar" del tab Sistema: governa la confirmació
-// de tancament del diàleg (com abans, només depèn dels settings del sistema).
-const systemDirty = ref(false)
 
 const handleVisibleChange = (newVal) => {
-  if (newVal) {
-    emit('update:visible', true)
-    return
-  }
-
-  if (!systemDirty.value) {
-    emit('update:visible', false)
-    return
-  }
-
-  confirm.require({
-    message: t('common.unsavedChangesPrompt'),
-    header: t('common.unsavedChangesTitle'),
-    icon: 'pi pi-exclamation-triangle',
-    acceptLabel: t('common.closeAnyway'),
-    rejectLabel: t('common.cancel'),
-    accept: () => {
-      emit('update:visible', false)
-    }
-  })
+  emit('update:visible', newVal)
 }
 
 const tancar = () => {

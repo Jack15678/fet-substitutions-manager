@@ -6,6 +6,7 @@ from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, T
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
+from time_utils import utc_now
 
 Base = declarative_base()
 
@@ -278,8 +279,8 @@ class ProfessorBaixa(Base):
     data_inici = Column(Date, nullable=False)
     data_final = Column(Date, nullable=False)
     motiu = Column(String)  # Opcional: malaltia, permís, etc.
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     __table_args__ = (
         Index('idx_professor_baixa', 'professor'),
@@ -446,3 +447,160 @@ class ExamSchedule(Base):
     estat = Column(String, default='generat')
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ===== 調課推薦模組 =====
+# 基礎課表與已確認調動分開保存；任何日期的「有效課表」都由兩者疊加得出。
+
+
+class TimetableVersion(Base):
+    __tablename__ = 'timetable_versions'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    effective_from = Column(Date, nullable=False)
+    effective_to = Column(Date)
+    class_filename = Column(String, nullable=False)
+    teacher_filename = Column(String, nullable=False)
+    active = Column(Boolean, default=False, nullable=False)
+    created_by = Column(String)
+    created_at = Column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        Index('idx_timetable_versions_active', 'active'),
+        Index('idx_timetable_versions_effective_from', 'effective_from'),
+    )
+
+
+class TimetableImportPreview(Base):
+    __tablename__ = 'timetable_import_previews'
+
+    id = Column(String, primary_key=True)
+    payload = Column(Text, nullable=False)
+    class_filename = Column(String, nullable=False)
+    teacher_filename = Column(String, nullable=False)
+    created_by = Column(String)
+    created_at = Column(DateTime, default=utc_now)
+
+
+class TimetableLesson(Base):
+    """一個班別在固定星期／節次的課堂；teachers_json 可保存協同教師。"""
+    __tablename__ = 'timetable_lessons'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    version_id = Column(Integer, ForeignKey('timetable_versions.id', ondelete='CASCADE'), nullable=False)
+    weekday = Column(Integer, nullable=False)  # Monday=0
+    period = Column(Integer, nullable=False)   # 1..9
+    class_code = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    teachers_json = Column(Text, nullable=False)
+    movable = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        Index('idx_timetable_lesson_slot', 'version_id', 'weekday', 'period'),
+        Index('idx_timetable_lesson_class', 'version_id', 'class_code'),
+    )
+
+
+class TimetableTeacherSlot(Base):
+    """教師表中的實際授課格；值日、小息、午膳等不匯入。"""
+    __tablename__ = 'timetable_teacher_slots'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    version_id = Column(Integer, ForeignKey('timetable_versions.id', ondelete='CASCADE'), nullable=False)
+    professor_id = Column(Integer, ForeignKey('professors.id'), nullable=False)
+    weekday = Column(Integer, nullable=False)
+    period = Column(Integer, nullable=False)
+    class_code = Column(String)
+    subject = Column(String)
+
+    __table_args__ = (
+        Index('idx_teacher_slot', 'version_id', 'professor_id', 'weekday', 'period'),
+    )
+
+
+class AbsenceCase(Base):
+    __tablename__ = 'absence_cases'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    professor_id = Column(Integer, ForeignKey('professors.id'), nullable=False)
+    data = Column(Date, nullable=False)
+    periods_json = Column(Text, nullable=False)
+    status = Column(String, default='open', nullable=False)
+    created_by = Column(String)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+    __table_args__ = (
+        Index('idx_absence_case_date', 'data'),
+        Index('idx_absence_case_teacher', 'professor_id', 'data'),
+    )
+
+
+class SchoolClosure(Base):
+    __tablename__ = 'school_closures'
+
+    data = Column(Date, primary_key=True)
+    note = Column(String)
+    created_by = Column(String)
+    created_at = Column(DateTime, default=utc_now)
+
+
+class ScheduleAdjustment(Base):
+    __tablename__ = 'schedule_adjustments'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    absence_case_id = Column(Integer, ForeignKey('absence_cases.id'))
+    kind = Column(String, nullable=False)  # direct_swap / three_cycle / emergency_cover
+    status = Column(String, default='confirmed', nullable=False)
+    locked = Column(Boolean, default=True, nullable=False)
+    reason = Column(Text)
+    created_by = Column(String)
+    confirmed_by = Column(String)
+    reverted_by = Column(String)
+    created_at = Column(DateTime, default=utc_now)
+    confirmed_at = Column(DateTime, default=utc_now)
+    reverted_at = Column(DateTime)
+
+    __table_args__ = (
+        Index('idx_adjustment_status', 'status'),
+        Index('idx_adjustment_absence', 'absence_case_id'),
+    )
+
+
+class ScheduleAdjustmentLeg(Base):
+    __tablename__ = 'schedule_adjustment_legs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    adjustment_id = Column(Integer, ForeignKey('schedule_adjustments.id', ondelete='CASCADE'), nullable=False)
+    lesson_id = Column(Integer, ForeignKey('timetable_lessons.id'), nullable=False)
+    class_code = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    teachers_json = Column(Text, nullable=False)
+    from_date = Column(Date, nullable=False)
+    from_period = Column(Integer, nullable=False)
+    to_date = Column(Date, nullable=False)
+    to_period = Column(Integer, nullable=False)
+    replaced_teacher_id = Column(Integer, ForeignKey('professors.id'))
+    replacement_teacher_id = Column(Integer, ForeignKey('professors.id'))
+
+    __table_args__ = (
+        Index('idx_adjustment_leg_from', 'from_date', 'from_period'),
+        Index('idx_adjustment_leg_to', 'to_date', 'to_period'),
+    )
+
+
+class ScheduleAudit(Base):
+    __tablename__ = 'schedule_audit'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    action = Column(String, nullable=False)
+    entity_type = Column(String, nullable=False)
+    entity_id = Column(String)
+    username = Column(String)
+    detail_json = Column(Text)
+    created_at = Column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        Index('idx_schedule_audit_created', 'created_at'),
+    )
