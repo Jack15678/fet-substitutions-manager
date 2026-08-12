@@ -98,6 +98,7 @@ gestor-backup_*/
 
 # Entorns locals i secrets
 .env
+.cloudflare-tunnel/
 .env_server
 .env.production
 

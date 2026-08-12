@@ -2,11 +2,10 @@
   <section class="import-page">
     <header class="page-heading">
       <div>
-        <p class="eyebrow">{{ $t('importCenter.eyebrow') }}</p>
         <h2>{{ $t('importCenter.title') }}</h2>
         <p>{{ $t('importCenter.description') }}</p>
       </div>
-      <span class="revision">{{ $t('rescheduling.revision', { revision: timetable.revision ?? '—' }) }}</span>
+      <span class="revision">{{ $t('rescheduling.revision', { revision: timetable.revision ?? '-' }) }}</span>
     </header>
 
     <section class="panel">
@@ -16,7 +15,7 @@
         <label>{{ $t('importCenter.teacherFile') }}<input type="file" accept=".xlsx" @change="teacherFile = $event.target.files[0]" /></label>
         <label>{{ $t('importCenter.effectiveFrom') }}<input v-model="effectiveFrom" type="date" /></label>
         <label>{{ $t('importCenter.effectiveTo') }}<input v-model="effectiveTo" type="date" /></label>
-        <Button :label="$t('importCenter.check')" icon="pi pi-search" :loading="busy === 'preview'" :disabled="!classFile || !teacherFile || !effectiveFrom || !effectiveTo" @click="previewImport" />
+        <Button :label="$t('importCenter.check')" icon="pi pi-search" class="progress-fill-button" :class="{ 'is-progressing': busy === 'preview' }" :loading="busy === 'preview'" :disabled="!classFile || !teacherFile || !effectiveFrom || !effectiveTo" @click="previewImport" />
       </div>
       <p v-if="timetable.active" class="muted">{{ $t('importCenter.currentFiles', { date: timetable.query_date, classFile: timetable.class_filename, teacherFile: timetable.teacher_filename }) }}</p>
       <p v-else class="notice warning">{{ $t('importCenter.noCurrent') }}</p>
@@ -56,23 +55,52 @@
       <section class="panel">
         <div class="result-heading">
           <div><h3>{{ $t('importCenter.resultTitle') }}</h3><p class="muted">{{ $t('importCenter.resultHint') }}</p></div>
-          <Button :label="$t('importCenter.activate')" icon="pi pi-check" severity="success" :loading="busy === 'activate'" :disabled="hasErrors || !effectiveFrom || !effectiveTo" @click="activateImport" />
+          <Button :label="$t('importCenter.activate')" icon="pi pi-check" severity="success" :loading="busy === 'activate'" :disabled="hasErrors || hasUnresolvedReviews || !effectiveFrom || !effectiveTo" @click="activateImport" />
         </div>
         <ul v-if="preview.warnings.length" class="warnings">
           <li v-for="warning in preview.warnings" :key="warning">{{ warning }}</li>
         </ul>
         <p v-if="hasErrors" class="notice danger">{{ $t('importCenter.errorsBlock') }}</p>
+        <p v-else-if="hasUnresolvedReviews" class="notice warning">{{ $t('importCenter.reviewsProgress', { confirmed: confirmedReviewCount, total: reviewIds.length, remaining: unresolvedReviewCount }) }}</p>
+        <div v-if="reviewIds.length" class="bulk-actions">
+          <label><input type="checkbox" :checked="allReviewsSelected" @change="toggleAllReviews" />{{ $t('importCenter.selectAllReviews') }}</label>
+          <span>{{ $t('importCenter.selectedReviews', { count: selectedReviewIds.length }) }}</span>
+          <Button :label="$t('importCenter.clearSelection')" text size="small" :disabled="!selectedReviewIds.length" @click="selectedReviewIds = []" />
+          <Button :label="bulkClassLabel" size="small" outlined :disabled="!selectedReviewIds.length" @click="applyBulk('class')" />
+          <Button :label="bulkTeacherLabel" size="small" :disabled="!selectedReviewIds.length" @click="applyBulk('teacher')" />
+          <Button :label="$t('importCenter.confirmSelected')" icon="pi pi-check" severity="success" size="small" :loading="busy === 'save-selected'" :disabled="!canConfirmSelected" @click="saveResolutions(selectedReviewIds, 'save-selected')" />
+        </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>{{ $t('importCenter.severity') }}</th><th>{{ $t('importCenter.weekdayPeriod') }}</th><th>{{ $t('rescheduling.class') }}</th><th>{{ $t('rescheduling.subject') }}</th><th>{{ $t('rescheduling.teacherColumn') }}</th><th>{{ $t('importCenter.classWorkbook') }}</th><th>{{ $t('importCenter.teacherWorkbook') }}</th></tr></thead>
+            <thead><tr><th>{{ $t('importCenter.selectReview') }}</th><th>{{ $t('importCenter.severity') }}</th><th>{{ $t('importCenter.weekdayPeriod') }}</th><th>{{ $t('rescheduling.class') }}</th><th>{{ $t('rescheduling.subject') }}</th><th>{{ $t('rescheduling.teacherColumn') }}</th><th>{{ $t('importCenter.classWorkbook') }}</th><th>{{ $t('importCenter.teacherWorkbook') }}</th><th>{{ $t('importCenter.decision') }}</th></tr></thead>
             <tbody>
-              <tr v-for="(issue, index) in preview.issues" :key="index">
+              <tr v-for="(issue, index) in preview.issues" :key="issue.resolution_id || index">
+                <td><input v-if="issue.severity === 'review'" v-model="selectedReviewIds" type="checkbox" :value="resolutionId(issue)" /></td>
                 <td><span :class="['status', issue.severity]">{{ issue.severity === 'error' ? $t('common.error') : $t('importCenter.review') }}</span></td>
                 <td>{{ weekdayLabel(issue.weekday) }} {{ $t('records.period', { period: issue.period }) }}</td>
-                <td>{{ issue.class_code }}</td><td>{{ issue.subject }}</td><td>{{ issue.teacher || '—' }}</td>
+                <td>{{ issue.class_code }}</td><td>{{ issue.subject }}</td><td>{{ issue.teacher || '-' }}</td>
                 <td>{{ issue.class_workbook }}</td><td>{{ issue.teacher_workbook }}</td>
+                <td>
+                  <div v-if="issue.severity === 'review'" class="resolution-cell">
+                    <div class="resolution-choice">
+                      <label :class="{ selected: resolutions[resolutionId(issue)] === 'class' }"><input v-model="resolutions[resolutionId(issue)]" type="radio" :name="resolutionId(issue)" value="class" />{{ $t(issue.code === 'teacher_extra_assignment' ? 'importCenter.ignoreExtraTeacher' : 'importCenter.useClassWorkbook') }}</label>
+                      <label :class="{ selected: resolutions[resolutionId(issue)] === 'teacher' }"><input v-model="resolutions[resolutionId(issue)]" type="radio" :name="resolutionId(issue)" value="teacher" />{{ $t(issue.code === 'teacher_extra_assignment' ? 'importCenter.addCoTeacher' : 'importCenter.useTeacherWorkbook') }}</label>
+                    </div>
+                    <Button
+                      :label="$t(isResolutionConfirmed(issue) ? 'importCenter.confirmedDecision' : 'importCenter.confirmThisDecision')"
+                      icon="pi pi-check"
+                      size="small"
+                      :outlined="!isResolutionConfirmed(issue)"
+                      :severity="isResolutionConfirmed(issue) ? 'success' : undefined"
+                      :loading="busy === `resolution-${resolutionId(issue)}`"
+                      :disabled="!resolutions[resolutionId(issue)] || isResolutionConfirmed(issue)"
+                      @click="saveResolutions([resolutionId(issue)], `resolution-${resolutionId(issue)}`)"
+                    />
+                  </div>
+                  <span v-else class="muted">{{ $t('importCenter.fixSource') }}</span>
+                </td>
               </tr>
-              <tr v-if="!preview.issues.length"><td colspan="7" class="empty-row">{{ $t('importCenter.perfectMatch') }}</td></tr>
+              <tr v-if="!preview.issues.length"><td colspan="9" class="empty-row">{{ $t('importCenter.perfectMatch') }}</td></tr>
             </tbody>
           </table>
         </div>
@@ -100,7 +128,63 @@ const effectiveTo = ref('')
 const preview = ref(null)
 const busy = ref('')
 const message = ref('')
+const resolutions = ref({})
+const savedResolutions = ref({})
+const selectedReviewIds = ref([])
+const resolutionId = (issue) => issue.resolution_id || `${issue.weekday}:${issue.period}:${issue.class_code}:${issue.teacher}`
+const reviewIds = computed(() => (preview.value?.issues || [])
+  .filter(issue => issue.severity === 'review')
+  .map(resolutionId))
+const allReviewsSelected = computed(() => reviewIds.value.length > 0 && selectedReviewIds.value.length === reviewIds.value.length)
 const hasErrors = computed(() => preview.value?.issues.some(issue => issue.severity === 'error'))
+const isResolutionConfirmed = (issue) => Boolean(savedResolutions.value[resolutionId(issue)])
+  && savedResolutions.value[resolutionId(issue)] === resolutions.value[resolutionId(issue)]
+const confirmedReviewCount = computed(() => (preview.value?.issues || []).filter(
+  issue => issue.severity === 'review' && isResolutionConfirmed(issue)
+).length)
+const unresolvedReviewCount = computed(() => reviewIds.value.length - confirmedReviewCount.value)
+const hasUnresolvedReviews = computed(() => unresolvedReviewCount.value > 0)
+const selectedIssues = computed(() => (preview.value?.issues || []).filter(issue => selectedReviewIds.value.includes(resolutionId(issue))))
+const selectedIssueType = computed(() => {
+  if (!selectedIssues.value.length) return 'none'
+  if (selectedIssues.value.every(issue => issue.code === 'teacher_extra_assignment')) return 'extra'
+  if (selectedIssues.value.every(issue => issue.code !== 'teacher_extra_assignment')) return 'mismatch'
+  return 'mixed'
+})
+const bulkClassLabel = computed(() => t(selectedIssueType.value === 'extra' ? 'importCenter.bulkIgnoreExtraTeacher'
+  : selectedIssueType.value === 'mismatch' ? 'importCenter.bulkUseClassWorkbook' : 'importCenter.bulkLeftDecision'))
+const bulkTeacherLabel = computed(() => t(selectedIssueType.value === 'extra' ? 'importCenter.bulkAddCoTeacher'
+  : selectedIssueType.value === 'mismatch' ? 'importCenter.bulkUseTeacherWorkbook' : 'importCenter.bulkRightDecision'))
+const canConfirmSelected = computed(() => selectedReviewIds.value.length > 0
+  && selectedReviewIds.value.every(id => resolutions.value[id])
+  && selectedReviewIds.value.some(id => savedResolutions.value[id] !== resolutions.value[id]))
+
+const toggleAllReviews = (event) => {
+  selectedReviewIds.value = event.target.checked ? [...reviewIds.value] : []
+}
+const applyBulk = (choice) => {
+  resolutions.value = {
+    ...resolutions.value,
+    ...Object.fromEntries(selectedReviewIds.value.map(id => [id, choice]))
+  }
+}
+
+const saveResolutions = async (ids, busyKey) => {
+  const decisions = Object.fromEntries(ids
+    .filter(id => resolutions.value[id])
+    .map(id => [id, resolutions.value[id]]))
+  if (!Object.keys(decisions).length) return
+  busy.value = busyKey; message.value = ''
+  try {
+    const response = (await axios.put(`/api/timetables/import/${preview.value.preview_id}/resolutions`, {
+      resolutions: decisions
+    })).data
+    savedResolutions.value = response.saved_resolutions
+    message.value = response.remaining_count
+      ? t('importCenter.progressSaved', { confirmed: response.confirmed_count, total: reviewIds.value.length, remaining: response.remaining_count })
+      : t('importCenter.allDecisionsConfirmed')
+  } finally { busy.value = '' }
+}
 
 const loadCurrent = async () => {
   const [currentResponse, versionsResponse] = await Promise.all([
@@ -137,6 +221,9 @@ const previewImport = async () => {
     form.append('class_workbook', classFile.value)
     form.append('teacher_workbook', teacherFile.value)
     preview.value = (await axios.post('/api/timetables/import/preview', form)).data
+    resolutions.value = {}
+    savedResolutions.value = {}
+    selectedReviewIds.value = []
   } finally { busy.value = '' }
 }
 
@@ -144,10 +231,14 @@ const activateImport = async () => {
   busy.value = 'activate'; message.value = ''
   try {
     await axios.post(`/api/timetables/import/${preview.value.preview_id}/activate`, {
-      effective_from: effectiveFrom.value, effective_to: effectiveTo.value
+      effective_from: effectiveFrom.value, effective_to: effectiveTo.value,
+      resolutions: resolutions.value
     })
     message.value = t('importCenter.activated', { start: effectiveFrom.value, end: effectiveTo.value })
     preview.value = null
+    resolutions.value = {}
+    savedResolutions.value = {}
+    selectedReviewIds.value = []
     await loadCurrent()
   } finally { busy.value = '' }
 }
@@ -158,6 +249,69 @@ onMounted(loadCurrent)
 </script>
 
 <style scoped>
-.import-page{display:flex;flex-direction:column;gap:1.25rem;color:#172033}.page-heading,.result-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:1.5rem}.page-heading h2{font-size:2rem;margin:.15rem 0}.page-heading p,.muted{color:#657084}.eyebrow{color:#4965d6!important;font-weight:700;text-transform:uppercase;font-size:.78rem;letter-spacing:.08em}.revision{background:#eef2ff;color:#4256b5;padding:.5rem .75rem;border-radius:999px;font-size:.82rem;white-space:nowrap}.panel{background:#fff;border:1px solid #e4e8f0;border-radius:14px;padding:1.2rem;box-shadow:0 4px 18px rgba(35,45,75,.05)}.panel h3{margin:0 0 .9rem}.result-heading h3{margin:0}.import-grid{display:grid;grid-template-columns:1fr 1fr .65fr auto;align-items:end;gap:.8rem}.import-grid label{display:flex;flex-direction:column;gap:.35rem;font-size:.84rem;font-weight:600}input{width:100%;border:1px solid #ccd3df;border-radius:8px;padding:.6rem;background:#fff}.summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem}.summary-grid div{display:flex;flex-direction:column;background:#fff;border:1px solid #e4e8f0;border-radius:12px;padding:1rem}.summary-grid strong{font-size:1.8rem}.summary-grid span{color:#657084}.summary-grid .alert{border-color:#e6bd79;background:#fff9ef}.warnings{margin:.9rem 0;padding-left:1.2rem;color:#87591d}.table-wrap{overflow:auto;margin-top:1rem}table{width:100%;border-collapse:collapse;font-size:.86rem}th,td{text-align:left;padding:.68rem;border-bottom:1px solid #edf0f4;white-space:nowrap}th{color:#657084;background:#fafbfc}.file-list{display:flex;flex-direction:column;gap:.2rem;max-width:260px}.file-list span{overflow:hidden;text-overflow:ellipsis}.version-actions{display:flex;gap:.4rem}.status{display:inline-block;font-size:.75rem;padding:.25rem .5rem;border-radius:999px;background:#fff0d8;color:#86540f}.status+.status{margin-left:.35rem}.status.error,.status.locked{background:#feeceb;color:#a43a31}.status.available{background:#eaf8f0;color:#247147}.status.current{background:#eef2ff;color:#4256b5}.notice{padding:.8rem 1rem;border-radius:9px}.warning{background:#fff7e6;color:#8a5b16}.danger{background:#feeceb;color:#96382f}.success{background:#eaf8f0;color:#247147}.empty-row{text-align:center;color:#8490a3}@media(max-width:850px){.import-grid,.summary-grid{grid-template-columns:1fr 1fr}}@media(max-width:560px){.page-heading,.result-heading{flex-direction:column}.import-grid,.summary-grid{grid-template-columns:1fr}}
-.import-grid{grid-template-columns:1fr 1fr .55fr .55fr auto}
+.import-page { display: grid; gap: 1.25rem; color: var(--text-color-primary); }
+.page-heading, .result-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; }
+.page-heading h2 { margin: 0 0 .35rem; font-size: clamp(1.65rem, 3vw, 2.15rem); line-height: 1.15; letter-spacing: -.035em; }
+.page-heading p, .muted { color: var(--text-color-secondary); }
+.revision { padding-top: .4rem; color: var(--text-color-secondary); font-size: .8rem; white-space: nowrap; }
+.panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
+.panel h3 { margin: 0 0 .9rem; }
+.result-heading h3 { margin: 0; }
+.import-grid { display: grid; grid-template-columns: 1fr 1fr .62fr .62fr auto; align-items: end; gap: .8rem; }
+.import-grid label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: .82rem; font-weight: 650; }
+input { width: 100%; min-height: 2.55rem; padding: .6rem .7rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
+input:hover { border-color: #aeb8c5; }
+input:focus { border-color: var(--primary-color); }
+input[type=file] { padding: .45rem; }
+input[type=checkbox] { width: auto; min-height: auto; accent-color: var(--primary-color); }
+.summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); overflow: hidden; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
+.summary-grid div { display: flex; flex-direction: column; padding: 1rem 1.1rem; border-left: 1px solid var(--border-color); }
+.summary-grid div:first-child { border-left: 0; }
+.summary-grid strong { font-size: 1.7rem; letter-spacing: -.03em; }
+.summary-grid span { color: var(--text-color-secondary); font-size: .82rem; }
+.summary-grid .alert { background: #fff8e8; color: #84590e; }
+.warnings { margin: .9rem 0; padding-left: 1.2rem; color: #87591d; }
+.bulk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; margin-top: .9rem; padding: .7rem .8rem; border: 1px solid var(--border-color); border-radius: 9px; background: var(--surface-soft); }
+.bulk-actions label { display: inline-flex; align-items: center; gap: .4rem; color: #344054; font-size: .82rem; font-weight: 650; cursor: pointer; }
+.bulk-actions label input { width: auto; min-height: auto; margin: 0; }
+.bulk-actions > span { margin-right: auto; color: var(--text-color-secondary); font-size: .8rem; }
+.table-wrap { overflow: auto; margin-top: 1rem; border: 1px solid var(--border-color); border-radius: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+th, td { padding: .72rem .75rem; border-bottom: 1px solid #edf0f3; text-align: left; white-space: nowrap; }
+th { background: var(--surface-soft); color: var(--text-color-secondary); font-size: .77rem; font-weight: 700; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: #fbfcfe; }
+.file-list { display: flex; flex-direction: column; gap: .2rem; max-width: 260px; }
+.file-list span { overflow: hidden; text-overflow: ellipsis; }
+.version-actions { display: flex; gap: .4rem; }
+.resolution-choice { display: flex; gap: .35rem; }
+.resolution-cell { display: flex; align-items: center; gap: .5rem; }
+.resolution-choice label { display: inline-flex; align-items: center; gap: .3rem; padding: .42rem .55rem; border: 1px solid #d6dce5; border-radius: 7px; cursor: pointer; }
+.resolution-choice label.selected { border-color: var(--primary-color); background: var(--highlight-bg); color: var(--primary-color-dark); }
+.resolution-choice input { width: auto; min-height: 0; margin: 0; }
+.status { display: inline-flex; align-items: center; padding: .24rem .52rem; border-radius: 999px; background: #fff4d6; color: #84590e; font-size: .74rem; white-space: nowrap; }
+.status + .status { margin-left: .35rem; }
+.status.error, .status.locked { background: #fdecea; color: #9b3b30; }
+.status.available { background: #e4f5e9; color: #216a42; }
+.status.current { background: var(--highlight-bg); color: var(--primary-color-dark); }
+.notice { padding: .8rem 1rem; border-radius: 8px; border-left: 3px solid currentColor; }
+.warning { background: #fff8e8; color: #8a5b16; }
+.danger { background: #fdecea; color: #96382f; }
+.success { background: #ebf8ef; color: #247147; }
+.empty-row { text-align: center; color: var(--text-color-secondary); }
+
+@media (max-width: 1000px) {
+  .import-grid { grid-template-columns: 1fr 1fr; }
+  .import-grid .p-button { grid-column: 1 / -1; }
+}
+
+@media (max-width: 600px) {
+  .page-heading, .result-heading { flex-direction: column; }
+  .revision { padding-top: 0; }
+  .import-grid { grid-template-columns: 1fr; }
+  .summary-grid { grid-template-columns: 1fr 1fr; }
+  .summary-grid div:nth-child(3) { border-top: 1px solid var(--border-color); border-left: 0; }
+  .summary-grid div:nth-child(4) { border-top: 1px solid var(--border-color); }
+  .result-heading .p-button { width: 100%; }
+}
 </style>

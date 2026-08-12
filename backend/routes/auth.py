@@ -18,10 +18,10 @@ router = APIRouter(tags=["auth"])
 def login(request: Request, credentials: LoginRequest, response: Response, db: Session = Depends(get_auth_db)):
     user = UserRepository.get_by_username(db, credentials.username)
     if not user or not user.active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credencials incorrectes")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用戶名稱或密碼不正確")
 
     if not verify_password(credentials.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credencials incorrectes")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用戶名稱或密碼不正確")
 
     token = create_access_token({
         "sub": user.username,

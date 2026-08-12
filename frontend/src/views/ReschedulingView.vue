@@ -2,11 +2,10 @@
   <section class="rescheduling-page">
     <header class="page-heading">
       <div>
-        <p class="eyebrow">{{ $t('rescheduling.eyebrow') }}</p>
         <h2>{{ $t('rescheduling.title') }}</h2>
         <p>{{ $t('rescheduling.description') }}</p>
       </div>
-      <span class="revision">{{ $t('rescheduling.revision', { revision: timetable.revision ?? '—' }) }}</span>
+      <span class="revision">{{ $t('rescheduling.revision', { revision: timetable.revision ?? '-' }) }}</span>
     </header>
 
     <div v-if="!timetable.active" class="notice warning">
@@ -18,22 +17,31 @@
         <div class="panel-title">
           <div><span>1</span><h3>{{ $t('rescheduling.steps.absence') }}</h3></div>
         </div>
-        <label>{{ $t('rescheduling.teacher') }}
-          <select v-model.number="absence.professor_id" :disabled="!timetable.active">
-            <option :value="null">{{ $t('common.selectOption') }}</option>
-            <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id">{{ teacher.name }}</option>
-          </select>
+        <label>{{ $t('rescheduling.teachers') }}
+          <MultiSelect
+            v-model="absence.professor_ids"
+            :options="teachers"
+            optionLabel="name"
+            optionValue="id"
+            display="chip"
+            filter
+            :placeholder="dateContextLoading ? $t('rescheduling.checkingDate') : timetable.active ? $t('rescheduling.selectTeachers') : $t('rescheduling.invalidDate')"
+            :disabled="dateContextLoading || !timetable.active"
+          />
         </label>
-        <label>{{ $t('rescheduling.date') }}<input v-model="absence.data" type="date" /></label>
+        <label>{{ $t('rescheduling.date') }}<input v-model="absence.data" type="date" @change="loadDateContext" /></label>
         <div class="period-field">
-          <span>{{ $t('rescheduling.absentPeriods') }}</span>
+          <div class="period-heading">
+            <span>{{ $t('rescheduling.absentPeriods') }}</span>
+            <label class="all-day"><input v-model="allDay" type="checkbox" />{{ $t('rescheduling.allDay') }}</label>
+          </div>
           <div class="periods">
             <label v-for="period in 9" :key="period" :class="{ selected: absence.periods.includes(period) }">
               <input v-model="absence.periods" type="checkbox" :value="period" />{{ $t('records.period', { period }) }}
             </label>
           </div>
         </div>
-        <Button :label="$t('rescheduling.analyzeAll')" icon="pi pi-search" :loading="busy === 'analyze'" :disabled="!canAnalyze" @click="createAndAnalyze" />
+        <Button :label="$t('rescheduling.analyzeAll')" icon="pi pi-search" class="progress-fill-button" :class="{ 'is-progressing': busy === 'analyze' }" :loading="busy === 'analyze'" :disabled="!canAnalyze" @click="createAndAnalyze" />
       </section>
 
       <section class="panel recommendations-panel">
@@ -46,14 +54,14 @@
         </div>
         <div v-if="!analysis" class="empty-state">{{ $t('rescheduling.analysisEmpty') }}</div>
         <div v-else-if="!analysis.tasks.length" class="notice success">{{ $t('rescheduling.noTasks') }}</div>
-        <article v-for="task in analysis?.tasks || []" :key="task.target.occurrence_id" class="task-card">
+        <article v-for="task in analysis?.tasks || []" :key="task.task_key" class="task-card">
           <div class="task-heading">
             <div><strong>{{ $t('records.period', { period: task.target.period }) }} · {{ task.target.class_code }} {{ task.target.subject }}</strong><small>{{ $t('rescheduling.originalTeacher', { teachers: joinItems(task.target.teacher_names) }) }}</small></div>
             <span :class="['status', task.status]">{{ task.status === 'recommended' ? $t('rescheduling.recommendable') : $t('rescheduling.unresolved') }}</span>
           </div>
           <template v-if="task.alternatives.length">
             <label>{{ $t('rescheduling.candidates') }}
-              <select v-model="selectedCandidates[task.target.occurrence_id]">
+              <select v-model="selectedCandidates[task.task_key]">
                 <option v-for="candidate in task.alternatives" :key="candidate.id" :value="candidate.id">
                   {{ kindLabel(candidate.kind) }} · {{ candidate.reason }}
                 </option>
@@ -65,7 +73,7 @@
                 <b>{{ leg.from_date }} {{ $t('records.period', { period: leg.from_period }) }} → {{ leg.to_date }} {{ $t('records.period', { period: leg.to_period }) }}</b>
               </div>
             </div>
-            <Button :label="$t('rescheduling.confirmArrangement')" icon="pi pi-check" severity="success" :loading="busy === task.target.occurrence_id" @click="confirmTask(task)" />
+            <Button :label="$t('rescheduling.confirmArrangement')" icon="pi pi-check" severity="success" :loading="busy === task.task_key" @click="confirmTask(task)" />
           </template>
           <p v-else class="unresolved-copy">{{ $t('rescheduling.noCandidate') }}</p>
         </article>
@@ -99,24 +107,6 @@
       </div>
     </section>
 
-    <div class="bottom-grid">
-      <details class="panel history-panel" open>
-        <summary>{{ $t('rescheduling.history') }}</summary>
-        <div v-for="item in adjustments" :key="item.id" class="history-item">
-          <div><strong>#{{ item.id }} · {{ kindLabel(item.kind) }}</strong><small>{{ formatTimestamp(item.confirmed_at) }} · {{ item.confirmed_by }}</small></div>
-          <span :class="['status', item.status]">{{ item.status === 'confirmed' ? $t('rescheduling.confirmedLocked') : $t('records.statuses.reverted') }}</span>
-          <Button v-if="isAdmin && item.status === 'confirmed'" :label="$t('rescheduling.revert')" severity="danger" text @click="revert(item.id)" />
-        </div>
-        <p v-if="!adjustments.length" class="muted">{{ $t('rescheduling.noHistory') }}</p>
-      </details>
-
-      <details v-if="isAdmin" class="panel closure-panel">
-        <summary>{{ $t('rescheduling.closures') }}</summary>
-        <p class="muted">{{ $t('rescheduling.closureHint') }}</p>
-        <textarea v-model="closureText" rows="6" placeholder="2026-09-28&#10;2026-10-01"></textarea>
-        <Button :label="$t('rescheduling.saveDates')" icon="pi pi-save" @click="saveClosures" />
-      </details>
-    </div>
   </section>
 </template>
 
@@ -125,6 +115,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Button from 'primevue/button'
+import MultiSelect from 'primevue/multiselect'
 
 const props = defineProps({ dataGlobal: Date, isAdmin: Boolean })
 const { t, locale } = useI18n()
@@ -134,93 +125,93 @@ const iso = (value) => {
   const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
   return local.toISOString().slice(0, 10)
 }
-const formatTimestamp = (value) => value ? new Intl.DateTimeFormat(locale.value === 'en' ? 'en-HK' : 'zh-HK', {
-  timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit',
-  hour: '2-digit', minute: '2-digit', hour12: false
-}).format(new Date(value)) : '—'
 
 const busy = ref('')
+const dateContextLoading = ref(false)
 const timetable = ref({ active: false })
 const teachers = ref([])
-const absence = reactive({ professor_id: null, data: iso(props.dataGlobal), periods: [] })
-const currentAbsenceId = ref(null)
+const absence = reactive({ professor_ids: [], data: iso(props.dataGlobal), periods: [] })
+const currentAbsenceIds = ref([])
 const analysis = ref(null)
 const selectedCandidates = reactive({})
 const effectiveDate = ref(iso(props.dataGlobal))
 const effective = ref({ lessons: [] })
-const adjustments = ref([])
-const closureText = ref('')
 const manualLessons = ref([])
 const manualReason = ref('')
 
-const canAnalyze = computed(() => timetable.value.active && absence.professor_id && absence.data && absence.periods.length)
+const canAnalyze = computed(() => !dateContextLoading.value && timetable.value.active && absence.professor_ids.length && absence.data && absence.periods.length)
+const allDay = computed({
+  get: () => absence.periods.length === 9,
+  set: (checked) => { absence.periods = checked ? Array.from({ length: 9 }, (_, index) => index + 1) : [] }
+})
 const manualCanSubmit = computed(() => [2, 3].includes(manualLessons.value.length)
   && new Set(manualLessons.value.map(item => item.class_code)).size === 1 && manualReason.value.trim())
-watch(() => props.dataGlobal, (value) => { absence.data = iso(value); effectiveDate.value = iso(value); loadEffective() })
-watch(() => absence.data, () => loadDateContext())
+watch(() => props.dataGlobal, (value) => {
+  const nextDate = iso(value)
+  const dateChanged = absence.data !== nextDate
+  absence.data = nextDate
+  effectiveDate.value = nextDate
+  if (dateChanged) loadDateContext()
+  loadEffective()
+})
 
-const loadDateContext = async () => {
+const loadDateContext = async (preferredTeacherIds = [...absence.professor_ids]) => {
   if (!absence.data) {
     timetable.value = { active: false }
     teachers.value = []
-    absence.professor_id = null
+    absence.professor_ids = []
     return
   }
-  const [timetableResponse, teacherResponse] = await Promise.all([
-    axios.get('/api/timetables/current', { params: { data: absence.data } }),
-    axios.get('/api/rescheduling/teachers', { params: { data: absence.data } })
-  ])
-  timetable.value = timetableResponse.data
-  teachers.value = teacherResponse.data
-  if (!teachers.value.some(teacher => teacher.id === absence.professor_id)) absence.professor_id = null
-}
-
-const loadBase = async () => {
-  adjustments.value = (await axios.get('/api/adjustments')).data
-  await loadDateContext()
-  if (props.isAdmin) {
-    const { data } = await axios.get('/api/calendar/closures')
-    closureText.value = data.map(item => item.date).join('\n')
+  const requestedDate = absence.data
+  dateContextLoading.value = true
+  timetable.value = { active: false }
+  teachers.value = []
+  absence.professor_ids = []
+  try {
+    const [timetableResponse, teacherResponse] = await Promise.all([
+      axios.get('/api/timetables/current', { params: { data: requestedDate } }),
+      axios.get('/api/rescheduling/teachers', { params: { data: requestedDate } })
+    ])
+    if (absence.data !== requestedDate) return
+    timetable.value = timetableResponse.data
+    teachers.value = teacherResponse.data
+    const availableIds = new Set(teachers.value.map(teacher => teacher.id))
+    absence.professor_ids = preferredTeacherIds.filter(id => availableIds.has(id))
+  } finally {
+    if (absence.data === requestedDate) dateContextLoading.value = false
   }
 }
 
 const applyDefaults = () => {
+  for (const key of Object.keys(selectedCandidates)) delete selectedCandidates[key]
   for (const task of analysis.value?.tasks || []) {
-    selectedCandidates[task.target.occurrence_id] = task.recommended?.id || task.alternatives[0]?.id
+    selectedCandidates[task.task_key] = task.recommended?.id || task.alternatives[0]?.id
   }
 }
 
 const createAndAnalyze = async () => {
   busy.value = 'analyze'
   try {
-    const created = (await axios.post('/api/absence-cases', {
-      professor_id: absence.professor_id, data: absence.data, periods: absence.periods.map(Number)
+    const created = (await axios.post('/api/absence-cases/batch', {
+      professor_ids: absence.professor_ids, data: absence.data, periods: absence.periods.map(Number)
     })).data
-    currentAbsenceId.value = created.id
-    analysis.value = (await axios.post(`/api/absence-cases/${created.id}/analyze`)).data
-    applyDefaults()
-  } catch (error) {
-    if (error.response?.status !== 409) throw error
-    const cases = (await axios.get('/api/absence-cases', { params: { data: absence.data } })).data
-    const existing = cases.find(item => item.professor_id === absence.professor_id && item.status !== 'cancelled')
-    if (!existing) throw error
-    currentAbsenceId.value = existing.id
-    analysis.value = (await axios.post(`/api/absence-cases/${existing.id}/analyze`)).data
+    currentAbsenceIds.value = created.batch_absence_case_ids
+    analysis.value = created
     applyDefaults()
   } finally { busy.value = '' }
 }
 
-const selectedForTask = (task) => task.alternatives.filter(item => item.id === selectedCandidates[task.target.occurrence_id])
+const selectedForTask = (task) => task.alternatives.filter(item => item.id === selectedCandidates[task.task_key])
 const confirmTask = async (task) => {
-  const candidateId = selectedCandidates[task.target.occurrence_id]
+  const candidateId = selectedCandidates[task.task_key]
   if (!candidateId) return
-  busy.value = task.target.occurrence_id
+  busy.value = task.task_key
   try {
-    await axios.post('/api/adjustments/confirm', {
-      absence_case_id: currentAbsenceId.value, candidate_id: candidateId, expected_revision: analysis.value.revision
-    })
-    analysis.value = (await axios.post(`/api/absence-cases/${currentAbsenceId.value}/analyze`)).data
-    applyDefaults(); await loadBase(); await loadEffective()
+    const response = (await axios.post('/api/adjustments/confirm', {
+      absence_case_id: task.absence_case_id, candidate_id: candidateId, expected_revision: analysis.value.revision
+    })).data
+    analysis.value = response.analysis
+    applyDefaults(); await loadDateContext(); await loadEffective()
   } finally { busy.value = '' }
 }
 
@@ -229,28 +220,13 @@ const loadEffective = async () => {
   effective.value = (await axios.get('/api/effective-timetable', { params: { data: effectiveDate.value } })).data
 }
 
-const revert = async (id) => {
-  await axios.post(`/api/adjustments/${id}/revert`)
-  await loadBase(); await loadEffective()
-  if (currentAbsenceId.value) {
-    analysis.value = (await axios.post(`/api/absence-cases/${currentAbsenceId.value}/analyze`)).data
-    applyDefaults()
-  }
-}
-
 const cancelAbsence = async () => {
-  if (!currentAbsenceId.value) return
-  await axios.delete(`/api/absence-cases/${currentAbsenceId.value}`)
-  currentAbsenceId.value = null
+  if (!currentAbsenceIds.value.length) return
+  await axios.post('/api/absence-cases/cancel-batch', { absence_case_ids: currentAbsenceIds.value })
+  currentAbsenceIds.value = []
   analysis.value = null
   absence.periods = []
-  await loadBase(); await loadEffective()
-}
-
-const saveClosures = async () => {
-  const dates = [...new Set(closureText.value.split(/[\s,，]+/).map(value => value.trim()).filter(Boolean))]
-  await axios.put('/api/calendar/closures', { closures: dates.map(data => ({ data })) })
-  await loadBase()
+  await loadDateContext(); await loadEffective()
 }
 
 const manualSelected = (lesson) => manualLessons.value.some(item => item.occurrence_id === lesson.occurrence_id)
@@ -271,16 +247,106 @@ const submitManual = async () => {
     })
   })
   manualLessons.value = []; manualReason.value = ''
-  await loadBase(); await loadEffective()
+  await loadDateContext(); await loadEffective()
 }
 
 const kindLabel = (kind) => t(`records.kinds.${kind}`, kind)
 const sourceLabel = (source) => t(`rescheduling.sources.${source}`, source)
 
-onMounted(async () => { await loadBase(); await loadEffective() })
+const resumeAbsence = async (record) => {
+  busy.value = 'analyze'
+  currentAbsenceIds.value = [record.entity_id]
+  absence.data = record.date
+  absence.periods = [...record.periods]
+  effectiveDate.value = record.date
+  analysis.value = null
+  try {
+    await loadDateContext([record.professor_id])
+    if (!timetable.value.active || !absence.professor_ids.length) return
+    analysis.value = (await axios.post(`/api/absence-cases/${record.entity_id}/analyze`)).data
+    applyDefaults()
+    await loadEffective()
+  } finally { busy.value = '' }
+}
+
+defineExpose({ resumeAbsence })
+
+onMounted(async () => { await loadDateContext(); await loadEffective() })
 </script>
 
 <style scoped>
-.rescheduling-page{display:flex;flex-direction:column;gap:1.25rem;color:#172033}.page-heading{display:flex;justify-content:space-between;gap:2rem;align-items:flex-start}.page-heading h2{font-size:2rem;margin:.15rem 0}.page-heading p{color:#657084}.eyebrow{color:#4965d6!important;font-weight:700;text-transform:uppercase;font-size:.78rem;letter-spacing:.08em}.revision{background:#eef2ff;color:#4256b5;padding:.5rem .75rem;border-radius:999px;font-size:.82rem;white-space:nowrap}.panel{background:#fff;border:1px solid #e4e8f0;border-radius:14px;padding:1.2rem;box-shadow:0 4px 18px rgba(35,45,75,.05)}details summary{font-weight:700;cursor:pointer;margin:-.2rem 0 .9rem}.workspace-grid{display:grid;grid-template-columns:minmax(280px,.72fr) minmax(460px,1.6fr);gap:1.25rem;align-items:start}.panel-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}.panel-title>div{display:flex;align-items:center;gap:.55rem}.panel-title span{display:grid;place-items:center;width:1.8rem;height:1.8rem;border-radius:50%;background:#4965d6;color:#fff;font-weight:700}.panel-title h3{margin:0}.panel-title small{color:#657084}.analysis-actions{display:flex;align-items:center!important;gap:.4rem}.absence-panel,.absence-panel label{display:flex;flex-direction:column;gap:.8rem}.absence-panel label{gap:.3rem;font-weight:600;font-size:.88rem}select,input[type=date],input[type=file],textarea,.manual-box input{width:100%;border:1px solid #ccd3df;border-radius:8px;padding:.65rem;background:#fff;color:#172033}input[type=file]{padding:.48rem}.period-field>span{font-size:.88rem;font-weight:600}.periods{display:grid;grid-template-columns:repeat(3,1fr);gap:.45rem;margin-top:.35rem}.periods label{display:flex;flex-direction:row;align-items:center;justify-content:center;border:1px solid #dfe4ed;border-radius:8px;padding:.5rem!important;font-weight:500!important;cursor:pointer}.periods label.selected{border-color:#4965d6;background:#eef2ff;color:#344ba9}.periods input{width:auto}.import-grid{display:grid;grid-template-columns:1fr 1fr .7fr auto;align-items:end;gap:.8rem}.import-grid label{font-size:.82rem;font-weight:600}.preview-result{margin-top:1rem;padding:1rem;background:#f6f8fc;border-radius:10px}.preview-result ul{margin:.6rem 0 .8rem;padding-left:1.2rem;color:#8a5b16}.notice{padding:.85rem 1rem;border-radius:10px}.warning{background:#fff7e6;color:#8a5b16;border:1px solid #f0d69a}.success{background:#eaf8f0;color:#247147}.empty-state{display:grid;place-items:center;min-height:230px;text-align:center;color:#7b8597;border:1px dashed #d5dae4;border-radius:10px;padding:2rem}.task-card{border:1px solid #dfe4ed;border-radius:12px;padding:1rem;margin-bottom:.8rem}.task-heading{display:flex;justify-content:space-between;gap:1rem;margin-bottom:.8rem}.task-heading div{display:flex;flex-direction:column;gap:.22rem}.task-heading small{color:#657084}.status,.source-tag{font-size:.75rem;padding:.28rem .55rem;border-radius:999px;white-space:nowrap;background:#edf0f5;color:#5c6575}.status.recommended,.status.confirmed,.source-tag.changed{background:#e7f7ee;color:#237448}.status.unresolved{background:#fff0ed;color:#a84030}.movement-list{background:#f7f8fb;border-radius:9px;padding:.7rem;margin:.65rem 0}.movement-list div{display:flex;justify-content:space-between;gap:1rem;font-size:.82rem;padding:.28rem 0}.movement-list b{color:#4256b5;text-align:right}.unresolved-copy{color:#9b493d;margin:0}.effective-panel .inline-date{display:flex;align-items:center;gap:.5rem;font-size:.82rem}.effective-panel .inline-date input{width:auto}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:.88rem}th,td{text-align:left;padding:.7rem;border-bottom:1px solid #edf0f4}th{color:#657084;background:#fafbfc}.empty-row{text-align:center;color:#8490a3}.manual-box{margin-top:1rem;padding:1rem;border:1px solid #cfd8fa;background:#f7f8ff;border-radius:10px}.manual-box>div:first-child{display:flex;flex-direction:column}.manual-box small{color:#657084}.manual-box ol{margin:.65rem 0;padding-left:1.25rem}.manual-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:.6rem}.bottom-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:1.25rem}.history-item{display:grid;grid-template-columns:1fr auto auto;gap:.7rem;align-items:center;padding:.7rem 0;border-bottom:1px solid #edf0f4}.history-item div{display:flex;flex-direction:column}.history-item small,.muted{color:#758094;font-size:.82rem}.closure-panel textarea{margin:.6rem 0;resize:vertical}
-@media(max-width:900px){.workspace-grid,.bottom-grid{grid-template-columns:1fr}.import-grid{grid-template-columns:1fr 1fr}.movement-list div{flex-direction:column;gap:.2rem}.movement-list b{text-align:left}}@media(max-width:600px){.page-heading{flex-direction:column;gap:.5rem}.import-grid{grid-template-columns:1fr}.periods{grid-template-columns:repeat(3,1fr)}.history-item{grid-template-columns:1fr auto}.history-item .p-button{grid-column:1/-1}.panel{padding:1rem}}
+.rescheduling-page { display: grid; gap: 1.25rem; color: var(--text-color-primary); }
+.page-heading { display: flex; justify-content: space-between; gap: 2rem; align-items: flex-start; padding-bottom: .25rem; }
+.page-heading h2 { margin: 0 0 .35rem; font-size: clamp(1.65rem, 3vw, 2.15rem); line-height: 1.15; letter-spacing: -.035em; }
+.page-heading p { max-width: 65ch; color: var(--text-color-secondary); }
+.revision { padding-top: .4rem; color: var(--text-color-secondary); font-size: .8rem; white-space: nowrap; }
+.panel { min-width: 0; background: var(--card-background); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.25rem; }
+.workspace-grid { display: grid; grid-template-columns: minmax(300px, .78fr) minmax(460px, 1.45fr); gap: 1.25rem; align-items: start; }
+.panel-title { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.panel-title > div { display: flex; align-items: center; gap: .65rem; }
+.panel-title > div:first-child > span { display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 7px; background: var(--primary-color-light); color: var(--primary-color-dark); font-size: .8rem; font-weight: 750; }
+.panel-title h3 { margin: 0; font-size: 1rem; }
+.panel-title small { color: var(--text-color-secondary); }
+.analysis-actions { display: flex; align-items: center !important; gap: .45rem; }
+.absence-panel, .absence-panel label { display: flex; flex-direction: column; gap: .8rem; }
+.absence-panel label { gap: .35rem; color: #344054; font-size: .84rem; font-weight: 650; }
+.absence-panel :deep(.p-multiselect) { width: 100%; min-height: 2.55rem; border-color: #cfd6df; }
+.absence-panel :deep(.p-multiselect-label) { padding: .6rem .7rem; }
+select, input[type=date], input[type=file], textarea, .manual-box input { width: 100%; min-height: 2.55rem; border: 1px solid #cfd6df; border-radius: 8px; padding: .6rem .7rem; background: #fff; color: var(--text-color-primary); }
+select:hover, input:hover, textarea:hover { border-color: #aeb8c5; }
+select:focus, input:focus, textarea:focus { border-color: var(--primary-color); }
+input[type=checkbox] { accent-color: var(--primary-color); }
+input[type=file] { padding: .45rem; }
+.period-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; font-size: .84rem; font-weight: 650; }
+.absence-panel .all-day { flex-direction: row; align-items: center; gap: .35rem; font-weight: 600; cursor: pointer; }
+.all-day input { width: auto; min-height: auto; }
+.periods { display: grid; grid-template-columns: repeat(3, 1fr); gap: .45rem; margin-top: .4rem; }
+.periods label { display: flex; flex-direction: row; align-items: center; justify-content: center; border: 1px solid var(--border-color); border-radius: 8px; padding: .55rem !important; font-weight: 550 !important; cursor: pointer; }
+.periods label:hover { border-color: #aeb8c5; background: var(--surface-soft); }
+.periods label.selected { border-color: #93b4f7; background: var(--highlight-bg); color: var(--primary-color-dark); }
+.periods input { width: auto; min-height: auto; }
+.notice { padding: .8rem 1rem; border-radius: 8px; border-left: 3px solid currentColor; }
+.warning { background: #fff8e8; color: #8a5b16; }
+.success { background: #ebf8ef; color: #247147; }
+.empty-state { display: grid; place-items: center; min-height: 230px; padding: 2rem; border-radius: 10px; background: var(--surface-soft); color: var(--text-color-secondary); text-align: center; }
+.task-card { margin-bottom: .8rem; padding: 1rem; border: 1px solid var(--border-color); border-left: 3px solid #93b4f7; border-radius: 10px; }
+.task-card:last-child { margin-bottom: 0; }
+.task-heading { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .8rem; }
+.task-heading div { display: flex; flex-direction: column; gap: .2rem; }
+.task-heading small { color: var(--text-color-secondary); }
+.status, .source-tag { display: inline-flex; align-items: center; width: fit-content; padding: .24rem .52rem; border-radius: 999px; background: #eef1f4; color: #596476; font-size: .74rem; white-space: nowrap; }
+.status.recommended, .status.confirmed, .source-tag.changed { background: #e4f5e9; color: #216a42; }
+.status.unresolved { background: #fdecea; color: #9b3b30; }
+.movement-list { margin: .7rem 0; padding: .7rem .8rem; border-radius: 8px; background: var(--surface-soft); }
+.movement-list div { display: flex; justify-content: space-between; gap: 1rem; padding: .3rem 0; font-size: .82rem; }
+.movement-list b { color: var(--primary-color-dark); text-align: right; }
+.unresolved-copy { margin: 0; color: #9b493d; }
+.effective-panel .inline-date { display: flex; align-items: center; gap: .55rem; color: var(--text-color-secondary); font-size: .82rem; }
+.effective-panel .inline-date input { width: auto; }
+.table-wrap { overflow: auto; border: 1px solid var(--border-color); border-radius: 10px; }
+table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: .86rem; }
+th, td { padding: .72rem .75rem; border-bottom: 1px solid #edf0f3; text-align: left; }
+th { background: var(--surface-soft); color: var(--text-color-secondary); font-size: .78rem; font-weight: 700; white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: #fbfcfe; }
+.empty-row { text-align: center; color: var(--text-color-secondary); }
+.manual-box { margin-top: 1rem; padding: 1rem; border: 1px solid #b9cdf8; border-radius: 10px; background: var(--highlight-bg); }
+.manual-box > div:first-child { display: flex; flex-direction: column; }
+.manual-box small { color: var(--text-color-secondary); }
+.manual-box ol { margin: .65rem 0; padding-left: 1.25rem; }
+.manual-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .6rem; }
+@media (max-width: 900px) {
+  .workspace-grid { grid-template-columns: 1fr; }
+  .movement-list div { flex-direction: column; gap: .2rem; }
+  .movement-list b { text-align: left; }
+}
+
+@media (max-width: 600px) {
+  .page-heading { flex-direction: column; gap: .35rem; }
+  .revision { padding-top: 0; }
+  .panel-title { align-items: flex-start; }
+  .analysis-actions { align-items: flex-end !important; flex-direction: column; }
+  .task-heading { flex-direction: column; }
+  .panel { padding: 1rem; }
+}
 </style>

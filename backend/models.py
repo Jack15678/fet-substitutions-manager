@@ -461,6 +461,7 @@ class TimetableVersion(Base):
     effective_to = Column(Date)
     class_filename = Column(String, nullable=False)
     teacher_filename = Column(String, nullable=False)
+    resolutions_json = Column(Text)
     active = Column(Boolean, default=False, nullable=False)
     created_by = Column(String)
     created_at = Column(DateTime, default=utc_now)

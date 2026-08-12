@@ -12,5 +12,17 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  // ponytail: Vite preview is enough for this single-PC deployment; use nginx/Caddy if traffic grows.
+  preview: {
+    host: '127.0.0.1',
+    port: 8081,
+    allowedHosts: ['jackdomain.dpdns.org'],
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
+      }
+    }
   }
 })

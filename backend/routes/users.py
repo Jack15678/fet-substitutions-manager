@@ -96,21 +96,21 @@ def create_user(
 ):
     role = payload.role or "user"
     if role not in ("super_admin", "admin", "user"):
-        raise HTTPException(status_code=400, detail="Rol invàlid")
+        raise HTTPException(status_code=400, detail="用戶角色無效")
 
     institucio = payload.institucio or current_user.institucio
     disponibles = config.get_institucions_disponibles()
     if institucio not in disponibles:
-        raise HTTPException(status_code=400, detail="Institució inexistent")
+        raise HTTPException(status_code=400, detail="學校不存在")
     if current_user.role != "super_admin":
         if institucio != current_user.institucio:
-            raise HTTPException(status_code=403, detail="No pots crear usuaris d'una altra institució")
+            raise HTTPException(status_code=403, detail="不可建立其他學校的用戶")
         if role == "super_admin":
-            raise HTTPException(status_code=403, detail="No pots crear superadmins")
+            raise HTTPException(status_code=403, detail="不可建立超級管理員")
 
     existing = UserRepository.get_by_username(db, payload.username)
     if existing:
-        raise HTTPException(status_code=409, detail="Ja existeix un usuari amb aquest nom")
+        raise HTTPException(status_code=409, detail="此用戶名稱已存在")
 
     user = UserRepository.create(
         db=db,
@@ -146,21 +146,21 @@ def update_user(
 ):
     user = UserRepository.get_by_id(db, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="Usuari no trobat")
+        raise HTTPException(status_code=404, detail="找不到用戶")
 
     if user.role == "super_admin":
-        raise HTTPException(status_code=403, detail="No es pot editar el superadmin")
+        raise HTTPException(status_code=403, detail="不可編輯超級管理員")
 
     if current_user.role != "super_admin":
         if user.institucio != current_user.institucio:
-            raise HTTPException(status_code=403, detail="No pots editar usuaris d'una altra institució")
+            raise HTTPException(status_code=403, detail="不可編輯其他學校的用戶")
         if payload.institucio and payload.institucio != current_user.institucio:
-            raise HTTPException(status_code=403, detail="No pots canviar la institució")
+            raise HTTPException(status_code=403, detail="不可更改用戶所屬學校")
         if payload.role == "super_admin":
-            raise HTTPException(status_code=403, detail="No pots assignar el rol superadmin")
+            raise HTTPException(status_code=403, detail="不可指派超級管理員角色")
 
     if payload.role and payload.role not in ("super_admin", "admin", "user"):
-        raise HTTPException(status_code=400, detail="Rol invàlid")
+        raise HTTPException(status_code=400, detail="用戶角色無效")
 
     updates = {}
     if payload.username is not None:
@@ -172,7 +172,7 @@ def update_user(
     if payload.institucio is not None:
         disponibles = config.get_institucions_disponibles()
         if payload.institucio not in disponibles:
-            raise HTTPException(status_code=400, detail="Institució inexistent")
+            raise HTTPException(status_code=400, detail="學校不存在")
         updates["institucio"] = payload.institucio
     if payload.password:
         updates["password_hash"] = hash_password(payload.password)
@@ -203,14 +203,14 @@ def deactivate_user(
 ):
     user = UserRepository.get_by_id(db, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="Usuari no trobat")
+        raise HTTPException(status_code=404, detail="找不到用戶")
 
     if user.role == "super_admin":
-        raise HTTPException(status_code=403, detail="No es pot desactivar el superadmin")
+        raise HTTPException(status_code=403, detail="不可停用超級管理員")
 
     if current_user.role != "super_admin":
         if user.institucio != current_user.institucio:
-            raise HTTPException(status_code=403, detail="No pots editar usuaris d'una altra institució")
+            raise HTTPException(status_code=403, detail="不可編輯其他學校的用戶")
 
     user = UserRepository.update(db, user, active=False)
     return {"success": True}
@@ -224,10 +224,10 @@ def delete_user(
 ):
     user = UserRepository.get_by_id(db, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="Usuari no trobat")
+        raise HTTPException(status_code=404, detail="找不到用戶")
 
     if user.role == "super_admin":
-        raise HTTPException(status_code=403, detail="No es pot eliminar el superadmin")
+        raise HTTPException(status_code=403, detail="不可刪除超級管理員")
 
     UserRepository.delete(db, user)
     return {"success": True}
@@ -254,10 +254,10 @@ def update_password(
 ):
     user = UserRepository.get_by_username(db, current_user.username)
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuari no trobat")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="找不到用戶")
 
     if not verify_password(payload.current_password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contrasenya actual incorrecta")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="目前密碼不正確")
 
     user = UserRepository.update(db, user, password_hash=hash_password(payload.new_password))
     return {"success": True}
@@ -272,9 +272,9 @@ def switch_institucio(
 ):
     disponibles = config.get_institucions_disponibles(include_inactive=True)
     if payload.institucio not in disponibles:
-        raise HTTPException(status_code=400, detail="Institució inexistent")
+        raise HTTPException(status_code=400, detail="學校不存在")
     if not config.is_institucio_activa(payload.institucio):
-        raise HTTPException(status_code=403, detail="Institució inactiva")
+        raise HTTPException(status_code=403, detail="學校帳戶已停用")
 
     token = create_access_token({
         "sub": current_user.username,

@@ -1,7 +1,4 @@
-"""
-FastAPI Backend per Gestor de Substitucions
-Versió modularitzada amb routes, schemas i helpers separats
-"""
+"""學校調課管理系統的 FastAPI 後端。"""
 # IMPORTANT: Carregar variables d'entorn ABANS de qualsevol altre import
 from dotenv import load_dotenv
 load_dotenv()
@@ -36,8 +33,8 @@ ensure_default_users()
 # Fora de desenvolupament no es publica ni la documentació interactiva ni
 # l'esquema OpenAPI: donen el mapa complet de l'API a qui no ha entrat.
 app = FastAPI(
-    title="Gestor Substitucions API",
-    description="API REST per gestionar substitucions i vigilàncies",
+    title="學校調課管理系統 API",
+    description="教師缺席、課堂互調及有效課表管理 API",
     version="1.0.0",
     docs_url="/docs" if IS_DEVELOPMENT else None,
     redoc_url="/redoc" if IS_DEVELOPMENT else None,
@@ -113,7 +110,7 @@ async def root():
     """Health check"""
     return {
         "status": "ok",
-        "message": "Gestor Substitucions API",
+        "message": "學校調課管理系統 API",
         "docs": "/docs"
     }
 

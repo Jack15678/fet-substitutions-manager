@@ -276,10 +276,6 @@ def build_import_preview(class_content: bytes, teacher_content: bytes) -> dict:
                 "message": "班別課堂沒有可辨識的教師",
             })
 
-    teacher_keys = {
-        (slot["teacher"], slot["weekday"], slot["period"])
-        for slot in teacher_slots
-    }
     exact_teacher_keys = {
         (slot["teacher"], slot["weekday"], slot["period"], slot["class_code"])
         for slot in teacher_slots
@@ -289,12 +285,6 @@ def build_import_preview(class_content: bytes, teacher_content: bytes) -> dict:
         slots_by_teacher_time.setdefault(
             (slot["teacher"], slot["weekday"], slot["period"]), []
         ).append(slot)
-    mismatch_count = sum(
-        1 for lesson in lessons for teacher in lesson["teachers"]
-        if (teacher, lesson["weekday"], lesson["period"]) not in teacher_keys
-    )
-    if mismatch_count:
-        warnings.append(f"班別表與教師表有 {mismatch_count} 個教師／節次需要人工核對")
     for lesson in lessons:
         for teacher in [name for name in lesson["teachers"] if name in known]:
             exact_key = (teacher, lesson["weekday"], lesson["period"], lesson["class_code"])
@@ -306,6 +296,7 @@ def build_import_preview(class_content: bytes, teacher_content: bytes) -> dict:
             )
             issues.append({
                 "code": "teacher_slot_mismatch", "severity": "review",
+                "resolution_id": f"{lesson['weekday']}:{lesson['period']}:{lesson['class_code']}:{teacher}",
                 "weekday": lesson["weekday"], "period": lesson["period"],
                 "class_code": lesson["class_code"], "subject": lesson["subject"],
                 "teacher": teacher,
@@ -313,6 +304,27 @@ def build_import_preview(class_content: bytes, teacher_content: bytes) -> dict:
                 "teacher_workbook": teacher_value,
                 "message": f"{teacher} 在兩份課表的班別／節次不一致",
             })
+    lessons_by_slot = {
+        (lesson["weekday"], lesson["period"], lesson["class_code"]): lesson
+        for lesson in lessons
+    }
+    for slot in teacher_slots:
+        lesson = lessons_by_slot.get((slot["weekday"], slot["period"], slot["class_code"]))
+        if not lesson or slot["teacher"] in lesson["teachers"]:
+            continue
+        issues.append({
+            "code": "teacher_extra_assignment", "severity": "review",
+            "resolution_id": f"{slot['weekday']}:{slot['period']}:{slot['class_code']}:{slot['teacher']}",
+            "weekday": slot["weekday"], "period": slot["period"],
+            "class_code": slot["class_code"], "subject": lesson["subject"],
+            "teacher": slot["teacher"],
+            "class_workbook": f"{lesson['class_code']} {lesson['subject']}（未列此教師）",
+            "teacher_workbook": f"{slot['class_code']} {slot['subject']}（列有此教師）",
+            "message": f"教師表另列 {slot['teacher']} 教授此課，可加入為共同教師",
+        })
+    review_count = sum(issue["severity"] == "review" for issue in issues)
+    if review_count:
+        warnings.append(f"班別表與教師表有 {review_count} 個課堂安排需要人工核對")
     blocked_count = 0
     for lesson in lessons:
         lesson["movable"] = bool(lesson["teachers"]) and all(
@@ -339,6 +351,68 @@ def build_import_preview(class_content: bytes, teacher_content: bytes) -> dict:
         "warnings": warnings,
         "issues": issues,
     }
+
+
+def apply_import_resolutions(payload: dict, resolutions: dict[str, str]) -> dict:
+    review_issues = [issue for issue in payload["issues"] if issue["severity"] == "review"]
+    for issue in review_issues:
+        issue.setdefault(
+            "resolution_id",
+            f"{issue['weekday']}:{issue['period']}:{issue['class_code']}:{issue['teacher']}",
+        )
+    expected = {issue["resolution_id"] for issue in review_issues}
+    if set(resolutions) != expected or any(value not in {"class", "teacher"} for value in resolutions.values()):
+        raise ValueError("請完成所有人工核對項目")
+
+    lessons = payload["lessons"]
+    teacher_slots = payload["teacher_slots"]
+    chosen_class_slots: dict[tuple[str, int, int], str] = {}
+    for issue in review_issues:
+        choice = resolutions[issue["resolution_id"]]
+        lesson = next(row for row in lessons if (
+            row["weekday"], row["period"], row["class_code"], row["subject"]
+        ) == (issue["weekday"], issue["period"], issue["class_code"], issue["subject"]))
+        if issue["code"] == "teacher_extra_assignment":
+            if choice == "teacher":
+                if issue["teacher"] not in lesson["teachers"]:
+                    lesson["teachers"].append(issue["teacher"])
+            else:
+                teacher_slots[:] = [slot for slot in teacher_slots if not (
+                    slot["teacher"] == issue["teacher"]
+                    and slot["weekday"] == issue["weekday"]
+                    and slot["period"] == issue["period"]
+                    and slot["class_code"] == issue["class_code"]
+                )]
+            issue["resolution"] = choice
+            continue
+        teacher_time = (issue["teacher"], issue["weekday"], issue["period"])
+        if choice == "class":
+            previous_class = chosen_class_slots.get(teacher_time)
+            if previous_class and previous_class != issue["class_code"]:
+                raise ValueError(f"{issue['teacher']} 同一節不可同時採用兩個班別表安排")
+            chosen_class_slots[teacher_time] = issue["class_code"]
+            teacher_slots[:] = [slot for slot in teacher_slots if (
+                slot["teacher"], slot["weekday"], slot["period"]
+            ) != teacher_time]
+            teacher_slots.append({
+                "teacher": issue["teacher"], "weekday": issue["weekday"], "period": issue["period"],
+                "class_code": issue["class_code"], "subject": issue["subject"],
+            })
+        else:
+            lesson["teachers"] = [teacher for teacher in lesson["teachers"] if teacher != issue["teacher"]]
+        issue["resolution"] = choice
+
+    exact_teacher_keys = {
+        (slot["teacher"], slot["weekday"], slot["period"], slot["class_code"])
+        for slot in teacher_slots
+    }
+    for lesson in lessons:
+        lesson["movable"] = bool(lesson["teachers"]) and all(
+            (teacher, lesson["weekday"], lesson["period"], lesson["class_code"]) in exact_teacher_keys
+            for teacher in lesson["teachers"]
+        )
+    payload["summary"]["blocked_lessons"] = sum(not lesson["movable"] for lesson in lessons)
+    return payload
 
 
 def get_schedule_revision(db: Session) -> int:
@@ -631,21 +705,41 @@ def _resources(candidate: dict) -> set[tuple]:
 
 
 def choose_global(option_groups: list[list[dict]]) -> dict[int, dict]:
-    """Small exhaustive search: maximize solved lessons, then finish sooner/move less."""
+    """Maximize solved lessons, then finish sooner and move fewer lessons."""
     order = sorted(range(len(option_groups)), key=lambda index: (len(option_groups[index]) or 999, index))
-    best_score = (-1, -10**9, -10**9)
+    used: set[tuple] = set()
     best: dict[int, dict] = {}
+    for index in order:
+        for candidate in option_groups[index]:
+            candidate_resources = _resources(candidate)
+            if candidate_resources.isdisjoint(used):
+                best[index] = candidate
+                used |= candidate_resources
+                break
+
+    def score(chosen: dict[int, dict]) -> tuple[int, int, int]:
+        return (
+            len(chosen),
+            -sum(candidate["day_distance"] for candidate in chosen.values()),
+            -sum(candidate["moved_lessons"] for candidate in chosen.values()),
+        )
+
+    best_score = score(best)
+    visits = 0
+    # ponytail: bounded exact search; raise the ceiling or use CP-SAT only if real batches outgrow it.
+    max_visits = 50_000
 
     def visit(position: int, used: set[tuple], chosen: dict[int, dict]):
-        nonlocal best_score, best
+        nonlocal best_score, best, visits
+        if visits >= max_visits:
+            return
+        visits += 1
+        if len(chosen) + len(order) - position < best_score[0]:
+            return
         if position == len(order):
-            score = (
-                len(chosen),
-                -sum(candidate["day_distance"] for candidate in chosen.values()),
-                -sum(candidate["moved_lessons"] for candidate in chosen.values()),
-            )
-            if score > best_score:
-                best_score, best = score, dict(chosen)
+            chosen_score = score(chosen)
+            if chosen_score > best_score:
+                best_score, best = chosen_score, dict(chosen)
             return
         index = order[position]
         for candidate in option_groups[index]:
@@ -660,22 +754,35 @@ def choose_global(option_groups: list[list[dict]]) -> dict[int, dict]:
     return best
 
 
-def analyze_absence(db: Session, absence: AbsenceCase) -> dict:
-    dates = teaching_dates(db, absence.data, 5)
-    occurrences = effective_occurrences(db, absence.data, dates[-1])
-    absences = absence_keys(db, absence.data, dates[-1])
+def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
+    """Analyse one date's absence cases together so recommendations cannot conflict."""
+    if not absence_cases:
+        raise ValueError("至少需要一個缺席個案")
+    start = absence_cases[0].data
+    if any(absence.data != start for absence in absence_cases):
+        raise ValueError("同一批缺席必須屬於同一日期")
+
+    dates = teaching_dates(db, start, 5)
+    occurrences = effective_occurrences(db, start, dates[-1])
+    absences = absence_keys(db, start, dates[-1])
     closures = {row.data for row in db.query(SchoolClosure).all()}
-    periods = {int(value) for value in json.loads(absence.periods_json or "[]")}
-    targets = [
-        occ for occ in occurrences
-        if occ["date"] == absence.data and occ["period"] in periods
-        and absence.professor_id in occ["teachers"] and occ["lesson_id"] is not None
-    ]
-    targets.sort(key=lambda occ: occ["period"])
+    targets = []
+    for absence in absence_cases:
+        periods = {int(value) for value in json.loads(absence.periods_json or "[]")}
+        for occurrence in occurrences:
+            if (occurrence["date"] == absence.data and occurrence["period"] in periods
+                    and absence.professor_id in occurrence["teachers"]
+                    and occurrence["lesson_id"] is not None):
+                targets.append({
+                    **occurrence,
+                    "_absence_case_id": absence.id,
+                    "_absent_professor_id": absence.professor_id,
+                })
+    targets.sort(key=lambda occurrence: (occurrence["period"], occurrence["_absence_case_id"]))
 
     subjects_by_teacher: dict[int, set[str]] = {}
     classes_by_teacher: dict[int, set[str]] = {}
-    version = version_for_date(db, absence.data)
+    version = version_for_date(db, start)
     teacher_ids = professor_ids_for_version(db, version) if version else set()
     all_professors = {
         row.id: row.nom for row in db.query(Professor).filter(Professor.id.in_(teacher_ids)).all()
@@ -688,6 +795,7 @@ def analyze_absence(db: Session, absence: AbsenceCase) -> dict:
 
     option_groups: list[list[dict]] = []
     for target in targets:
+        absent_professor_id = target["_absent_professor_id"]
         same_class = [
             occ for occ in occurrences
             if occ["class_code"] == target["class_code"] and occ["lesson_id"] is not None
@@ -707,8 +815,8 @@ def analyze_absence(db: Session, absence: AbsenceCase) -> dict:
                 ]
                 ok, _ = validate_move_legs(legs, occurrences, absences, closures)
                 if ok:
-                    label = "同日直接互調" if day == absence.data else f"與 {day.isoformat()} 直接互調"
-                    direct_for_day.append(_candidate("direct_swap", target, legs, absence.data, label))
+                    label = "同日直接互調" if day == start else f"與 {day.isoformat()} 直接互調"
+                    direct_for_day.append(_candidate("direct_swap", target, legs, start, label))
             candidates.extend(direct_for_day)
 
             cycle_for_day: list[dict] = []
@@ -725,8 +833,8 @@ def analyze_absence(db: Session, absence: AbsenceCase) -> dict:
                         ]
                         ok, _ = validate_move_legs(legs, occurrences, absences, closures)
                         if ok:
-                            label = "同班三堂連鎖互調" if day == absence.data else f"最遲於 {day.isoformat()} 完成三堂連鎖"
-                            cycle_for_day.append(_candidate("three_cycle", target, legs, absence.data, label))
+                            label = "同班三堂連鎖互調" if day == start else f"最遲於 {day.isoformat()} 完成三堂連鎖"
+                            cycle_for_day.append(_candidate("three_cycle", target, legs, start, label))
             candidates.extend(cycle_for_day)
 
         candidates.sort(key=lambda item: (
@@ -737,7 +845,7 @@ def analyze_absence(db: Session, absence: AbsenceCase) -> dict:
         # Emergency only when no valid swap exists: same subject, but not a teacher of this class.
         if not candidates and not target["locked"]:
             for teacher_id, teacher_name in sorted(all_professors.items(), key=lambda item: item[1]):
-                if teacher_id == absence.professor_id:
+                if teacher_id == absent_professor_id:
                     continue
                 if normalize_subject(target["subject"]) not in subjects_by_teacher.get(teacher_id, set()):
                     continue
@@ -755,11 +863,11 @@ def analyze_absence(db: Session, absence: AbsenceCase) -> dict:
                 if busy:
                     continue
                 leg = _leg(target, target["date"], target["period"])
-                leg["replaced_teacher_id"] = absence.professor_id
+                leg["replaced_teacher_id"] = absent_professor_id
                 leg["replacement_teacher_id"] = teacher_id
                 leg["replacement_teacher_name"] = teacher_name
                 candidates.append(_candidate(
-                    "emergency_cover", target, [leg], absence.data,
+                    "emergency_cover", target, [leg], start,
                     f"迫不得已：由同科的 {teacher_name} 原節代課"
                 ))
 
@@ -773,13 +881,16 @@ def analyze_absence(db: Session, absence: AbsenceCase) -> dict:
         if recommended and all(item["id"] != recommended["id"] for item in alternatives):
             alternatives = [recommended, *alternatives[:4]]
         tasks.append({
+            "task_key": f"{target['_absence_case_id']}:{target['occurrence_id']}",
+            "absence_case_id": target["_absence_case_id"],
             "target": serialize_occurrence(target, all_professors),
             "recommended": serialize_candidate(recommended, all_professors),
             "alternatives": [serialize_candidate(candidate, all_professors) for candidate in alternatives],
             "status": "recommended" if index in selected else "unresolved",
         })
     return {
-        "absence_case_id": absence.id,
+        "absence_case_id": absence_cases[0].id if len(absence_cases) == 1 else None,
+        "absence_case_ids": [absence.id for absence in absence_cases],
         "revision": get_schedule_revision(db),
         "search_dates": [day.isoformat() for day in dates],
         "tasks": tasks,
@@ -788,9 +899,13 @@ def analyze_absence(db: Session, absence: AbsenceCase) -> dict:
     }
 
 
+def analyze_absence(db: Session, absence: AbsenceCase) -> dict:
+    return analyze_absences(db, [absence])
+
+
 def serialize_occurrence(occurrence: dict, professor_names: dict[int, str]) -> dict:
     return {
-        **{key: value for key, value in occurrence.items() if key != "date"},
+        **{key: value for key, value in occurrence.items() if key != "date" and not key.startswith("_")},
         "date": occurrence["date"].isoformat(),
         "teacher_names": [professor_names.get(int(value), str(value)) for value in occurrence["teachers"]],
     }
@@ -808,8 +923,14 @@ def serialize_candidate(candidate: dict | None, professor_names: dict[int, str])
     return result
 
 
-def candidate_from_analysis(analysis: dict, candidate_id: str) -> dict | None:
+def candidate_from_analysis(
+    analysis: dict,
+    candidate_id: str,
+    absence_case_id: int | None = None,
+) -> dict | None:
     for task in analysis["tasks"]:
+        if absence_case_id is not None and task.get("absence_case_id") != absence_case_id:
+            continue
         candidates = [task.get("recommended"), *task.get("alternatives", [])]
         for candidate in candidates:
             if candidate and candidate["id"] == candidate_id:

@@ -89,7 +89,7 @@ async def curs_per_data(data: str, db: Session = Depends(get_db),
     try:
         date.fromisoformat(data)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Format de data invàlid. Usa YYYY-MM-DD")
+        raise HTTPException(status_code=400, detail="日期格式無效，請使用 YYYY-MM-DD")
     c = CursRepository.get_for_date(db, data)
     return _serialize(c) if c else None
 
@@ -106,7 +106,7 @@ async def editar_curs(curs_id: int, payload: CursInput, db: Session = Depends(ge
                       current_user=Depends(require_admin)):
     c = CursRepository.update(db, curs_id, payload.nom, payload.data_inici)
     if not c:
-        raise HTTPException(status_code=404, detail="Curs no trobat")
+        raise HTTPException(status_code=404, detail="找不到學年")
     return _serialize(c)
 
 
@@ -116,5 +116,5 @@ async def eliminar_curs(curs_id: int, db: Session = Depends(get_db),
     """Elimina només la metadada del curs; no toca substitucions ni vigilàncies."""
     ok = CursRepository.delete(db, curs_id)
     if not ok:
-        raise HTTPException(status_code=404, detail="Curs no trobat")
-    return {"success": True, "message": "Curs eliminat"}
+        raise HTTPException(status_code=404, detail="找不到學年")
+    return {"success": True, "message": "學年已刪除"}

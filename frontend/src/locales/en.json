@@ -915,7 +915,7 @@
           },
           "language": {
             "title": "Language",
-            "body": "Catalan, Spanish, or English"
+            "body": "Traditional Chinese (Hong Kong) or English"
           },
           "xml": {
             "title": "XML path",
@@ -1707,7 +1707,7 @@
     "noAdjustment": "No rescheduling arrangement has been confirmed.",
     "previous": "Previous",
     "next": "Next",
-    "page": "Page {page} of {pages}, {total} items",
+    "page": "Page {page} of {pages}, {total} items", "resume": "Continue handling",
     "statuses": { "open": "Pending", "resolved": "Resolved", "cancelled": "Cancelled", "confirmed": "Confirmed", "reverted": "Reverted" },
     "editReason": "Edit reason", "reason": "Reason: {reason}", "reasonPrompt": "Enter the adjustment reason (optional)", "editRemovesAdjustments": "Editing this absence invalidates and deletes its existing adjustments. Continue?", "deleteAbsenceConfirm": "Permanently delete this absence and all its adjustments?", "deleteAdjustmentConfirm": "Permanently delete this adjustment and restore the base timetable?",
     "kinds": { "direct_swap": "Direct swap", "three_cycle": "Three-lesson cycle", "emergency_cover": "Emergency subject cover", "manual_swap": "Manual swap", "manual_three_cycle": "Manual three-lesson cycle" }
@@ -1726,7 +1726,7 @@
     "revision": "Timetable revision {revision}",
     "noTimetable": "No timetable is in effect on the selected date. Ask an administrator to use Timetable import.",
     "steps": { "absence": "Enter absence", "recommendations": "Review and confirm suggestions", "effective": "Effective timetable" },
-    "teacher": "Absent teacher", "date": "Date", "absentPeriods": "Absent periods", "analyzeAll": "Analyse all lessons",
+    "teacher": "Absent teacher", "teachers": "Absent teachers (multiple)", "selectTeachers": "Select one or more teachers", "date": "Date", "absentPeriods": "Absent periods", "allDay": "Absent all day", "analyzeAll": "Analyse all lessons", "checkingDate": "Checking date…", "invalidDate": "Invalid date",
     "counts": "Resolved {resolved} · Unresolved {unresolved}", "cancelAbsence": "Cancel this absence",
     "analysisEmpty": "Select a teacher, date and periods to analyse all affected lessons together.", "noTasks": "There are no lessons left to handle in the selected periods.",
     "originalTeacher": "Original teacher: {teachers}", "recommendable": "Can be resolved", "unresolved": "Unresolved", "candidates": "Candidate arrangements",
@@ -1742,11 +1742,11 @@
     "eyebrow": "Administrator",
     "title": "Timetable import centre",
     "description": "Check both workbooks first. Mismatched lessons are listed and locked.",
-    "baseTitle": "Import base timetable", "classFile": "Class timetable (.xls)", "teacherFile": "Teacher timetable (.xlsx, without duty sheet)", "effectiveFrom": "Start date (required)", "effectiveTo": "End date (required)", "check": "Check timetable",
+    "baseTitle": "Import base timetable", "classFile": "Class timetable (.xls)", "teacherFile": "Teacher timetable (.xlsx, without duty sheet)", "effectiveFrom": "Start date (required)", "effectiveTo": "End date (required)", "check": "Compare timetable differences",
     "currentFiles": "Date {date} uses: {classFile} + {teacherFile}", "noCurrent": "No timetable is currently in effect.",
     "classes": "Classes", "teachers": "Teachers", "lessons": "Class lessons", "blocked": "Locked lessons", "resultTitle": "Validation result",
-    "resultHint": "Correct the original Excel files and check again. The website does not create a third timetable.", "activate": "Activate", "errorsBlock": "Some teacher data cannot be identified. Correct the Excel files before activation.",
-    "severity": "Severity", "weekdayPeriod": "Day / period", "classWorkbook": "Class workbook", "teacherWorkbook": "Teacher workbook", "review": "Review",
+    "resultHint": "Confirm decisions individually or in batches. The timetable can only be activated after every review is complete.", "activate": "Activate", "errorsBlock": "Some teacher data cannot be identified. Correct the Excel files before activation.", "reviewsBlock": "{count} review items remain. The timetable is not yet active.", "reviewsProgress": "{confirmed} of {total} confirmed; {remaining} remain and the timetable is not yet active.",
+    "severity": "Severity", "weekdayPeriod": "Day / period", "classWorkbook": "Class workbook", "teacherWorkbook": "Teacher workbook", "review": "Review", "decision": "Administrator decision", "selectReview": "Select", "selectAllReviews": "Select all review items", "clearSelection": "Clear selection", "selectedReviews": "{count} selected", "bulkUseClassWorkbook": "Use class workbook for selected", "bulkUseTeacherWorkbook": "Use teacher workbook for selected", "bulkIgnoreExtraTeacher": "Ignore selected extra teachers", "bulkAddCoTeacher": "Add selected co-teachers", "bulkLeftDecision": "Apply left decisions", "bulkRightDecision": "Apply right decisions", "confirmSelected": "Confirm selected decisions", "confirmThisDecision": "Confirm item", "confirmedDecision": "Confirmed", "progressSaved": "{confirmed} of {total} confirmed; {remaining} remain and the timetable is not yet active.", "allDecisionsConfirmed": "All review decisions are confirmed. The timetable can now be activated.", "useClassWorkbook": "Use class workbook", "useTeacherWorkbook": "Use teacher workbook", "ignoreExtraTeacher": "Ignore extra teacher", "addCoTeacher": "Add as co-teacher", "fixSource": "Correct Excel",
     "perfectMatch": "Both timetables match and can be activated.", "activated": "The timetable will apply from {start} to {end}.",
     "versionsTitle": "Uploaded timetable versions", "versionsHint": "Date ranges remain editable but must retain every linked record. Used versions cannot be deleted. Import a new version to change lesson content.",
     "startDate": "Starts", "endDate": "Ends", "ongoing": "Ongoing", "files": "Source files", "scale": "Timetable data", "linkedRecords": "Linked records", "status": "Status", "actions": "Actions",

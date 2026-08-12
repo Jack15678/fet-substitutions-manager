@@ -3,7 +3,7 @@ from datetime import date
 import json
 import math
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
@@ -26,7 +26,8 @@ from models import (
     TimetableVersion,
 )
 from rescheduling_service import (
-    analyze_absence,
+    analyze_absences,
+    apply_import_resolutions,
     build_import_preview,
     bump_schedule_revision,
     candidate_from_analysis,
@@ -47,6 +48,7 @@ MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 class ActivateTimetableRequest(BaseModel):
     effective_from: date
     effective_to: date
+    resolutions: dict[str, Literal["class", "teacher"]] = Field(default_factory=dict)
 
 
 class UpdateTimetableRequest(BaseModel):
@@ -54,10 +56,24 @@ class UpdateTimetableRequest(BaseModel):
     effective_to: date
 
 
+class SaveImportResolutionsRequest(BaseModel):
+    resolutions: dict[str, Literal["class", "teacher"]] = Field(min_length=1)
+
+
 class AbsenceCreateRequest(BaseModel):
     professor_id: int
     data: date
     periods: list[int] = Field(min_length=1)
+
+
+class AbsenceBatchCreateRequest(BaseModel):
+    professor_ids: list[int] = Field(min_length=1)
+    data: date
+    periods: list[int] = Field(min_length=1)
+
+
+class AbsenceBatchCancelRequest(BaseModel):
+    absence_case_ids: list[int] = Field(min_length=1)
 
 
 class ConfirmRequest(BaseModel):
@@ -220,6 +236,7 @@ def list_timetable_versions(db: Session = Depends(get_db)):
             "effective_to": version.effective_to.isoformat() if version.effective_to else None,
             "class_filename": version.class_filename,
             "teacher_filename": version.teacher_filename,
+            "resolution_count": len(json.loads(version.resolutions_json or "{}")),
             "lessons": db.query(TimetableLesson).filter_by(version_id=version.id).count(),
             "teachers": (db.query(func.count(func.distinct(TimetableTeacherSlot.professor_id)))
                          .filter(TimetableTeacherSlot.version_id == version.id).scalar() or 0),
@@ -333,6 +350,13 @@ def activate_import(
     if not preview:
         raise HTTPException(404, "找不到匯入預覽，請重新選擇檔案")
     payload = json.loads(preview.payload)
+    if any(issue["severity"] == "error" for issue in payload["issues"]):
+        raise HTTPException(409, "仍有必須在原 Excel 修正的錯誤")
+    resolutions = payload.get("saved_resolutions", request.resolutions)
+    try:
+        payload = apply_import_resolutions(payload, resolutions)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     if request.effective_from > request.effective_to:
         raise HTTPException(400, "結束日期不可早於開始日期")
     if _overlapping_version(db, request.effective_from, request.effective_to):
@@ -344,6 +368,7 @@ def activate_import(
         effective_to=request.effective_to,
         class_filename=preview.class_filename,
         teacher_filename=preview.teacher_filename,
+        resolutions_json=json.dumps(resolutions, ensure_ascii=False),
         active=False,
         created_by=current_user.username,
     )
@@ -388,10 +413,42 @@ def activate_import(
     db.delete(preview)
     _mark_latest_version_active(db)
     revision = bump_schedule_revision(db)
-    _audit(db, "activate_import", "timetable_version", version.id, current_user.username, payload["summary"])
+    _audit(db, "activate_import", "timetable_version", version.id, current_user.username,
+           {**payload["summary"], "resolutions": resolutions})
     db.commit()
     return {"version_id": version.id, "revision": revision, **payload["summary"],
-            "warnings": payload["warnings"], "issues": payload.get("issues", [])}
+             "warnings": payload["warnings"], "issues": payload.get("issues", [])}
+
+
+@router.put("/api/timetables/import/{preview_id}/resolutions")
+def save_import_resolutions(
+    preview_id: str,
+    request: SaveImportResolutionsRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    preview = db.get(TimetableImportPreview, preview_id)
+    if not preview:
+        raise HTTPException(404, "找不到匯入預覽，請重新選擇檔案")
+    payload = json.loads(preview.payload)
+    review_ids = {
+        issue["resolution_id"]
+        for issue in payload["issues"]
+        if issue["severity"] == "review"
+    }
+    if not set(request.resolutions).issubset(review_ids):
+        raise HTTPException(400, "包含無效的核對項目")
+    saved = {**payload.get("saved_resolutions", {}), **request.resolutions}
+    payload["saved_resolutions"] = saved
+    preview.payload = json.dumps(payload, ensure_ascii=False)
+    _audit(db, "save_resolutions", "timetable_preview", preview_id, current_user.username,
+           {"confirmed": len(saved), "remaining": len(review_ids - set(saved))})
+    db.commit()
+    return {
+        "saved_resolutions": saved,
+        "confirmed_count": len(saved),
+        "remaining_count": len(review_ids - set(saved)),
+    }
 
 
 @router.get("/api/timetables/current")
@@ -426,7 +483,12 @@ def list_teachers(data: Optional[date] = None, db: Session = Depends(get_db)):
                 db.query(Professor).filter(Professor.id.in_(teacher_ids)).order_by(Professor.nom).all()]
 
 
-def _validate_absence_request(db: Session, request: AbsenceCreateRequest, exclude_id: int | None = None):
+def _validate_absence_request(
+    db: Session,
+    request: AbsenceCreateRequest,
+    exclude_id: int | None = None,
+    allow_existing: bool = False,
+):
     version = version_for_date(db, request.data)
     if not version:
         raise HTTPException(400, "該日期沒有已生效的課表版本")
@@ -443,9 +505,15 @@ def _validate_absence_request(db: Session, request: AbsenceCreateRequest, exclud
                          AbsenceCase.status != "cancelled"))
     if exclude_id is not None:
         duplicate = duplicate.filter(AbsenceCase.id != exclude_id)
-    if duplicate.first():
+    if duplicate.first() and not allow_existing:
         raise HTTPException(409, "該教師當日已有缺席紀錄")
     return professor, periods
+
+
+def _active_absences_for_date(db: Session, target_date: date) -> list[AbsenceCase]:
+    return (db.query(AbsenceCase)
+            .filter(AbsenceCase.data == target_date, AbsenceCase.status != "cancelled")
+            .order_by(AbsenceCase.id).all())
 
 
 def _delete_adjustment_rows(db: Session, adjustment: ScheduleAdjustment) -> None:
@@ -475,6 +543,77 @@ def create_absence(
     return {"id": absence.id, "professor_id": professor.id, "teacher_name": professor.nom,
             "date": absence.data.isoformat(), "periods": periods, "status": absence.status,
             "revision": revision}
+
+
+@router.post("/api/absence-cases/batch")
+def create_absences_batch(
+    request: AbsenceBatchCreateRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    professor_ids = list(dict.fromkeys(request.professor_ids))
+    validated = [
+        _validate_absence_request(
+            db,
+            AbsenceCreateRequest(professor_id=professor_id, data=request.data, periods=request.periods),
+            allow_existing=True,
+        )
+        for professor_id in professor_ids
+    ]
+    selected_cases: list[AbsenceCase] = []
+    created_ids: list[int] = []
+    for professor, periods in validated:
+        existing = (db.query(AbsenceCase)
+                    .filter(AbsenceCase.professor_id == professor.id,
+                            AbsenceCase.data == request.data,
+                            AbsenceCase.status != "cancelled").first())
+        if existing:
+            selected_cases.append(existing)
+            continue
+        absence = AbsenceCase(
+            professor_id=professor.id,
+            data=request.data,
+            periods_json=json.dumps(periods),
+            created_by=current_user.username,
+        )
+        db.add(absence)
+        db.flush()
+        selected_cases.append(absence)
+        created_ids.append(absence.id)
+        _audit(db, "create", "absence_case", absence.id, current_user.username,
+               {"teacher": professor.nom, "date": request.data.isoformat(), "periods": periods})
+    if created_ids:
+        bump_schedule_revision(db)
+        db.commit()
+    analysis = analyze_absences(db, _active_absences_for_date(db, request.data))
+    return {
+        **analysis,
+        "batch_absence_case_ids": [absence.id for absence in selected_cases],
+        "created_absence_case_ids": created_ids,
+    }
+
+
+@router.post("/api/absence-cases/cancel-batch")
+def cancel_absences_batch(
+    request: AbsenceBatchCancelRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    absence_ids = list(dict.fromkeys(request.absence_case_ids))
+    absences = [db.get(AbsenceCase, absence_id) for absence_id in absence_ids]
+    if any(absence is None or absence.status == "cancelled" for absence in absences):
+        raise HTTPException(404, "找不到有效的缺席紀錄")
+    locked = (db.query(ScheduleAdjustment)
+              .filter(ScheduleAdjustment.absence_case_id.in_(absence_ids),
+                      ScheduleAdjustment.status == "confirmed").count())
+    if locked:
+        raise HTTPException(409, "已有鎖定的調課，請先撤銷調課")
+    for absence in absences:
+        absence.status = "cancelled"
+        _audit(db, "cancel", "absence_case", absence.id, current_user.username)
+    revision = bump_schedule_revision(db)
+    db.commit()
+    return {"success": True, "revision": revision}
 
 
 @router.put("/api/absence-cases/{absence_id}")
@@ -545,7 +684,7 @@ def analyze(absence_id: int, db: Session = Depends(get_db)):
     absence = db.get(AbsenceCase, absence_id)
     if not absence or absence.status == "cancelled":
         raise HTTPException(404, "找不到有效的缺席紀錄")
-    return analyze_absence(db, absence)
+    return analyze_absences(db, _active_absences_for_date(db, absence.data))
 
 
 @router.delete("/api/absence-cases/{absence_id}")
@@ -608,19 +747,22 @@ def confirm_adjustment(
     absence = db.get(AbsenceCase, request.absence_case_id)
     if not absence or absence.status == "cancelled":
         raise HTTPException(404, "找不到有效的缺席紀錄")
-    analysis = analyze_absence(db, absence)
-    candidate = candidate_from_analysis(analysis, request.candidate_id)
+    active_absences = _active_absences_for_date(db, absence.data)
+    analysis = analyze_absences(db, active_absences)
+    candidate = candidate_from_analysis(analysis, request.candidate_id, absence.id)
     if not candidate:
         raise HTTPException(409, "這個建議已失效，請重新分析")
     adjustment = _save_candidate(db, candidate, absence.id, current_user.username, request.reason)
     db.flush()
-    remaining = analyze_absence(db, absence)
-    absence.status = "resolved" if not remaining["tasks"] else "open"
     revision = bump_schedule_revision(db)
+    remaining = analyze_absences(db, active_absences)
+    pending_case_ids = {task["absence_case_id"] for task in remaining["tasks"]}
+    for active_absence in active_absences:
+        active_absence.status = "open" if active_absence.id in pending_case_ids else "resolved"
     _audit(db, "confirm", "schedule_adjustment", adjustment.id, current_user.username,
            {"candidate_id": request.candidate_id, "kind": candidate["kind"]})
     db.commit()
-    return {**_serialize_adjustment(db, adjustment), "revision": revision}
+    return {**_serialize_adjustment(db, adjustment), "revision": revision, "analysis": remaining}
 
 
 @router.post("/api/adjustments/manual")

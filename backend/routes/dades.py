@@ -54,7 +54,7 @@ def executar_purga(req: ExecutarPurgaRequest,
     if not req.confirmar:
         raise HTTPException(
             status_code=400,
-            detail="Cal confirmar l'operació (confirmar=true). És irreversible."
+            detail="必須確認此操作（confirmar=true）；操作完成後無法復原。"
         )
     try:
         return gestio_dades.executar_purga(

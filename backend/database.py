@@ -97,13 +97,16 @@ def _ensure_substitucions_aula_column(engine):
         pass
 
 
-def _ensure_timetable_version_end_column(engine):
-    """Add the explicit end date to databases created before timetable ranges."""
+def _ensure_timetable_version_columns(engine):
+    """Add timetable metadata introduced after the first rescheduling release."""
     try:
         with engine.begin() as conn:
             columns = conn.exec_driver_sql("PRAGMA table_info(timetable_versions);").fetchall()
-            if columns and "effective_to" not in {column[1] for column in columns}:
+            names = {column[1] for column in columns}
+            if columns and "effective_to" not in names:
                 conn.exec_driver_sql("ALTER TABLE timetable_versions ADD COLUMN effective_to DATE")
+            if columns and "resolutions_json" not in names:
+                conn.exec_driver_sql("ALTER TABLE timetable_versions ADD COLUMN resolutions_json TEXT")
     except Exception:
         pass
 
@@ -116,7 +119,7 @@ def get_engine_for_institucio(institucio: str):
     engine = _create_engine(db_path)
     create_data_tables(engine)
     _ensure_substitucions_aula_column(engine)
-    _ensure_timetable_version_end_column(engine)
+    _ensure_timetable_version_columns(engine)
     return engine
 
 

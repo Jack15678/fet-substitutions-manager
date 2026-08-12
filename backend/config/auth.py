@@ -26,9 +26,8 @@ def _comprova_valor_de_mostra(nom: str, valor: str | None) -> None:
     if not valor or IS_DEVELOPMENT or valor not in _VALORS_DE_MOSTRA:
         return
     raise SystemExit(
-        f"\nERROR: {nom} té el valor de mostra del backend/.env.example, que és\n"
-        f"públic. Posa-hi un valor propi, o bé ENVIRONMENT=development si això\n"
-        f"és una prova en local.\n"
+        f"\n錯誤：{nom} 仍使用 backend/.env.example 內的公開範例值。\n"
+        f"請改用自訂值；若只是在本機測試，請設定 ENVIRONMENT=development。\n"
     )
 
 
@@ -40,9 +39,9 @@ def _comprova_valor_de_mostra(nom: str, valor: str | None) -> None:
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise SystemExit(
-        "\nERROR: la variable SECRET_KEY no està definida.\n"
-        "Genera'n una amb:  openssl rand -hex 32\n"
-        "i posa-la al fitxer .env abans d'arrencar.\n"
+        "\n錯誤：尚未設定 SECRET_KEY。\n"
+        "請執行 openssl rand -hex 32 產生密鑰，\n"
+        "並在啟動前把密鑰寫入 .env。\n"
     )
 _comprova_valor_de_mostra("SECRET_KEY", SECRET_KEY)
 

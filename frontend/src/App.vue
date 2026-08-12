@@ -11,7 +11,7 @@
             <option value="en">English</option>
           </select>
         </div>
-        <h1 class="login-title">{{ $t('app.login.title') }}</h1>
+        <h1 class="login-title"><i class="pi pi-calendar" aria-hidden="true"></i>{{ $t('app.login.title') }}</h1>
         <p class="login-subtitle">{{ $t('app.login.subtitle') }}</p>
 
         <form class="login-form" @submit.prevent="ferLogin">
@@ -79,7 +79,7 @@
         </div>
 
         <div class="navbar-center">
-          <h1 class="logo">{{ $t('app.title') }}</h1>
+          <h1 class="logo"><i class="pi pi-calendar" aria-hidden="true"></i>{{ $t('app.title') }}</h1>
           <div class="config-info" v-if="cursos.length">
             <span
               v-if="cursos.length"
@@ -87,7 +87,7 @@
               :class="{ 'curs-indicador--cap': !cursDeLaData }"
               v-tooltip.bottom="$t('app.nav.course')"
             >
-              📅 {{ cursDeLaData ? cursDeLaData.nom : $t('app.nav.courseNone') }}
+              {{ cursDeLaData ? cursDeLaData.nom : $t('app.nav.courseNone') }}
             </span>
           </div>
         </div>
@@ -124,7 +124,7 @@
 
       <header v-else class="mobile-header">
         <div class="mobile-header-top">
-          <h1 class="logo">{{ $t('app.title') }}</h1>
+          <h1 class="logo"><i class="pi pi-calendar" aria-hidden="true"></i>{{ $t('app.title') }}</h1>
           <div class="mobile-header-actions">
             <select v-model="currentLocale" :aria-label="$t('app.nav.language')">
               <option value="zh-HK">繁中</option>
@@ -178,12 +178,13 @@
       <!-- Contingut -->
       <main class="main-content">
         <ReschedulingView
-          v-if="paginaActiva === 'workbench'"
+          v-show="paginaActiva === 'workbench'"
+          ref="reschedulingView"
           :dataGlobal="dataSeleccionada"
           :isAdmin="isAdmin"
         />
-        <RecordsView v-else-if="paginaActiva === 'records'" :isAdmin="isAdmin" />
-        <TimetableImportView v-else-if="paginaActiva === 'import' && isAdmin" />
+        <RecordsView v-if="paginaActiva === 'records'" :isAdmin="isAdmin" @resume-absence="resumeAbsence" />
+        <TimetableImportView v-if="isAdmin" v-show="paginaActiva === 'import'" />
       </main>
 
       <footer class="footer">
@@ -262,6 +263,7 @@ const currentLocale = computed({
 
 const autenticat = ref(false)
 const paginaActiva = ref('workbench')
+const reschedulingView = ref(null)
 const hongKongToday = () => {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en', {
     timeZone: 'Asia/Hong_Kong', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -451,18 +453,29 @@ const diaSeguent = () => {
   novaData.setDate(novaData.getDate() + 1)
   dataSeleccionada.value = novaData
 }
+
+const resumeAbsence = (record) => {
+  dataSeleccionada.value = new Date(`${record.date}T12:00:00`)
+  paginaActiva.value = 'workbench'
+  reschedulingView.value?.resumeAbsence(record)
+}
 </script>
 
 <style>
 :root {
-  --primary-color: #667eea;
-  --primary-color-dark: #5a6ed1; /* Slightly darker for gradient end or hover */
-  --primary-color-light: #8e9ffc; /* Lighter for accents */
-  --text-color-primary: #1f2937;
-  --text-color-secondary: #6b7280;
-  --background-light: #f5f5f5;
-  --card-background: white;
-  --border-color: #e5e7eb;
+  --primary-color: #2563eb;
+  --primary-color-dark: #1d4ed8;
+  --primary-color-light: #dbeafe;
+  --primary-color-text: #ffffff;
+  --highlight-bg: #eff6ff;
+  --highlight-text-color: #1d4ed8;
+  --text-color-primary: #172033;
+  --text-color-secondary: #647085;
+  --background-light: #f4f6f9;
+  --card-background: #ffffff;
+  --border-color: #dfe4ea;
+  --surface-soft: #f8fafc;
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.18);
 }
 
 * {
@@ -472,10 +485,57 @@ const diaSeguent = () => {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
   background: var(--background-light);
   color: var(--text-color-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
+
+html[lang="zh-HK"] body {
+  font-family: "Songti TC", "STSong", "SimSun", "NSimSun", "PMingLiU", "MingLiU", serif;
+}
+
+.p-button.progress-fill-button {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.p-button.progress-fill-button::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: rgba(255, 255, 255, 0.24);
+  pointer-events: none;
+}
+
+.p-button.progress-fill-button.is-progressing::before {
+  animation: estimated-button-progress 20s cubic-bezier(.12, .72, .18, 1) forwards;
+}
+
+.p-button.progress-fill-button .p-button-icon,
+.p-button.progress-fill-button .p-button-label {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes estimated-button-progress {
+  0% { width: 0; }
+  45% { width: 62%; }
+  100% { width: 92%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .p-button.progress-fill-button.is-progressing::before {
+    animation: estimated-button-progress 20s steps(8, end) forwards;
+  }
+}
+
+button, input, select, textarea { font: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 .p-datatable .p-paginator .p-dropdown {
   width: auto !important;
@@ -575,7 +635,7 @@ body {
 
 
 #app {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -605,30 +665,36 @@ input.p-inputtext.p-inputtext-sm {
 }
 
 .login-screen {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at top, #f3f4ff 0%, #eef1f7 45%, #e6eaf1 100%);
+  background: linear-gradient(135deg, #eaf1fb 0 42%, var(--background-light) 42% 100%);
   padding: 2rem;
 }
 
 .login-card {
-  width: min(420px, 92vw);
+  width: min(430px, 100%);
   background: var(--card-background);
-  border-radius: 16px;
-  padding: 2.5rem;
-  box-shadow: 0 20px 40px rgba(31, 41, 55, 0.12);
-  border: 1px solid rgba(102, 126, 234, 0.15);
+  border-radius: 12px;
+  padding: 2.25rem;
+  box-shadow: 0 22px 60px rgba(33, 52, 82, 0.12);
+  border: 1px solid var(--border-color);
 }
 
 .language-control{display:flex;align-items:center;gap:.45rem}.language-control label{font-size:.78rem}.language-control select,.mobile-header-actions select{border:1px solid #d7dce7;border-radius:7px;background:#fff;color:#243047;padding:.35rem .5rem}.login-language{justify-content:flex-end;margin-bottom:1rem;color:var(--text-color-secondary)}.navbar-language select{border-color:rgba(255,255,255,.45)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.mobile-header-actions{display:flex;align-items:center;gap:.35rem}
 
 .login-title {
-  font-size: 1.6rem;
-  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  font-size: 1.55rem;
+  font-weight: 720;
   color: var(--text-color-primary);
+  letter-spacing: -.025em;
 }
+
+.login-title .pi { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 10px; background: var(--primary-color); color: #fff; font-size: 1.1rem; }
 
 .login-subtitle {
   margin: 0.5rem 0 1.8rem;
@@ -699,14 +765,15 @@ input.p-inputtext.p-inputtext-sm {
 
 /* Navbar Superior */
 .navbar {
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-dark) 100%);
-  color: white;
-  padding: 1rem 2rem;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  min-height: 72px;
+  background: var(--card-background);
+  color: var(--text-color-primary);
+  padding: .7rem 2rem;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 2rem;
+  gap: 1.5rem;
 }
 
 .navbar-left {
@@ -717,25 +784,32 @@ input.p-inputtext.p-inputtext-sm {
 
 .navbar-center {
   display: flex;
-  flex-direction: column;
+  order: -1;
   align-items: center;
-  gap: 0.3rem;
-  flex: 0 0 auto;
+  gap: .8rem;
+  flex: 1;
+  justify-content: flex-start;
 }
 
 .logo {
-  font-size: 1.5rem;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  font-size: 1.08rem;
+  font-weight: 720;
   margin: 0;
-  text-align: center;
+  letter-spacing: -.015em;
+  white-space: nowrap;
 }
+
+.logo .pi { display: grid; place-items: center; width: 2.15rem; height: 2.15rem; border-radius: 9px; color: #fff; background: var(--primary-color); font-size: .95rem; }
 
 .config-info {
   display: flex;
   gap: 1rem;
   align-items: center;
   font-size: 0.85rem;
-  opacity: 0.9;
+  color: var(--text-color-secondary);
 }
 
 /* Indicador de curs a la barra: només lectura, derivat de la data seleccionada */
@@ -743,6 +817,8 @@ input.p-inputtext.p-inputtext-sm {
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
+  padding-left: .8rem;
+  border-left: 1px solid var(--border-color);
 }
 
 /* Data anterior al primer curs definit */
@@ -755,19 +831,21 @@ input.p-inputtext.p-inputtext-sm {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: rgba(255, 255, 255, 0.15);
-  padding: 0.4rem 0.8rem;
+  background: var(--surface-soft);
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
 }
 
 
 .nav-date-btn {
-  color: white !important;
+  color: var(--text-color-secondary) !important;
   font-size: 0.9rem !important;
 }
 
 .nav-date-btn:hover {
-  background: rgba(255, 255, 255, 0.25) !important;
+  color: var(--primary-color) !important;
+  background: var(--primary-color-light) !important;
 }
 
 .navbar-right {
@@ -778,18 +856,20 @@ input.p-inputtext.p-inputtext-sm {
 }
 
 .navbar-right .p-button {
-  color: white !important;
+  color: var(--text-color-secondary) !important;
 }
 
 .navbar-right .p-button:hover {
-  background: rgba(255, 255, 255, 0.2) !important;
+  color: var(--primary-color) !important;
+  background: var(--primary-color-light) !important;
 }
+
+.navbar-language select { border-color: var(--border-color); background: var(--surface-soft); color: var(--text-color-primary); }
 
 /* Tabs */
 .tabs-container {
   background: var(--card-background);
-  border-bottom: 2px solid var(--border-color);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .tabs {
@@ -802,26 +882,28 @@ input.p-inputtext.p-inputtext-sm {
 .tab {
   background: none;
   border: none;
-  padding: 1rem 1.5rem;
-  font-size: 1rem;
-  font-weight: 500;
+  padding: .85rem 1.15rem;
+  font-size: .92rem;
+  font-weight: 650;
   color: var(--text-color-secondary);
   cursor: pointer;
-  border-bottom: 3px solid transparent;
-  transition: all 0.2s ease;
+  border-bottom: 2px solid transparent;
+  transition: color .15s ease, background-color .15s ease, border-color .15s ease, transform .15s ease;
   position: relative;
 }
 
 .tab:hover {
   color: var(--primary-color);
-  background: var(--background-light);
+  background: var(--surface-soft);
 }
 
 .tab.active {
   color: var(--primary-color);
   border-bottom-color: var(--primary-color);
-  background: var(--background-light);
+  background: transparent;
 }
+
+.tab:active { transform: translateY(1px); }
 
 /* PrimeVue TabView unificat (diàlegs + scheduler) */
 .app-tabview .p-tabview-nav {
@@ -876,7 +958,7 @@ input.p-inputtext.p-inputtext-sm {
 /* Main Content */
 .main-content {
   flex: 1;
-  padding: 2rem;
+  padding: 2.25rem 2rem 3.5rem;
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
@@ -909,8 +991,9 @@ input.p-inputtext.p-inputtext-sm {
 
 /* Footer */
 .footer {
-  background: #2c3e50;
-  color: white;
+  background: var(--card-background);
+  color: var(--text-color-secondary);
+  border-top: 1px solid var(--border-color);
   text-align: center;
   padding: 1rem;
   font-size: 0.9rem;
@@ -918,12 +1001,14 @@ input.p-inputtext.p-inputtext-sm {
 
 /* Millores per PrimeVue */
 .p-button {
-  transition: all 0.3s ease;
-  /* Fer botons una mica més generosos */
-  padding: 0.75rem 1.25rem; /* Augmentar padding */
-  font-size: 0.95rem;     /* Lleuger augment de font size */
-  min-width: unset;       /* Reset per PrimeVue que a vegades posa min-width */
+  border-radius: 8px;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
+  padding: 0.65rem 1rem;
+  font-size: 0.9rem;
+  min-width: unset;
 }
+
+.p-button:active { transform: translateY(1px); }
 
 /* Override per botons amb outline */
 .p-button.p-button-outlined {
@@ -937,8 +1022,9 @@ input.p-inputtext.p-inputtext-sm {
 }
 
 .p-datatable {
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  border-radius: 8px;
+  box-shadow: none;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
   overflow: hidden;
 }
 
@@ -948,38 +1034,30 @@ input.p-inputtext.p-inputtext-sm {
 }
 
 .navbar .p-calendar .p-inputtext {
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: #fff;
+  border: 1px solid var(--border-color);
   padding: 0.5rem 0.75rem;
 }
 
 .navbar .p-calendar .p-inputtext:focus {
-  border-color: white;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+  border-color: var(--primary-color);
+  box-shadow: var(--focus-ring);
 }
 
 /* Responsive per la navbar */
 @media (max-width: 992px) {
   .navbar {
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1rem 1rem;
+    gap: .75rem;
+    padding: .65rem 1rem;
   }
 
-  .navbar-left, .navbar-center, .navbar-right {
-    flex-basis: auto;
-    width: 100%;
-    justify-content: center;
-  }
-
-  .navbar-right {
-    justify-content: center;
-  }
+  .navbar-left { flex: 0 1 auto; }
+  .navbar-center { flex: 1 1 auto; }
+  .navbar-right { flex: 0 0 auto; }
+  .config-info { display: none; }
 
   .tabs {
     padding: 0 1rem;
-    flex-wrap: wrap;
-    justify-content: center;
   }
 }
 
@@ -1039,11 +1117,12 @@ input.p-inputtext.p-inputtext-sm {
   }
 
   .main-content {
-    padding: 1rem 0.75rem;
+    padding: 1.25rem 0.75rem 2rem;
   }
 
-  .main-content {
-    padding-bottom: 5.5rem;
+  .demo-avis {
+    width: calc(100% - 1.5rem);
+    margin-top: .75rem;
   }
 
   .footer {
@@ -1053,13 +1132,13 @@ input.p-inputtext.p-inputtext-sm {
 }
 
 .mobile-header {
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-dark) 100%);
-  color: white;
+  background: var(--card-background);
+  color: var(--text-color-primary);
   padding: 0.75rem 1rem 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .mobile-header-top {
@@ -1078,6 +1157,9 @@ input.p-inputtext.p-inputtext-sm {
   flex: 1 1 auto;
 }
 
+.mobile-header .nav-date-btn { color: var(--text-color-secondary) !important; }
+.mobile-header-actions .p-button { color: var(--text-color-secondary) !important; }
+
 .mobile-menu {
   display: flex;
   flex-direction: column;
@@ -1086,42 +1168,5 @@ input.p-inputtext.p-inputtext-sm {
 
 .mobile-menu .p-button {
   justify-content: flex-start;
-}
-
-.mobile-nav {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: white;
-  border-top: 1px solid var(--border-color);
-  box-shadow: 0 -4px 12px rgba(15, 23, 42, 0.12);
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 0.25rem;
-  padding: 0.4rem 0.25rem 0.5rem;
-  z-index: 20;
-}
-
-.mobile-nav-item {
-  background: none;
-  border: none;
-  color: var(--text-color-secondary);
-  font-size: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.35rem 0.15rem;
-  cursor: pointer;
-}
-
-.mobile-nav-item i {
-  font-size: 1.1rem;
-}
-
-.mobile-nav-item.active {
-  color: var(--primary-color);
-  font-weight: 600;
 }
 </style>

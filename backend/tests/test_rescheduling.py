@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import unittest
+from copy import deepcopy
 from datetime import date
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -19,19 +20,25 @@ from models import (  # noqa: E402
     ProfessorBaixa,
     ScheduleAdjustment,
     ScheduleAdjustmentLeg,
+    TimetableImportPreview,
     TimetableLesson,
+    TimetableTeacherSlot,
     TimetableVersion,
 )
-from rescheduling_service import absence_keys, analyze_absence, build_import_preview, choose_global, effective_occurrences, version_for_date  # noqa: E402
+from rescheduling_service import apply_import_resolutions, absence_keys, analyze_absence, build_import_preview, choose_global, effective_occurrences, version_for_date  # noqa: E402
 from routes.rescheduling import (  # noqa: E402
+    AbsenceBatchCreateRequest,
     AbsenceCreateRequest,
     UpdateAdjustmentRequest,
     UpdateTimetableRequest,
+    SaveImportResolutionsRequest,
+    create_absences_batch,
     delete_adjustment,
     delete_timetable_version,
     list_records,
     list_timetable_versions,
     purge_absence,
+    save_import_resolutions,
     update_absence,
     update_adjustment,
     update_timetable_version,
@@ -46,6 +53,49 @@ class ReschedulingTests(unittest.TestCase):
 
     def tearDown(self):
         self.db.close()
+
+    def test_batch_absence_creates_full_day_cases_atomically(self):
+        teachers = [Professor(nom=f"{name}老師", actiu=True) for name in ("A", "B", "C")]
+        version = TimetableVersion(
+            effective_from=date(2026, 8, 10), effective_to=date(2026, 8, 31),
+            class_filename="classes.xls", teacher_filename="teachers.xlsx", active=True,
+        )
+        self.db.add_all([*teachers, version])
+        self.db.flush()
+        self.db.add_all([
+            TimetableLesson(
+                version_id=version.id, weekday=0, period=index + 1, class_code=f"{index + 1}A",
+                subject="中文", teachers_json=json.dumps([teacher.id]),
+            )
+            for index, teacher in enumerate(teachers)
+        ])
+        self.db.commit()
+
+        result = create_absences_batch(
+            AbsenceBatchCreateRequest(
+                professor_ids=[teachers[0].id, teachers[1].id, teachers[0].id],
+                data=date(2026, 8, 10), periods=list(range(1, 10)),
+            ),
+            self.db,
+            SimpleNamespace(username="admin"),
+        )
+
+        rows = self.db.query(AbsenceCase).order_by(AbsenceCase.id).all()
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(json.loads(row.periods_json) == list(range(1, 10)) for row in rows))
+        self.assertEqual(result["batch_absence_case_ids"], [row.id for row in rows])
+        self.assertEqual(set(result["absence_case_ids"]), {row.id for row in rows})
+
+        with self.assertRaises(HTTPException):
+            create_absences_batch(
+                AbsenceBatchCreateRequest(
+                    professor_ids=[teachers[2].id, 999999],
+                    data=date(2026, 8, 10), periods=[1],
+                ),
+                self.db,
+                SimpleNamespace(username="admin"),
+            )
+        self.assertEqual(self.db.query(AbsenceCase).count(), 2)
 
     def test_timetable_version_crud_preserves_linked_records(self):
         teacher = Professor(nom="A老師", actiu=True)
@@ -168,6 +218,73 @@ class ReschedulingTests(unittest.TestCase):
         self.assertEqual(result["summary"]["blocked_lessons"], 1)
         self.assertEqual(result["issues"][0]["code"], "teacher_slot_mismatch")
         self.assertEqual(result["issues"][0]["teacher_workbook"], "1B 中文")
+        resolution_id = result["issues"][0]["resolution_id"]
+
+        class_result = apply_import_resolutions(deepcopy(result), {resolution_id: "class"})
+        self.assertTrue(class_result["lessons"][0]["movable"])
+        self.assertEqual(class_result["teacher_slots"][0]["class_code"], "1A")
+
+        teacher_result = apply_import_resolutions(deepcopy(result), {resolution_id: "teacher"})
+        self.assertEqual(teacher_result["lessons"][0]["teachers"], [])
+        self.assertFalse(teacher_result["lessons"][0]["movable"])
+        self.assertEqual(teacher_result["teacher_slots"][0]["class_code"], "1B")
+
+    @patch("rescheduling_service.parse_class_workbook")
+    @patch("rescheduling_service.parse_teacher_workbook")
+    @patch("rescheduling_service.teacher_names_from_workbook")
+    def test_import_preview_can_add_teacher_workbook_extra_as_co_teacher(
+        self, names_parser, teacher_parser, class_parser,
+    ):
+        names_parser.return_value = ["A老師", "B老師"]
+        teacher_parser.return_value = ([
+            {"teacher": "A老師", "weekday": 3, "period": 2, "class_code": "3C", "subject": "中文"},
+            {"teacher": "B老師", "weekday": 3, "period": 2, "class_code": "3C", "subject": "中文"},
+        ], ["A老師", "B老師"])
+        class_parser.return_value = ([{
+            "weekday": 3, "period": 2, "class_code": "3C",
+            "subject": "中文", "teachers": ["B老師"],
+        }], [(540, 575)])
+
+        result = build_import_preview(b"class", b"teacher")
+
+        self.assertEqual(len(result["issues"]), 1)
+        self.assertEqual(result["issues"][0]["code"], "teacher_extra_assignment")
+        resolution_id = result["issues"][0]["resolution_id"]
+
+        teacher_result = apply_import_resolutions(deepcopy(result), {resolution_id: "teacher"})
+        self.assertEqual(teacher_result["lessons"][0]["teachers"], ["B老師", "A老師"])
+        self.assertTrue(teacher_result["lessons"][0]["movable"])
+
+        class_result = apply_import_resolutions(deepcopy(result), {resolution_id: "class"})
+        self.assertEqual(class_result["lessons"][0]["teachers"], ["B老師"])
+        self.assertEqual([slot["teacher"] for slot in class_result["teacher_slots"]], ["B老師"])
+
+    def test_import_review_decisions_can_be_saved_partially(self):
+        preview = TimetableImportPreview(
+            id="preview-1",
+            class_filename="classes.xls",
+            teacher_filename="teachers.xlsx",
+            payload=json.dumps({
+                "issues": [
+                    {"severity": "review", "resolution_id": "first"},
+                    {"severity": "review", "resolution_id": "second"},
+                ]
+            }, ensure_ascii=False),
+        )
+        self.db.add(preview)
+        self.db.commit()
+
+        result = save_import_resolutions(
+            preview.id,
+            SaveImportResolutionsRequest(resolutions={"first": "teacher"}),
+            self.db,
+            SimpleNamespace(username="admin"),
+        )
+
+        self.assertEqual(result["saved_resolutions"], {"first": "teacher"})
+        self.assertEqual((result["confirmed_count"], result["remaining_count"]), (1, 1))
+        saved_payload = json.loads(self.db.get(TimetableImportPreview, preview.id).payload)
+        self.assertEqual(saved_payload["saved_resolutions"], {"first": "teacher"})
 
     def test_confirmed_swap_changes_effective_timetable_without_changing_base(self):
         teacher_a = Professor(nom="A老師", actiu=True)
@@ -356,6 +473,42 @@ class ReschedulingTests(unittest.TestCase):
         candidate = analysis["tasks"][0]["recommended"]
         self.assertEqual(candidate["kind"], "emergency_cover")
         self.assertEqual(candidate["legs"][0]["replacement_teacher_id"], same_subject_teacher.id)
+
+    def test_common_planning_slot_blocks_emergency_cover(self):
+        absent_teacher = Professor(nom="A老師", actiu=True)
+        planning_teacher = Professor(nom="C老師", actiu=True)
+        self.db.add_all([absent_teacher, planning_teacher])
+        self.db.flush()
+        version = TimetableVersion(
+            effective_from=date(2026, 8, 10), class_filename="classes.xls",
+            teacher_filename="teachers.xlsx", active=True,
+        )
+        self.db.add(version)
+        self.db.flush()
+        self.db.add_all([
+            TimetableLesson(
+                version_id=version.id, weekday=0, period=1, class_code="1A",
+                subject="中文", teachers_json=json.dumps([absent_teacher.id]),
+            ),
+            TimetableLesson(
+                version_id=version.id, weekday=0, period=2, class_code="2A",
+                subject="中文", teachers_json=json.dumps([planning_teacher.id]),
+            ),
+            TimetableTeacherSlot(
+                version_id=version.id, professor_id=planning_teacher.id, weekday=0,
+                period=1, class_code="", subject="共同備課",
+            ),
+        ])
+        absence = AbsenceCase(
+            professor_id=absent_teacher.id, data=date(2026, 8, 10), periods_json="[1]", status="open",
+        )
+        self.db.add(absence)
+        self.db.commit()
+
+        analysis = analyze_absence(self.db, absence)
+
+        self.assertEqual(analysis["tasks"][0]["status"], "unresolved")
+        self.assertEqual(analysis["tasks"][0]["alternatives"], [])
 
     def test_long_term_leave_blocks_every_period_in_date_range(self):
         teacher = Professor(nom="A老師", actiu=True)

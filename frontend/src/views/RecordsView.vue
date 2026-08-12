@@ -2,11 +2,10 @@
   <section class="records-page">
     <header class="page-heading">
       <div>
-        <p class="eyebrow">{{ $t('records.eyebrow') }}</p>
         <h2>{{ $t('records.title') }}</h2>
         <p>{{ $t('records.description') }}</p>
       </div>
-      <span class="today">{{ $t('records.today', { date: records.today || '—' }) }}</span>
+      <span class="today">{{ $t('records.today', { date: records.today || '-' }) }}</span>
     </header>
 
     <section class="panel">
@@ -27,13 +26,14 @@
             </div>
             <div class="record-actions">
               <span :class="['status', record.status]">{{ statusLabel(record.status) }}</span>
+              <Button v-if="record.record_type === 'absence' && record.status === 'open'" :label="$t('records.resume')" icon="pi pi-play" size="small" @click="emit('resume-absence', record)" />
               <template v-if="isAdmin && record.record_type === 'absence'">
                 <Button :label="$t('common.edit')" icon="pi pi-pencil" size="small" text @click="editAbsence(record)" />
                 <Button :label="$t('common.delete')" icon="pi pi-trash" size="small" severity="danger" text @click="removeAbsence(record)" />
               </template>
             </div>
           </div>
-          <p class="meta">{{ $t('records.createdBy', { user: record.created_by || '—' }) }}</p>
+          <p class="meta">{{ $t('records.createdBy', { user: record.created_by || '-' }) }}</p>
           <form v-if="editingAbsenceId === record.entity_id" class="record-edit" @submit.prevent="saveAbsence(record)">
             <label>{{ $t('leave.teacher') }}<select v-model.number="absenceEdit.professor_id" required><option v-for="teacher in absenceTeachers" :key="teacher.id" :value="teacher.id">{{ teacher.name }}</option></select></label>
             <label>{{ $t('rescheduling.date') }}<input v-model="absenceEdit.data" type="date" required /></label>
@@ -111,6 +111,7 @@ import axios from 'axios'
 import Button from 'primevue/button'
 
 const props = defineProps({ isAdmin: Boolean })
+const emit = defineEmits(['resume-absence'])
 const { t, locale } = useI18n()
 const scopes = ['future', 'today', 'past']
 const scope = ref('today')
@@ -206,6 +207,66 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.records-page{display:flex;flex-direction:column;gap:1.25rem;color:#172033}.page-heading,.leave-heading{display:flex;justify-content:space-between;gap:1.5rem;align-items:flex-start}.page-heading h2{font-size:2rem;margin:.15rem 0}.page-heading p,.leave-heading p,.meta{color:#657084}.eyebrow{color:#4965d6!important;font-weight:700;text-transform:uppercase;font-size:.78rem;letter-spacing:.08em}.today{background:#eef2ff;color:#4256b5;padding:.5rem .75rem;border-radius:999px;font-size:.82rem;white-space:nowrap}.panel{background:#fff;border:1px solid #e4e8f0;border-radius:14px;padding:1.2rem;box-shadow:0 4px 18px rgba(35,45,75,.05)}.scope-tabs{display:flex;gap:.4rem;border-bottom:1px solid #e7eaf0;margin:-.2rem 0 1rem}.scope-tabs button{border:0;background:transparent;padding:.75rem 1rem;color:#657084;font-weight:650;cursor:pointer;border-bottom:3px solid transparent}.scope-tabs button.active{color:#3f55bc;border-bottom-color:#4965d6}.record-list{display:flex;flex-direction:column;gap:.8rem}.record-card{border:1px solid #e1e5ed;border-radius:11px;padding:1rem}.record-summary,.adjustment-heading,.leave-list article{display:flex;align-items:center;justify-content:space-between;gap:1rem}.record-summary>div,.leave-list article>div:first-child{display:flex;flex-direction:column;gap:.2rem}.record-summary span,.leave-list span{font-size:.82rem;color:#657084}.status{font-size:.74rem;padding:.28rem .55rem;border-radius:999px;background:#edf0f5;color:#5c6575;white-space:nowrap}.status.resolved,.status.confirmed{background:#e7f7ee;color:#237448}.status.open{background:#fff3d9;color:#8a5b16}.status.cancelled,.status.reverted{background:#f0f1f4;color:#737b88}.meta{font-size:.8rem;margin:.55rem 0}.adjustments{border-top:1px solid #edf0f4;padding-top:.65rem}.adjustment+.adjustment{margin-top:.7rem}.leg{display:flex;justify-content:space-between;gap:1rem;background:#f7f8fb;border-radius:7px;padding:.5rem .65rem;margin-top:.4rem;font-size:.8rem}.leg b{color:#4256b5;text-align:right}.pagination{display:flex;align-items:center;justify-content:center;gap:1rem;margin-top:1rem;color:#657084;font-size:.84rem}.leave-heading h3{margin:0 0 .3rem}.leave-form{display:grid;grid-template-columns:1.2fr 1fr .8fr .8fr auto;align-items:end;gap:.75rem;margin:1rem 0}.leave-form label{display:flex;flex-direction:column;gap:.35rem;font-size:.82rem;font-weight:600}.leave-form select,.leave-form input{width:100%;border:1px solid #ccd3df;border-radius:8px;padding:.62rem;background:#fff}.leave-list article{padding:.7rem 0;border-top:1px solid #edf0f4}.empty-state{display:grid;place-items:center;min-height:160px;color:#7b8597;border:1px dashed #d5dae4;border-radius:10px;padding:1.5rem}.empty-state.compact{min-height:80px}@media(max-width:900px){.leave-form{grid-template-columns:1fr 1fr}.leave-form .p-button{grid-column:1/-1}.leg{flex-direction:column;gap:.2rem}.leg b{text-align:left}}@media(max-width:600px){.page-heading,.leave-heading,.record-summary{flex-direction:column}.leave-form{grid-template-columns:1fr}.scope-tabs button{padding:.65rem}.pagination{justify-content:space-between;gap:.2rem}.leave-list article{align-items:flex-start}.panel{padding:1rem}}
-.record-actions,.edit-actions{display:flex;align-items:center;gap:.35rem}.record-edit{display:grid;grid-template-columns:1fr 180px;gap:.7rem;padding:.8rem;margin:.6rem 0;background:#f7f8fb;border-radius:9px}.record-edit>label{display:flex;flex-direction:column;gap:.3rem;font-size:.82rem;font-weight:600}.record-edit select,.record-edit input[type=date]{width:100%;border:1px solid #ccd3df;border-radius:8px;padding:.58rem;background:#fff}.edit-periods{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:.45rem}.edit-periods label{display:flex;align-items:center;gap:.25rem;font-size:.8rem}.edit-actions{grid-column:1/-1;justify-content:flex-end}
+.records-page { display: grid; gap: 1.25rem; color: var(--text-color-primary); }
+.page-heading, .leave-heading { display: flex; justify-content: space-between; gap: 1.5rem; align-items: flex-start; }
+.page-heading h2 { margin: 0 0 .35rem; font-size: clamp(1.65rem, 3vw, 2.15rem); line-height: 1.15; letter-spacing: -.035em; }
+.page-heading p, .leave-heading p, .meta { color: var(--text-color-secondary); }
+.today { padding-top: .4rem; color: var(--text-color-secondary); font-size: .8rem; white-space: nowrap; }
+.panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
+.scope-tabs { display: flex; gap: .2rem; margin: -.25rem 0 1rem; border-bottom: 1px solid var(--border-color); }
+.scope-tabs button { padding: .7rem .9rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-color-secondary); font-weight: 650; cursor: pointer; transition: color .15s ease, border-color .15s ease, background-color .15s ease, transform .15s ease; }
+.scope-tabs button:hover { background: var(--surface-soft); color: var(--text-color-primary); }
+.scope-tabs button.active { border-bottom-color: var(--primary-color); color: var(--primary-color-dark); }
+.scope-tabs button:active { transform: translateY(1px); }
+.record-list { border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; }
+.record-card { padding: 1rem; border-bottom: 1px solid var(--border-color); }
+.record-card:last-child { border-bottom: 0; }
+.record-summary, .adjustment-heading, .leave-list article { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.record-summary > div, .leave-list article > div:first-child { display: flex; flex-direction: column; gap: .2rem; }
+.record-summary span, .leave-list span { color: var(--text-color-secondary); font-size: .82rem; }
+.status { display: inline-flex; align-items: center; padding: .24rem .52rem; border-radius: 999px; background: #eef1f4; color: #596476; font-size: .74rem; white-space: nowrap; }
+.status.resolved, .status.confirmed { background: #e4f5e9; color: #216a42; }
+.status.open { background: #fff4d6; color: #84590e; }
+.status.cancelled, .status.reverted { background: #eef1f4; color: #687386; }
+.meta { margin: .5rem 0; font-size: .8rem; }
+.adjustments { padding-top: .7rem; border-top: 1px solid #edf0f3; }
+.adjustment + .adjustment { margin-top: .75rem; }
+.leg { display: flex; justify-content: space-between; gap: 1rem; margin-top: .4rem; padding: .55rem .7rem; border-radius: 8px; background: var(--surface-soft); font-size: .8rem; }
+.leg b { color: var(--primary-color-dark); text-align: right; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; color: var(--text-color-secondary); font-size: .84rem; }
+.leave-heading h3 { margin: 0 0 .3rem; }
+.leave-form { display: grid; grid-template-columns: 1.2fr 1fr .8fr .8fr auto; align-items: end; gap: .75rem; margin: 1rem 0; }
+.leave-form label, .record-edit > label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: .82rem; font-weight: 650; }
+.leave-form select, .leave-form input, .record-edit select, .record-edit input[type=date] { width: 100%; min-height: 2.55rem; padding: .6rem .7rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
+.leave-form select:hover, .leave-form input:hover, .record-edit select:hover, .record-edit input:hover { border-color: #aeb8c5; }
+.leave-form select:focus, .leave-form input:focus, .record-edit select:focus, .record-edit input:focus { border-color: var(--primary-color); }
+.leave-list article { padding: .75rem 0; border-top: 1px solid #edf0f3; }
+.empty-state { display: grid; place-items: center; min-height: 160px; padding: 1.5rem; border-radius: 10px; background: var(--surface-soft); color: var(--text-color-secondary); text-align: center; }
+.empty-state.compact { min-height: 80px; }
+.record-actions, .edit-actions { display: flex; align-items: center; gap: .35rem; }
+.record-edit { display: grid; grid-template-columns: 1fr 180px; gap: .7rem; margin: .65rem 0; padding: .85rem; border-radius: 9px; background: var(--highlight-bg); }
+.edit-periods { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .5rem; }
+.edit-periods label { display: flex; align-items: center; gap: .25rem; font-size: .8rem; }
+.edit-periods input { accent-color: var(--primary-color); }
+.edit-actions { grid-column: 1 / -1; justify-content: flex-end; }
+
+@media (max-width: 900px) {
+  .leave-form { grid-template-columns: 1fr 1fr; }
+  .leave-form .p-button { grid-column: 1 / -1; }
+  .leg { flex-direction: column; gap: .2rem; }
+  .leg b { text-align: left; }
+}
+
+@media (max-width: 600px) {
+  .page-heading, .leave-heading, .record-summary { flex-direction: column; }
+  .today { padding-top: 0; }
+  .record-summary, .adjustment-heading { align-items: flex-start; }
+  .adjustment-heading { flex-direction: column; }
+  .record-actions { justify-content: flex-start; flex-wrap: wrap; }
+  .record-edit, .leave-form { grid-template-columns: 1fr; }
+  .scope-tabs button { flex: 1; padding: .65rem .4rem; }
+  .pagination { justify-content: space-between; gap: .2rem; }
+  .leave-list article { align-items: flex-start; }
+  .panel { padding: 1rem; }
+}
 </style>

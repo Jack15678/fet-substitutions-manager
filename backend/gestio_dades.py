@@ -69,21 +69,20 @@ def reanomena_professor(db: Session, nom_actual: str, nom_nou: str) -> Dict[str,
     nom_nou = (nom_nou or "").strip()
 
     if not nom_actual or not nom_nou:
-        raise ValueError("Cal indicar el nom actual i el nom nou.")
+        raise ValueError("請填寫目前名稱及新名稱。")
     if nom_actual == nom_nou:
-        raise ValueError("El nom nou ha de ser diferent de l'actual.")
+        raise ValueError("新名稱必須與目前名稱不同。")
 
     prof = db.query(Professor).filter(Professor.nom == nom_actual).first()
     if not prof:
-        raise ValueError(f"No existeix cap professor amb el nom «{nom_actual}».")
+        raise ValueError(f"找不到名為「{nom_actual}」的教師。")
     if prof.actiu:
         raise ValueError(
-            "Només es poden reanomenar professors inactius (que ja no són a "
-            "l'horari actual). Per canviar el nom d'un professor actiu, "
-            "modifica'l a FET i reimporta l'XML."
+            "只可重新命名已停用（不在目前課表內）的教師。"
+            "如要更改在職教師名稱，請修改原始課表後重新匯入。"
         )
     if db.query(Professor).filter(Professor.nom == nom_nou).first():
-        raise ValueError(f"Ja existeix un professor amb el nom «{nom_nou}».")
+        raise ValueError(f"已存在名為「{nom_nou}」的教師。")
 
     counts = {
         "substitucions_absent": db.query(Substitucio)
@@ -117,7 +116,7 @@ def analitzar_purga(db: Session, institucio: Optional[str],
     from models import Substitucio, Vigilancia, GrupAlliberat, ProfessorBaixa, XMLVersion
 
     if data_inici > data_final:
-        raise ValueError("La data d'inici no pot ser posterior a la data final.")
+        raise ValueError("開始日期不可遲於結束日期。")
 
     # --- Registres de BD (per columna 'data') ---
     bd = {
@@ -240,7 +239,7 @@ def executar_purga(db: Session, institucio: Optional[str],
             data_dir = get_data_dir_for_institucio(institucio)
             export_dir = get_export_dir_for_institucio(institucio)
     except Exception as e:
-        errors.append(f"No s'han pogut resoldre les carpetes de la institució: {e}")
+        errors.append(f"無法讀取學校資料夾：{e}")
 
     ids_esborrar = [v["id"] for v in manifest["xml_versions"] if not v["bloquejat"]]
     xml_esborrats: List[Dict] = []

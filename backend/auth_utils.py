@@ -112,9 +112,8 @@ def ensure_default_users() -> None:
             if not password:
                 if entry.get("obligatori"):
                     raise SystemExit(
-                        f"\nERROR: cal definir ADMIN_PASSWORD per crear l'usuari "
-                        f"'{username}'.\n"
-                        f"Afegeix-la al fitxer .env i torna a arrencar.\n"
+                        f"\n錯誤：建立用戶「{username}」前必須設定 ADMIN_PASSWORD。\n"
+                        f"請把密碼加入 .env，然後重新啟動。\n"
                     )
                 # Els altres usuaris de mostra són opcionals: sense contrasenya
                 # definida, simplement no es creen.
@@ -152,7 +151,7 @@ def _apply_institucio(institucio: str) -> None:
                 _recarregar_prioritats_desde_bd(db)
             _prioritats_loaded_for = institucio
         except Exception as exc:
-            print(f"⚠️ No s'han pogut recarregar prioritats per {institucio}: {exc}")
+            print(f"⚠️ 無法重新載入 {institucio} 的代課優先級：{exc}")
 
 
 def get_current_user(
@@ -161,35 +160,35 @@ def get_current_user(
 ):
     token = request.cookies.get(COOKIE_NAME)
     if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autenticat")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="尚未登入")
     try:
         payload = decode_access_token(token)
         username = payload.get("sub")
         institucio = payload.get("institucio")
         if not username:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invàlid")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登入憑證無效")
     except PyJWTError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invàlid") from exc
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登入憑證無效") from exc
 
     user = UserRepository.get_by_username(db, username)
     if not user or not user.active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuari inactiu o inexistent")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用戶不存在或已停用")
 
     if user.role == "super_admin":
         institucio_activa = institucio or user.institucio
         if not institucio_activa:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invàlid")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登入憑證無效")
         if not config.is_institucio_activa(institucio_activa):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Institució inactiva")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="學校帳戶已停用")
         _apply_institucio(institucio_activa)
         user.institucio = institucio_activa
         return user
 
     if not institucio or user.institucio != institucio:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invàlid")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登入憑證無效")
 
     if user.role != "super_admin" and not config.is_institucio_activa(user.institucio):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Institució inactiva")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="學校帳戶已停用")
 
     _apply_institucio(user.institucio)
     return user
@@ -201,11 +200,11 @@ def require_user(current_user=Depends(get_current_user)):
 
 def require_admin(current_user=Depends(get_current_user)):
     if current_user.role not in ("admin", "super_admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permisos insuficients")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="權限不足")
     return current_user
 
 
 def require_super_admin(current_user=Depends(get_current_user)):
     if current_user.role != "super_admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permisos insuficients")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="權限不足")
     return current_user
