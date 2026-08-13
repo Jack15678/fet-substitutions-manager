@@ -462,6 +462,7 @@ def _lesson_payload(row: TimetableLesson) -> dict:
         "subject": row.subject,
         "teachers": json.loads(row.teachers_json or "[]"),
         "movable": row.movable,
+        "special": row.special,
     }
 
 
@@ -548,6 +549,7 @@ def effective_occurrences(db: Session, start: date, end: date) -> list[dict]:
                 "class_code": slot.class_code or "",
                 "subject": slot.subject or "",
                 "teachers": [slot.professor_id],
+                "special": False,
                 "locked": True,
                 "adjustment_id": None,
                 "source": "teacher_workbook",
@@ -587,6 +589,7 @@ def effective_occurrences(db: Session, start: date, end: date) -> list[dict]:
                 "class_code": leg.class_code,
                 "subject": leg.subject,
                 "teachers": json.loads(leg.teachers_json or "[]"),
+                "special": row.special,
                 "locked": True,
                 "adjustment_id": adjustment.id,
                 "source": adjustment.kind,
@@ -624,6 +627,7 @@ def _leg(occurrence: dict, to_date: date, to_period: int) -> dict:
         "class_code": occurrence["class_code"],
         "subject": occurrence["subject"],
         "teachers": occurrence["teachers"],
+        "special": occurrence.get("special", False),
         "from_date": occurrence["date"].isoformat(),
         "from_period": occurrence["period"],
         "to_date": to_date.isoformat(),
@@ -679,6 +683,9 @@ def validate_move_legs(legs: list[dict], occurrences: list[dict], absences: set,
 
 def _candidate(kind: str, target: dict, legs: list[dict], start: date, reason: str) -> dict:
     completion = max(date.fromisoformat(leg["to_date"]) for leg in legs)
+    special_cross_day_moves = sum(
+        bool(leg.get("special")) and leg["from_date"] != leg["to_date"] for leg in legs
+    )
     raw = json.dumps({"kind": kind, "legs": legs}, ensure_ascii=False, sort_keys=True)
     return {
         "id": hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16],
@@ -687,6 +694,7 @@ def _candidate(kind: str, target: dict, legs: list[dict], start: date, reason: s
         "completion_date": completion.isoformat(),
         "day_distance": (completion - start).days,
         "moved_lessons": len(legs),
+        "special_cross_day_moves": special_cross_day_moves,
         "reason": reason,
         "legs": legs,
     }
@@ -717,9 +725,10 @@ def choose_global(option_groups: list[list[dict]]) -> dict[int, dict]:
                 used |= candidate_resources
                 break
 
-    def score(chosen: dict[int, dict]) -> tuple[int, int, int]:
+    def score(chosen: dict[int, dict]) -> tuple[int, int, int, int]:
         return (
             len(chosen),
+            -sum(candidate.get("special_cross_day_moves", 0) for candidate in chosen.values()),
             -sum(candidate["day_distance"] for candidate in chosen.values()),
             -sum(candidate["moved_lessons"] for candidate in chosen.values()),
         )
@@ -838,7 +847,8 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
             candidates.extend(cycle_for_day)
 
         candidates.sort(key=lambda item: (
-            item["day_distance"], 0 if item["kind"] == "direct_swap" else 1,
+            bool(item["special_cross_day_moves"]), item["day_distance"],
+            0 if item["kind"] == "direct_swap" else 1,
             item["moved_lessons"], item["id"]
         ))
 

@@ -49,11 +49,13 @@ class ActivateTimetableRequest(BaseModel):
     effective_from: date
     effective_to: date
     resolutions: dict[str, Literal["class", "teacher"]] = Field(default_factory=dict)
+    special_subjects: list[str] = Field(default_factory=list)
 
 
 class UpdateTimetableRequest(BaseModel):
     effective_from: date
     effective_to: date
+    special_subjects: Optional[list[str]] = None
 
 
 class SaveImportResolutionsRequest(BaseModel):
@@ -230,6 +232,7 @@ def list_timetable_versions(db: Session = Depends(get_db)):
     rows = []
     for version in versions:
         absences, adjustments = _version_usage(db, version)
+        lessons = db.query(TimetableLesson).filter_by(version_id=version.id).all()
         rows.append({
             "id": version.id,
             "effective_from": version.effective_from.isoformat(),
@@ -237,7 +240,9 @@ def list_timetable_versions(db: Session = Depends(get_db)):
             "class_filename": version.class_filename,
             "teacher_filename": version.teacher_filename,
             "resolution_count": len(json.loads(version.resolutions_json or "{}")),
-            "lessons": db.query(TimetableLesson).filter_by(version_id=version.id).count(),
+            "lessons": len(lessons),
+            "subjects": sorted({lesson.subject for lesson in lessons}),
+            "special_subjects": sorted({lesson.subject for lesson in lessons if lesson.special}),
             "teachers": (db.query(func.count(func.distinct(TimetableTeacherSlot.professor_id)))
                          .filter(TimetableTeacherSlot.version_id == version.id).scalar() or 0),
             "absence_records": absences,
@@ -262,22 +267,36 @@ def update_timetable_version(
         raise HTTPException(404, "找不到課表版本")
     if request.effective_from > request.effective_to:
         raise HTTPException(400, "結束日期不可早於開始日期")
-    if request.effective_from == version.effective_from and request.effective_to == version.effective_to:
+    lessons = db.query(TimetableLesson).filter_by(version_id=version.id).all()
+    current_specials = {lesson.subject for lesson in lessons if lesson.special}
+    requested_specials = set(request.special_subjects) if request.special_subjects is not None else current_specials
+    available_subjects = {lesson.subject for lesson in lessons}
+    if not requested_specials.issubset(available_subjects):
+        raise HTTPException(400, "包含課表中不存在的特殊課程")
+    dates_changed = (request.effective_from != version.effective_from
+                     or request.effective_to != version.effective_to)
+    specials_changed = requested_specials != current_specials
+    if not dates_changed and not specials_changed:
         return {"success": True, "revision": get_schedule_revision(db)}
-    if _overlapping_version(db, request.effective_from, request.effective_to, version.id):
+    if dates_changed and _overlapping_version(db, request.effective_from, request.effective_to, version.id):
         raise HTTPException(409, "課表適用日期與另一個版本重疊")
-    record_dates = _version_record_dates(db, version)
-    if any(value < request.effective_from or value > request.effective_to for value in record_dates):
-        raise HTTPException(409, "新日期範圍未能包含此版本的全部缺席或調課記錄")
+    if dates_changed:
+        record_dates = _version_record_dates(db, version)
+        if any(value < request.effective_from or value > request.effective_to for value in record_dates):
+            raise HTTPException(409, "新日期範圍未能包含此版本的全部缺席或調課記錄")
     old_range = {"effective_from": version.effective_from.isoformat(),
                  "effective_to": version.effective_to.isoformat() if version.effective_to else None}
     version.effective_from = request.effective_from
     version.effective_to = request.effective_to
+    for lesson in lessons:
+        lesson.special = lesson.subject in requested_specials
     _mark_latest_version_active(db)
     revision = bump_schedule_revision(db)
     _audit(db, "update", "timetable_version", version.id, current_user.username,
            {"old": old_range, "effective_from": request.effective_from.isoformat(),
-            "effective_to": request.effective_to.isoformat()})
+            "effective_to": request.effective_to.isoformat(),
+            "old_special_subjects": sorted(current_specials),
+            "special_subjects": sorted(requested_specials)})
     db.commit()
     return {"success": True, "revision": revision}
 
@@ -336,7 +355,8 @@ async def preview_import(
     _audit(db, "preview_import", "timetable_preview", preview_id, current_user.username, payload["summary"])
     db.commit()
     return {"preview_id": preview_id, **payload["summary"], "warnings": payload["warnings"],
-            "issues": payload["issues"]}
+            "issues": payload["issues"],
+            "subjects": sorted({lesson["subject"] for lesson in payload["lessons"]})}
 
 
 @router.post("/api/timetables/import/{preview_id}/activate")
@@ -357,6 +377,10 @@ def activate_import(
         payload = apply_import_resolutions(payload, resolutions)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    available_subjects = {lesson["subject"] for lesson in payload["lessons"]}
+    special_subjects = set(request.special_subjects)
+    if not special_subjects.issubset(available_subjects):
+        raise HTTPException(400, "包含課表中不存在的特殊課程")
     if request.effective_from > request.effective_to:
         raise HTTPException(400, "結束日期不可早於開始日期")
     if _overlapping_version(db, request.effective_from, request.effective_to):
@@ -398,6 +422,7 @@ def activate_import(
             subject=lesson["subject"],
             teachers_json=json.dumps([professor_ids[name] for name in lesson["teachers"] if name in professor_ids]),
             movable=lesson.get("movable", True),
+            special=lesson["subject"] in special_subjects,
         ))
     for slot in payload["teacher_slots"]:
         if slot["teacher"] not in professor_ids:
@@ -414,10 +439,26 @@ def activate_import(
     _mark_latest_version_active(db)
     revision = bump_schedule_revision(db)
     _audit(db, "activate_import", "timetable_version", version.id, current_user.username,
-           {**payload["summary"], "resolutions": resolutions})
+           {**payload["summary"], "resolutions": resolutions,
+            "special_subjects": sorted(special_subjects)})
     db.commit()
     return {"version_id": version.id, "revision": revision, **payload["summary"],
              "warnings": payload["warnings"], "issues": payload.get("issues", [])}
+
+
+@router.delete("/api/timetables/import/{preview_id}")
+def discard_import_preview(
+    preview_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    preview = db.get(TimetableImportPreview, preview_id)
+    if not preview:
+        raise HTTPException(404, "找不到匯入預覽")
+    db.delete(preview)
+    _audit(db, "discard_import", "timetable_preview", preview_id, current_user.username)
+    db.commit()
+    return {"success": True}
 
 
 @router.put("/api/timetables/import/{preview_id}/resolutions")
@@ -560,14 +601,36 @@ def create_absences_batch(
         )
         for professor_id in professor_ids
     ]
+    existing_cases = {
+        row.professor_id: row
+        for row in db.query(AbsenceCase).filter(
+            AbsenceCase.professor_id.in_(professor_ids),
+            AbsenceCase.data == request.data,
+            AbsenceCase.status != "cancelled",
+        ).all()
+    }
+    requested_periods = sorted(set(request.periods))
+    for existing in existing_cases.values():
+        if json.loads(existing.periods_json or "[]") == requested_periods:
+            continue
+        confirmed = (db.query(ScheduleAdjustment)
+                     .filter_by(absence_case_id=existing.id, status="confirmed").count())
+        if confirmed:
+            raise HTTPException(409, "已有確認的調課，請先撤銷後再修改缺席節次")
+
     selected_cases: list[AbsenceCase] = []
     created_ids: list[int] = []
+    updated_ids: list[int] = []
     for professor, periods in validated:
-        existing = (db.query(AbsenceCase)
-                    .filter(AbsenceCase.professor_id == professor.id,
-                            AbsenceCase.data == request.data,
-                            AbsenceCase.status != "cancelled").first())
+        existing = existing_cases.get(professor.id)
         if existing:
+            if json.loads(existing.periods_json or "[]") != periods:
+                existing.periods_json = json.dumps(periods)
+                existing.status = "open"
+                updated_ids.append(existing.id)
+                _audit(db, "update", "absence_case", existing.id, current_user.username,
+                       {"teacher": professor.nom, "date": request.data.isoformat(),
+                        "periods": periods})
             selected_cases.append(existing)
             continue
         absence = AbsenceCase(
@@ -582,7 +645,7 @@ def create_absences_batch(
         created_ids.append(absence.id)
         _audit(db, "create", "absence_case", absence.id, current_user.username,
                {"teacher": professor.nom, "date": request.data.isoformat(), "periods": periods})
-    if created_ids:
+    if created_ids or updated_ids:
         bump_schedule_revision(db)
         db.commit()
     analysis = analyze_absences(db, _active_absences_for_date(db, request.data))
@@ -590,6 +653,7 @@ def create_absences_batch(
         **analysis,
         "batch_absence_case_ids": [absence.id for absence in selected_cases],
         "created_absence_case_ids": created_ids,
+        "updated_absence_case_ids": updated_ids,
     }
 
 
@@ -859,7 +923,9 @@ def list_records(
     db: Session = Depends(get_db),
 ):
     today = hong_kong_today()
-    adjustments = db.query(ScheduleAdjustment).order_by(ScheduleAdjustment.id.desc()).all()
+    adjustments = (db.query(ScheduleAdjustment)
+                   .filter(ScheduleAdjustment.status != "reverted")
+                   .order_by(ScheduleAdjustment.id.desc()).all())
     by_absence: dict[int, list[ScheduleAdjustment]] = {}
     for adjustment in adjustments:
         if adjustment.absence_case_id:
@@ -867,7 +933,7 @@ def list_records(
 
     names = {row.id: row.nom for row in db.query(Professor).all()}
     items = []
-    for absence in db.query(AbsenceCase).all():
+    for absence in db.query(AbsenceCase).filter(AbsenceCase.status != "cancelled").all():
         items.append({
             "id": f"absence-{absence.id}",
             "entity_id": absence.id,
@@ -1061,16 +1127,33 @@ def get_effective_timetable(
     if class_code:
         rows = [row for row in rows if row["class_code"] == class_code]
     rows.sort(key=lambda row: (row["period"], row["class_code"], row["subject"]))
-    return {
-        "date": data.isoformat(),
-        "revision": get_schedule_revision(db),
-        "lessons": [{
+    adjustment_ids = {row["adjustment_id"] for row in rows if row["adjustment_id"]}
+    legs = (db.query(ScheduleAdjustmentLeg)
+            .filter(ScheduleAdjustmentLeg.adjustment_id.in_(adjustment_ids)).all()
+            if adjustment_ids else [])
+    legs_by_destination = {
+        (leg.adjustment_id, leg.lesson_id, leg.to_date, leg.to_period): leg
+        for leg in legs
+    }
+    lessons = []
+    for row in rows:
+        leg = legs_by_destination.get((row["adjustment_id"], row["lesson_id"], data, row["period"]))
+        lessons.append({
             "occurrence_id": row["occurrence_id"], "lesson_id": row["lesson_id"],
             "period": row["period"], "class_code": row["class_code"], "subject": row["subject"],
             "teacher_ids": row["teachers"],
             "teacher_names": [professor_names.get(value, str(value)) for value in row["teachers"]],
             "locked": row["locked"], "source": row["source"], "adjustment_id": row["adjustment_id"],
-        } for row in rows],
+            "from_date": leg.from_date.isoformat() if leg else None,
+            "from_period": leg.from_period if leg else None,
+            "to_date": leg.to_date.isoformat() if leg else None,
+            "to_period": leg.to_period if leg else None,
+            "replacement_teacher_name": professor_names.get(leg.replacement_teacher_id) if leg and leg.replacement_teacher_id else None,
+        })
+    return {
+        "date": data.isoformat(),
+        "revision": get_schedule_revision(db),
+        "lessons": lessons,
     }
 
 

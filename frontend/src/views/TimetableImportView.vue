@@ -11,8 +11,8 @@
     <section class="panel">
       <h3>{{ $t('importCenter.baseTitle') }}</h3>
       <div class="import-grid">
-        <label>{{ $t('importCenter.classFile') }}<input type="file" accept=".xls" @change="classFile = $event.target.files[0]" /></label>
-        <label>{{ $t('importCenter.teacherFile') }}<input type="file" accept=".xlsx" @change="teacherFile = $event.target.files[0]" /></label>
+        <label>{{ $t('importCenter.classFile') }}<input :key="`class-${uploadInputKey}`" type="file" accept=".xls" @change="classFile = $event.target.files[0]" /></label>
+        <label>{{ $t('importCenter.teacherFile') }}<input :key="`teacher-${uploadInputKey}`" type="file" accept=".xlsx" @change="teacherFile = $event.target.files[0]" /></label>
         <label>{{ $t('importCenter.effectiveFrom') }}<input v-model="effectiveFrom" type="date" /></label>
         <label>{{ $t('importCenter.effectiveTo') }}<input v-model="effectiveTo" type="date" /></label>
         <Button :label="$t('importCenter.check')" icon="pi pi-search" class="progress-fill-button" :class="{ 'is-progressing': busy === 'preview' }" :loading="busy === 'preview'" :disabled="!classFile || !teacherFile || !effectiveFrom || !effectiveTo" @click="previewImport" />
@@ -33,10 +33,20 @@
               <td><input v-model="version.draft_effective_from" type="date" /></td>
               <td><input v-model="version.draft_effective_to" type="date" /></td>
               <td><div class="file-list"><span>{{ version.class_filename }}</span><span>{{ version.teacher_filename }}</span></div></td>
-              <td>{{ $t('importCenter.scaleValue', { lessons: version.lessons, teachers: version.teachers }) }}</td>
+              <td>
+                {{ $t('importCenter.scaleValue', { lessons: version.lessons, teachers: version.teachers }) }}
+                <details class="version-specials">
+                  <summary>{{ $t('importCenter.specialCount', { count: version.draft_special_subjects.length }) }}</summary>
+                  <div>
+                    <label v-for="subject in version.subjects" :key="subject" :class="{ selected: version.draft_special_subjects.includes(subject) }">
+                      <input v-model="version.draft_special_subjects" type="checkbox" :value="subject" />{{ subject }}
+                    </label>
+                  </div>
+                </details>
+              </td>
               <td>{{ $t('importCenter.recordValue', { absences: version.absence_records, adjustments: version.adjustment_records }) }}</td>
               <td><span :class="['status', version.locked ? 'locked' : 'available']">{{ version.locked ? $t('importCenter.locked') : $t('importCenter.available') }}</span><span v-if="version.is_current" class="status current">{{ $t('importCenter.current') }}</span></td>
-              <td><div class="version-actions"><Button :label="$t('common.save')" size="small" :loading="busy === `version-${version.id}`" :disabled="!version.draft_effective_from || !version.draft_effective_to || (version.draft_effective_from === version.effective_from && version.draft_effective_to === version.effective_to)" @click="saveVersion(version)" /><Button :label="$t('common.delete')" size="small" severity="danger" outlined :disabled="version.locked" @click="removeVersion(version)" /></div></td>
+              <td><div class="version-actions"><Button :label="$t('common.save')" size="small" :loading="busy === `version-${version.id}`" :disabled="!version.draft_effective_from || !version.draft_effective_to || !versionChanged(version)" @click="saveVersion(version)" /><Button :label="$t('common.delete')" size="small" severity="danger" outlined :disabled="version.locked" @click="removeVersion(version)" /></div></td>
             </tr>
             <tr v-if="!versions.length"><td colspan="7" class="empty-row">{{ $t('importCenter.noVersions') }}</td></tr>
           </tbody>
@@ -55,8 +65,20 @@
       <section class="panel">
         <div class="result-heading">
           <div><h3>{{ $t('importCenter.resultTitle') }}</h3><p class="muted">{{ $t('importCenter.resultHint') }}</p></div>
-          <Button :label="$t('importCenter.activate')" icon="pi pi-check" severity="success" :loading="busy === 'activate'" :disabled="hasErrors || hasUnresolvedReviews || !effectiveFrom || !effectiveTo" @click="activateImport" />
+          <div class="result-actions">
+            <Button :label="$t('importCenter.cancelUpload')" severity="danger" text :loading="busy === 'discard'" @click="discardPreview" />
+            <Button :label="$t('importCenter.activate')" icon="pi pi-check" severity="success" :loading="busy === 'activate'" :disabled="hasErrors || hasUnresolvedReviews || !effectiveFrom || !effectiveTo" @click="activateImport" />
+          </div>
         </div>
+        <fieldset class="special-subjects">
+          <legend>{{ $t('importCenter.specialSubjects') }}</legend>
+          <p class="muted">{{ $t('importCenter.specialSubjectsHint') }}</p>
+          <div>
+            <label v-for="subject in preview.subjects" :key="subject" :class="{ selected: specialSubjects.includes(subject) }">
+              <input v-model="specialSubjects" type="checkbox" :value="subject" />{{ subject }}
+            </label>
+          </div>
+        </fieldset>
         <ul v-if="preview.warnings.length" class="warnings">
           <li v-for="warning in preview.warnings" :key="warning">{{ warning }}</li>
         </ul>
@@ -131,6 +153,8 @@ const message = ref('')
 const resolutions = ref({})
 const savedResolutions = ref({})
 const selectedReviewIds = ref([])
+const specialSubjects = ref([])
+const uploadInputKey = ref(0)
 const resolutionId = (issue) => issue.resolution_id || `${issue.weekday}:${issue.period}:${issue.class_code}:${issue.teacher}`
 const reviewIds = computed(() => (preview.value?.issues || [])
   .filter(issue => issue.severity === 'review')
@@ -158,6 +182,10 @@ const bulkTeacherLabel = computed(() => t(selectedIssueType.value === 'extra' ? 
 const canConfirmSelected = computed(() => selectedReviewIds.value.length > 0
   && selectedReviewIds.value.every(id => resolutions.value[id])
   && selectedReviewIds.value.some(id => savedResolutions.value[id] !== resolutions.value[id]))
+const sameItems = (left, right) => left.length === right.length && left.every(item => right.includes(item))
+const versionChanged = (version) => version.draft_effective_from !== version.effective_from
+  || version.draft_effective_to !== version.effective_to
+  || !sameItems(version.draft_special_subjects, version.special_subjects)
 
 const toggleAllReviews = (event) => {
   selectedReviewIds.value = event.target.checked ? [...reviewIds.value] : []
@@ -192,7 +220,8 @@ const loadCurrent = async () => {
   ])
   timetable.value = currentResponse.data
   versions.value = versionsResponse.data.map(version => ({
-    ...version, draft_effective_from: version.effective_from, draft_effective_to: version.effective_to || ''
+    ...version, draft_effective_from: version.effective_from, draft_effective_to: version.effective_to || '',
+    draft_special_subjects: [...version.special_subjects]
   }))
 }
 
@@ -200,7 +229,8 @@ const saveVersion = async (version) => {
   busy.value = `version-${version.id}`; message.value = ''
   try {
     await axios.put(`/api/timetables/${version.id}`, {
-      effective_from: version.draft_effective_from, effective_to: version.draft_effective_to
+      effective_from: version.draft_effective_from, effective_to: version.draft_effective_to,
+      special_subjects: version.draft_special_subjects
     })
     message.value = t('importCenter.versionUpdated')
     await loadCurrent()
@@ -221,6 +251,7 @@ const previewImport = async () => {
     form.append('class_workbook', classFile.value)
     form.append('teacher_workbook', teacherFile.value)
     preview.value = (await axios.post('/api/timetables/import/preview', form)).data
+    specialSubjects.value = preview.value.subjects.filter(subject => /體育|視藝|美術|中默|英默|默書|默寫|聽寫|P\.?E\.?/i.test(subject))
     resolutions.value = {}
     savedResolutions.value = {}
     selectedReviewIds.value = []
@@ -232,14 +263,31 @@ const activateImport = async () => {
   try {
     await axios.post(`/api/timetables/import/${preview.value.preview_id}/activate`, {
       effective_from: effectiveFrom.value, effective_to: effectiveTo.value,
-      resolutions: resolutions.value
+      resolutions: resolutions.value, special_subjects: specialSubjects.value
     })
     message.value = t('importCenter.activated', { start: effectiveFrom.value, end: effectiveTo.value })
     preview.value = null
     resolutions.value = {}
     savedResolutions.value = {}
     selectedReviewIds.value = []
+    specialSubjects.value = []
     await loadCurrent()
+  } finally { busy.value = '' }
+}
+
+const discardPreview = async () => {
+  busy.value = 'discard'; message.value = ''
+  try {
+    await axios.delete(`/api/timetables/import/${preview.value.preview_id}`)
+    preview.value = null
+    classFile.value = null
+    teacherFile.value = null
+    resolutions.value = {}
+    savedResolutions.value = {}
+    selectedReviewIds.value = []
+    specialSubjects.value = []
+    uploadInputKey.value += 1
+    message.value = t('importCenter.uploadCancelled')
   } finally { busy.value = '' }
 }
 
@@ -251,9 +299,16 @@ onMounted(loadCurrent)
 <style scoped>
 .import-page { display: grid; gap: 1.25rem; color: var(--text-color-primary); }
 .page-heading, .result-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; }
+.result-actions { display: flex; align-items: center; gap: .45rem; }
 .page-heading h2 { margin: 0 0 .35rem; font-size: clamp(1.65rem, 3vw, 2.15rem); line-height: 1.15; letter-spacing: -.035em; }
 .page-heading p, .muted { color: var(--text-color-secondary); }
 .revision { padding-top: .4rem; color: var(--text-color-secondary); font-size: .8rem; white-space: nowrap; }
+.special-subjects { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border-color); border-radius: 10px; }
+.special-subjects legend { padding: 0 .35rem; font-size: .88rem; font-weight: 700; }
+.special-subjects p { margin: 0 0 .65rem; font-size: .78rem; }
+.special-subjects > div { display: flex; flex-wrap: wrap; gap: .45rem; }
+.special-subjects label { display: flex; align-items: center; gap: .35rem; padding: .42rem .6rem; border: 1px solid var(--border-color); border-radius: 7px; cursor: pointer; font-size: .78rem; }
+.special-subjects label.selected { border-color: #d3aa52; background: #fff6db; color: #72500b; }
 .panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
 .panel h3 { margin: 0 0 .9rem; }
 .result-heading h3 { margin: 0; }
@@ -284,6 +339,11 @@ tbody tr:hover { background: #fbfcfe; }
 .file-list { display: flex; flex-direction: column; gap: .2rem; max-width: 260px; }
 .file-list span { overflow: hidden; text-overflow: ellipsis; }
 .version-actions { display: flex; gap: .4rem; }
+.version-specials { margin-top: .35rem; }
+.version-specials summary { color: var(--primary-color-dark); cursor: pointer; font-size: .75rem; font-weight: 650; }
+.version-specials > div { display: flex; max-width: 420px; flex-wrap: wrap; gap: .3rem; padding-top: .45rem; white-space: normal; }
+.version-specials label { display: inline-flex; align-items: center; gap: .25rem; padding: .28rem .4rem; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; font-size: .7rem; }
+.version-specials label.selected { border-color: #d3aa52; background: #fff6db; color: #72500b; }
 .resolution-choice { display: flex; gap: .35rem; }
 .resolution-cell { display: flex; align-items: center; gap: .5rem; }
 .resolution-choice label { display: inline-flex; align-items: center; gap: .3rem; padding: .42rem .55rem; border: 1px solid #d6dce5; border-radius: 7px; cursor: pointer; }
@@ -312,6 +372,7 @@ tbody tr:hover { background: #fbfcfe; }
   .summary-grid { grid-template-columns: 1fr 1fr; }
   .summary-grid div:nth-child(3) { border-top: 1px solid var(--border-color); border-left: 0; }
   .summary-grid div:nth-child(4) { border-top: 1px solid var(--border-color); }
-  .result-heading .p-button { width: 100%; }
+  .result-actions { width: 100%; }
+  .result-actions .p-button { flex: 1; }
 }
 </style>

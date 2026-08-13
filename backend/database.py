@@ -111,6 +111,20 @@ def _ensure_timetable_version_columns(engine):
         pass
 
 
+def _ensure_timetable_lesson_columns(engine):
+    """Add lesson flags introduced after the first rescheduling release."""
+    try:
+        with engine.begin() as conn:
+            columns = conn.exec_driver_sql("PRAGMA table_info(timetable_lessons);").fetchall()
+            names = {column[1] for column in columns}
+            if columns and "special" not in names:
+                conn.exec_driver_sql(
+                    "ALTER TABLE timetable_lessons ADD COLUMN special BOOLEAN NOT NULL DEFAULT 0"
+                )
+    except Exception:
+        pass
+
+
 @lru_cache(maxsize=None)
 def get_engine_for_institucio(institucio: str):
     data_dir = get_data_dir_for_institucio(institucio)
@@ -120,6 +134,7 @@ def get_engine_for_institucio(institucio: str):
     create_data_tables(engine)
     _ensure_substitucions_aula_column(engine)
     _ensure_timetable_version_columns(engine)
+    _ensure_timetable_lesson_columns(engine)
     return engine
 
 

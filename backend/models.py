@@ -495,6 +495,7 @@ class TimetableLesson(Base):
     subject = Column(String, nullable=False)
     teachers_json = Column(Text, nullable=False)
     movable = Column(Boolean, default=True, nullable=False)
+    special = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=utc_now)
 
     __table_args__ = (
