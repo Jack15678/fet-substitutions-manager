@@ -13,7 +13,7 @@
     },
     "errors": { "title": "錯誤", "connection": "無法連接伺服器", "server": "伺服器內部錯誤", "unexpected": "發生未預期的錯誤" },
     "nav": {
-      "prevDay": "前一日", "nextDay": "下一日", "selectDate": "選擇日期", "menu": "選單", "settings": "系統設定",
+      "prevDay": "前一日", "nextDay": "下一日", "selectDate": "選擇日期", "today": "今天", "menu": "選單", "settings": "系統設定",
       "profile": "個人資料", "logout": "登出", "course": "所選日期的學年", "courseNone": "不屬於任何學年", "language": "介面語言"
     },
     "pages": { "workbench": "調課工作台", "records": "記錄", "import": "課表匯入" }

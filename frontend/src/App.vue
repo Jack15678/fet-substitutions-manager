@@ -50,39 +50,15 @@
       </div>
     </div>
 
-    <div v-else>
-      <!-- Navbar superior -->
+    <div v-else :class="['app-shell', { 'is-mobile': isMobile }]">
       <header v-if="!isMobile" class="navbar">
-        <div class="navbar-left">
-          <div class="date-selector">
-            <Button
-              icon="pi pi-chevron-left"
-              class="p-button-rounded p-button-text p-button-plain nav-date-btn"
-              v-tooltip.bottom="$t('app.nav.prevDay')"
-              @click="diaAnterior"
-            />
-            <Calendar
-              v-model="dataSeleccionada"
-              dateFormat="dd/mm/yy"
-              :showIcon="true"
-              :showButtonBar="true"
-              :placeholder="$t('app.nav.selectDate')"
-              :inputProps="{ autocomplete: 'nope', 'data-form-type': 'other', 'data-lpignore': 'true' }"
-            />
-            <Button
-              icon="pi pi-chevron-right"
-              class="p-button-rounded p-button-text p-button-plain nav-date-btn"
-              v-tooltip.bottom="$t('app.nav.nextDay')"
-              @click="diaSeguent"
-            />
-          </div>
+        <div class="navbar-brand">
+          <h1 class="logo"><i class="pi pi-calendar" aria-hidden="true"></i>{{ $t('app.title') }}</h1>
         </div>
 
-        <div class="navbar-center">
-          <h1 class="logo"><i class="pi pi-calendar" aria-hidden="true"></i>{{ $t('app.title') }}</h1>
-          <div class="config-info" v-if="cursos.length">
+        <div class="navbar-right">
+          <div v-if="cursos.length" class="config-info">
             <span
-              v-if="cursos.length"
               class="curs-indicador"
               :class="{ 'curs-indicador--cap': !cursDeLaData }"
               v-tooltip.bottom="$t('app.nav.course')"
@@ -90,9 +66,6 @@
               {{ cursDeLaData ? cursDeLaData.nom : $t('app.nav.courseNone') }}
             </span>
           </div>
-        </div>
-
-        <div class="navbar-right">
           <div class="language-control navbar-language">
             <label for="navbar-language" class="sr-only">{{ $t('app.nav.language') }}</label>
             <select id="navbar-language" v-model="currentLocale">
@@ -133,63 +106,74 @@
             <Button icon="pi pi-bars" class="p-button-rounded p-button-text p-button-plain" v-tooltip.bottom="$t('app.nav.menu')" @click="mostrarMenuMobil = true" />
           </div>
         </div>
-        <div class="mobile-date-row">
-          <Button
-            icon="pi pi-chevron-left"
-            class="p-button-rounded p-button-text p-button-plain nav-date-btn"
-            v-tooltip.bottom="$t('app.nav.prevDay')"
-            @click="diaAnterior"
-          />
-          <Calendar
-            v-model="dataSeleccionada"
-            dateFormat="dd/mm/yy"
-            :showIcon="true"
-            :showButtonBar="true"
-            :placeholder="$t('app.nav.selectDate')"
-            :inputProps="{ autocomplete: 'nope', 'data-form-type': 'other', 'data-lpignore': 'true' }"
-          />
-          <Button
-            icon="pi pi-chevron-right"
-            class="p-button-rounded p-button-text p-button-plain nav-date-btn"
-            v-tooltip.bottom="$t('app.nav.nextDay')"
-            @click="diaSeguent"
-          />
-        </div>
       </header>
 
-      <div class="tabs-container">
-        <div class="tabs">
-          <button class="tab" :class="{ active: paginaActiva === 'workbench' }" @click="paginaActiva = 'workbench'">{{ $t('app.pages.workbench') }}</button>
-          <button class="tab" :class="{ active: paginaActiva === 'records' }" @click="paginaActiva = 'records'">{{ $t('app.pages.records') }}</button>
-          <button v-if="isAdmin" class="tab" :class="{ active: paginaActiva === 'import' }" @click="paginaActiva = 'import'">{{ $t('app.pages.import') }}</button>
+      <aside v-if="!isMobile" class="sidebar">
+        <nav class="sidebar-nav" :aria-label="$t('app.nav.menu')">
+          <button class="sidebar-link" :class="{ active: paginaActiva === 'workbench' }" :aria-current="paginaActiva === 'workbench' ? 'page' : undefined" @click="paginaActiva = 'workbench'">
+            <i class="pi pi-calendar" aria-hidden="true"></i><span>{{ $t('app.pages.workbench') }}</span>
+          </button>
+          <button class="sidebar-link" :class="{ active: paginaActiva === 'records' }" :aria-current="paginaActiva === 'records' ? 'page' : undefined" @click="paginaActiva = 'records'">
+            <i class="pi pi-history" aria-hidden="true"></i><span>{{ $t('app.pages.records') }}</span>
+          </button>
+          <button v-if="isAdmin" class="sidebar-link" :class="{ active: paginaActiva === 'import' }" :aria-current="paginaActiva === 'import' ? 'page' : undefined" @click="paginaActiva = 'import'">
+            <i class="pi pi-upload" aria-hidden="true"></i><span>{{ $t('app.pages.import') }}</span>
+          </button>
+        </nav>
+      </aside>
+
+      <section class="app-workspace">
+        <div class="content-toolbar">
+          <div class="date-selector" :aria-label="$t('app.nav.selectDate')">
+            <Button
+              icon="pi pi-chevron-left"
+              class="p-button-rounded p-button-text p-button-plain nav-date-btn"
+              v-tooltip.bottom="$t('app.nav.prevDay')"
+              @click="diaAnterior"
+            />
+            <Calendar
+              v-model="dataSeleccionada"
+              dateFormat="dd/mm/yy"
+              :showIcon="true"
+              :showButtonBar="true"
+              :placeholder="$t('app.nav.selectDate')"
+              :inputProps="{ autocomplete: 'nope', 'data-form-type': 'other', 'data-lpignore': 'true' }"
+            />
+            <Button
+              icon="pi pi-chevron-right"
+              class="p-button-rounded p-button-text p-button-plain nav-date-btn"
+              v-tooltip.bottom="$t('app.nav.nextDay')"
+              @click="diaSeguent"
+            />
+            <Button :label="$t('app.nav.today')" outlined class="today-button" @click="dataSeleccionada = hongKongToday()" />
+          </div>
         </div>
-      </div>
 
-      <!-- La demo és pública i compartida: qui hi entra ha de saber que el que
-           escrigui el veuran altres visitants i que s'esborra cada nit. -->
-      <div v-if="esDemo" class="demo-avis">
-        <i class="pi pi-info-circle" aria-hidden="true"></i>
-        <span>
-          <strong>{{ $t('config.system.demoBannerTitle') }}.</strong>
-          {{ $t('config.system.demoBannerText') }}
-        </span>
-      </div>
+        <!-- La demo és pública i compartida: qui hi entra ha de saber que el que
+             escrigui el veuran altres visitants i que s'esborra cada nit. -->
+        <div v-if="esDemo" class="demo-avis">
+          <i class="pi pi-info-circle" aria-hidden="true"></i>
+          <span>
+            <strong>{{ $t('config.system.demoBannerTitle') }}.</strong>
+            {{ $t('config.system.demoBannerText') }}
+          </span>
+        </div>
 
-      <!-- Contingut -->
-      <main class="main-content">
-        <ReschedulingView
-          v-show="paginaActiva === 'workbench'"
-          ref="reschedulingView"
-          :dataGlobal="dataSeleccionada"
-          :isAdmin="isAdmin"
-        />
-        <RecordsView v-if="paginaActiva === 'records'" :isAdmin="isAdmin" @resume-absence="resumeAbsence" />
-        <TimetableImportView v-if="isAdmin" v-show="paginaActiva === 'import'" />
-      </main>
+        <main class="main-content">
+          <ReschedulingView
+            v-show="paginaActiva === 'workbench'"
+            ref="reschedulingView"
+            :dataGlobal="dataSeleccionada"
+            :isAdmin="isAdmin"
+          />
+          <RecordsView v-if="paginaActiva === 'records'" :isAdmin="isAdmin" @resume-absence="resumeAbsence" />
+          <TimetableImportView v-if="isAdmin" v-show="paginaActiva === 'import'" />
+        </main>
 
-      <footer class="footer">
-        <p>{{ $t('app.footer') }}</p>
-      </footer>
+        <footer class="footer">
+          <p>{{ $t('app.footer') }}</p>
+        </footer>
+      </section>
 
       <!-- Diàlegs -->
       <ConfiguracioDialog
@@ -211,6 +195,10 @@
         :style="{ width: '320px' }"
       >
         <div class="mobile-menu">
+          <Button icon="pi pi-calendar" class="p-button-text" :label="$t('app.pages.workbench')" @click="paginaActiva = 'workbench'; mostrarMenuMobil = false" />
+          <Button icon="pi pi-history" class="p-button-text" :label="$t('app.pages.records')" @click="paginaActiva = 'records'; mostrarMenuMobil = false" />
+          <Button v-if="isAdmin" icon="pi pi-upload" class="p-button-text" :label="$t('app.pages.import')" @click="paginaActiva = 'import'; mostrarMenuMobil = false" />
+          <hr />
           <Button
             v-if="isAdmin"
             icon="pi pi-cog"
@@ -763,32 +751,29 @@ input.p-inputtext.p-inputtext-sm {
   cursor: pointer;
 }
 
-/* Navbar Superior */
+/* App shell */
+.app-shell {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  grid-template-rows: 64px minmax(0, 1fr);
+}
+
 .navbar {
-  min-height: 72px;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  min-height: 64px;
   background: var(--card-background);
   color: var(--text-color-primary);
-  padding: .7rem 2rem;
+  padding: .65rem 1.25rem;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1.5rem;
-}
-
-.navbar-left {
-  display: flex;
-  align-items: center;
-  flex: 1;
-}
-
-.navbar-center {
-  display: flex;
-  order: -1;
-  align-items: center;
-  gap: .8rem;
-  flex: 1;
-  justify-content: flex-start;
 }
 
 .logo {
@@ -803,6 +788,12 @@ input.p-inputtext.p-inputtext-sm {
 }
 
 .logo .pi { display: grid; place-items: center; width: 2.15rem; height: 2.15rem; border-radius: 9px; color: #fff; background: var(--primary-color); font-size: .95rem; }
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
 
 .config-info {
   display: flex;
@@ -827,34 +818,6 @@ input.p-inputtext.p-inputtext-sm {
   font-style: italic;
 }
 
-.date-selector {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: var(--surface-soft);
-  padding: 0.25rem 0.4rem;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-}
-
-
-.nav-date-btn {
-  color: var(--text-color-secondary) !important;
-  font-size: 0.9rem !important;
-}
-
-.nav-date-btn:hover {
-  color: var(--primary-color) !important;
-  background: var(--primary-color-light) !important;
-}
-
-.navbar-right {
-  display: flex;
-  gap: 0.5rem;
-  flex: 1;
-  justify-content: flex-end;
-}
-
 .navbar-right .p-button {
   color: var(--text-color-secondary) !important;
 }
@@ -866,44 +829,121 @@ input.p-inputtext.p-inputtext-sm {
 
 .navbar-language select { border-color: var(--border-color); background: var(--surface-soft); color: var(--text-color-primary); }
 
-/* Tabs */
-.tabs-container {
+.sidebar {
+  grid-column: 1;
+  grid-row: 2;
+  position: sticky;
+  top: 64px;
+  align-self: start;
+  height: calc(100dvh - 64px);
+  padding: 1rem 0.8rem;
   background: var(--card-background);
-  border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
 }
 
-.tabs {
+.sidebar-nav {
   display: flex;
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 0 2rem;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
-.tab {
-  background: none;
-  border: none;
-  padding: .85rem 1.15rem;
-  font-size: .92rem;
-  font-weight: 650;
+.sidebar-link {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.72rem 0.8rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
   color: var(--text-color-secondary);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 650;
+  text-align: left;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: color .15s ease, background-color .15s ease, border-color .15s ease, transform .15s ease;
-  position: relative;
+  transition: color .15s ease, background-color .15s ease;
 }
 
-.tab:hover {
+.sidebar-link .pi {
+  color: #64748b;
+  text-align: center;
+}
+
+.sidebar-link:hover {
   color: var(--primary-color);
   background: var(--surface-soft);
 }
 
-.tab.active {
-  color: var(--primary-color);
-  border-bottom-color: var(--primary-color);
-  background: transparent;
+.sidebar-link.active {
+  color: #1d4ed8;
+  background: #edf4ff;
 }
 
-.tab:active { transform: translateY(1px); }
+.sidebar-link.active .pi {
+  color: #2563eb;
+}
+
+.app-workspace {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  min-height: calc(100dvh - 64px);
+  display: flex;
+  flex-direction: column;
+}
+
+.content-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1.25rem 2rem 0;
+}
+
+.date-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--card-background);
+}
+
+.date-selector .p-calendar {
+  width: 10.75rem;
+}
+
+.date-selector .p-calendar .p-inputtext {
+  width: 100%;
+  background: #fff;
+  border: 1px solid var(--border-color);
+  padding: 0.5rem 0.7rem;
+}
+
+.date-selector .p-calendar .p-inputtext:focus {
+  border-color: var(--primary-color);
+  box-shadow: var(--focus-ring);
+}
+
+.nav-date-btn {
+  color: var(--text-color-secondary) !important;
+  font-size: 0.9rem !important;
+}
+
+.nav-date-btn:hover {
+  color: var(--primary-color) !important;
+  background: var(--primary-color-light) !important;
+}
+
+.today-button {
+  height: 2.25rem;
+  border-width: 1px !important;
+  white-space: nowrap;
+}
 
 /* PrimeVue TabView unificat (diàlegs + scheduler) */
 .app-tabview .p-tabview-nav {
@@ -958,7 +998,7 @@ input.p-inputtext.p-inputtext-sm {
 /* Main Content */
 .main-content {
   flex: 1;
-  padding: 2.25rem 2rem 3.5rem;
+  padding: 1.5rem 2rem 3rem;
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
@@ -1028,92 +1068,52 @@ input.p-inputtext.p-inputtext-sm {
   overflow: hidden;
 }
 
-/* Calendar dins navbar */
-.navbar .p-calendar {
-  font-size: 0.95rem;
-}
-
-.navbar .p-calendar .p-inputtext {
-  background: #fff;
-  border: 1px solid var(--border-color);
-  padding: 0.5rem 0.75rem;
-}
-
-.navbar .p-calendar .p-inputtext:focus {
-  border-color: var(--primary-color);
-  box-shadow: var(--focus-ring);
-}
-
-/* Responsive per la navbar */
+/* Responsive shell */
 @media (max-width: 992px) {
+  .app-shell {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+
   .navbar {
     gap: .75rem;
     padding: .65rem 1rem;
   }
 
-  .navbar-left { flex: 0 1 auto; }
-  .navbar-center { flex: 1 1 auto; }
-  .navbar-right { flex: 0 0 auto; }
   .config-info { display: none; }
-
-  .tabs {
-    padding: 0 1rem;
-  }
 }
 
 @media (max-width: 720px) {
-  .navbar {
-    padding: 0.75rem 0.9rem;
-    gap: 0.75rem;
+  .app-shell.is-mobile {
+    display: flex;
+    flex-direction: column;
   }
 
-  .date-selector {
+  .app-workspace {
     width: 100%;
-    flex-wrap: wrap;
-    justify-content: center;
+    min-height: calc(100dvh - 58px);
   }
 
-  .navbar .p-calendar {
-    flex: 1 1 220px;
+  .content-toolbar {
+    padding: 0.75rem 0.75rem 0;
   }
 
-  .navbar .p-calendar .p-inputtext {
+  .content-toolbar .date-selector {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     width: 100%;
   }
 
-  .config-info {
-    display: none;
+  .date-selector .p-calendar {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .date-selector .p-calendar .p-inputtext {
+    width: 100%;
   }
 
   .logo {
-    font-size: 1.2rem;
-  }
-
-  .navbar-right {
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-
-  .tabs-container {
-    overflow-x: auto;
-  }
-
-  .tabs {
-    padding: 0 0.5rem;
-    justify-content: flex-start;
-    gap: 0.25rem;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .tabs::-webkit-scrollbar {
-    display: none;
-  }
-
-  .tab {
-    white-space: nowrap;
-    padding: 0.8rem 1rem;
-    font-size: 0.95rem;
+    font-size: 1rem;
   }
 
   .main-content {
@@ -1132,12 +1132,12 @@ input.p-inputtext.p-inputtext-sm {
 }
 
 .mobile-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   background: var(--card-background);
   color: var(--text-color-primary);
-  padding: 0.75rem 1rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -1147,17 +1147,6 @@ input.p-inputtext.p-inputtext-sm {
   justify-content: space-between;
 }
 
-.mobile-date-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.mobile-date-row .p-calendar {
-  flex: 1 1 auto;
-}
-
-.mobile-header .nav-date-btn { color: var(--text-color-secondary) !important; }
 .mobile-header-actions .p-button { color: var(--text-color-secondary) !important; }
 
 .mobile-menu {
@@ -1168,5 +1157,12 @@ input.p-inputtext.p-inputtext-sm {
 
 .mobile-menu .p-button {
   justify-content: flex-start;
+}
+
+.mobile-menu hr {
+  width: 100%;
+  margin: 0.25rem 0;
+  border: 0;
+  border-top: 1px solid var(--border-color);
 }
 </style>
