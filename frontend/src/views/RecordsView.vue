@@ -70,37 +70,6 @@
       </div>
     </section>
 
-    <section v-if="isAdmin" class="panel leave-panel">
-      <div class="leave-heading">
-        <div><h3>{{ $t('leave.title') }}</h3><p>{{ $t('leave.description') }}</p></div>
-        <Button v-if="editingId" :label="$t('leave.cancelEdit')" text @click="resetLeave" />
-      </div>
-      <form class="leave-form" @submit.prevent="saveLeave">
-        <label>{{ $t('leave.teacher') }}
-          <select v-model.number="leave.professor_id" required>
-            <option :value="null">{{ $t('common.selectOption') }}</option>
-            <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id">{{ teacher.name }}</option>
-          </select>
-        </label>
-        <label>{{ $t('leave.type') }}
-          <select v-model="leave.leave_type" required>
-            <option value="sick">{{ $t('leave.types.sick') }}</option>
-            <option value="maternity">{{ $t('leave.types.maternity') }}</option>
-            <option value="other">{{ $t('leave.types.other') }}</option>
-          </select>
-        </label>
-        <label>{{ $t('leave.startDate') }}<input v-model="leave.start_date" type="date" required /></label>
-        <label>{{ $t('leave.endDate') }}<input v-model="leave.end_date" type="date" required /></label>
-        <Button type="submit" :label="editingId ? $t('leave.update') : $t('leave.add')" icon="pi pi-save" :loading="leaveBusy" />
-      </form>
-      <div v-if="leaves.length" class="leave-list">
-        <article v-for="item in leaves" :key="item.id">
-          <div><strong>{{ item.teacher_name }}</strong><span>{{ leaveTypeLabel(item.leave_type) }} · {{ item.start_date }} → {{ item.end_date }}</span></div>
-          <div><Button :label="$t('common.edit')" icon="pi pi-pencil" text @click="editLeave(item)" /><Button :label="$t('common.delete')" icon="pi pi-trash" severity="danger" text @click="removeLeave(item.id)" /></div>
-        </article>
-      </div>
-      <p v-else class="empty-state compact">{{ $t('leave.empty') }}</p>
-    </section>
   </section>
 </template>
 
@@ -117,12 +86,7 @@ const scopes = ['future', 'today', 'past']
 const scope = ref('today')
 const records = ref({ today: '', page: 1, pages: 1, total: 0, items: [] })
 const loading = ref(false)
-const leaves = ref([])
-const teachers = ref([])
 const absenceTeachers = ref([])
-const leaveBusy = ref(false)
-const editingId = ref(null)
-const leave = reactive({ professor_id: null, leave_type: 'sick', start_date: '', end_date: '' })
 const editingAbsenceId = ref(null)
 const absenceEdit = reactive({ professor_id: null, data: '', periods: [] })
 
@@ -131,7 +95,6 @@ const formatDate = (value) => new Intl.DateTimeFormat(locale.value === 'en' ? 'e
 }).format(new Date(`${value}T12:00:00`))
 const statusLabel = (value) => t(`records.statuses.${value}`, value)
 const kindLabel = (value) => t(`records.kinds.${value}`, value)
-const leaveTypeLabel = (value) => t(`leave.types.${value}`, value)
 const joinItems = (items) => items.join(locale.value === 'en' ? ', ' : '、')
 
 const loadRecords = async (page = 1) => {
@@ -171,46 +134,14 @@ const removeAdjustment = async (adjustment) => {
   await axios.delete(`/api/adjustments/${adjustment.id}`)
   await loadRecords(records.value.page)
 }
-const loadLeaves = async () => {
-  const [leaveResponse, teacherResponse] = await Promise.all([
-    axios.get('/api/teacher-leaves'), axios.get('/api/rescheduling/teachers')
-  ])
-  leaves.value = leaveResponse.data
-  teachers.value = teacherResponse.data
-}
-const resetLeave = () => {
-  editingId.value = null
-  Object.assign(leave, { professor_id: null, leave_type: 'sick', start_date: '', end_date: '' })
-}
-const editLeave = (item) => {
-  editingId.value = item.id
-  Object.assign(leave, { professor_id: item.professor_id, leave_type: item.leave_type, start_date: item.start_date, end_date: item.end_date })
-}
-const saveLeave = async () => {
-  leaveBusy.value = true
-  try {
-    const url = editingId.value ? `/api/teacher-leaves/${editingId.value}` : '/api/teacher-leaves'
-    await axios[editingId.value ? 'put' : 'post'](url, leave)
-    resetLeave(); await loadLeaves()
-  } finally { leaveBusy.value = false }
-}
-const removeLeave = async (id) => {
-  await axios.delete(`/api/teacher-leaves/${id}`)
-  if (editingId.value === id) resetLeave()
-  await loadLeaves()
-}
-
-onMounted(async () => {
-  await loadRecords()
-  if (props.isAdmin) await loadLeaves()
-})
+onMounted(loadRecords)
 </script>
 
 <style scoped>
 .records-page { display: grid; gap: 1.25rem; color: var(--text-color-primary); }
-.page-heading, .leave-heading { display: flex; justify-content: space-between; gap: 1.5rem; align-items: flex-start; }
+.page-heading { display: flex; justify-content: space-between; gap: 1.5rem; align-items: flex-start; }
 .page-heading h2 { margin: 0 0 .35rem; font-size: clamp(1.65rem, 3vw, 2.15rem); line-height: 1.15; letter-spacing: -.035em; }
-.page-heading p, .leave-heading p, .meta { color: var(--text-color-secondary); }
+.page-heading p, .meta { color: var(--text-color-secondary); }
 .today { padding-top: .4rem; color: var(--text-color-secondary); font-size: .8rem; white-space: nowrap; }
 .panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
 .scope-tabs { display: flex; gap: .2rem; margin: -.25rem 0 1rem; border-bottom: 1px solid var(--border-color); }
@@ -221,9 +152,9 @@ onMounted(async () => {
 .record-list { border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; }
 .record-card { padding: 1rem; border-bottom: 1px solid var(--border-color); }
 .record-card:last-child { border-bottom: 0; }
-.record-summary, .adjustment-heading, .leave-list article { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.record-summary > div, .leave-list article > div:first-child { display: flex; flex-direction: column; gap: .2rem; }
-.record-summary span, .leave-list span { color: var(--text-color-secondary); font-size: .82rem; }
+.record-summary, .adjustment-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.record-summary > div { display: flex; flex-direction: column; gap: .2rem; }
+.record-summary span { color: var(--text-color-secondary); font-size: .82rem; }
 .status { display: inline-flex; align-items: center; padding: .24rem .52rem; border-radius: 999px; background: #eef1f4; color: #596476; font-size: .74rem; white-space: nowrap; }
 .status.resolved, .status.confirmed { background: #e4f5e9; color: #216a42; }
 .status.open { background: #fff4d6; color: #84590e; }
@@ -234,15 +165,11 @@ onMounted(async () => {
 .leg { display: flex; justify-content: space-between; gap: 1rem; margin-top: .4rem; padding: .55rem .7rem; border-radius: 8px; background: var(--surface-soft); font-size: .8rem; }
 .leg b { color: var(--primary-color-dark); text-align: right; }
 .pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; color: var(--text-color-secondary); font-size: .84rem; }
-.leave-heading h3 { margin: 0 0 .3rem; }
-.leave-form { display: grid; grid-template-columns: 1.2fr 1fr .8fr .8fr auto; align-items: end; gap: .75rem; margin: 1rem 0; }
-.leave-form label, .record-edit > label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: .82rem; font-weight: 650; }
-.leave-form select, .leave-form input, .record-edit select, .record-edit input[type=date] { width: 100%; min-height: 2.55rem; padding: .6rem .7rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
-.leave-form select:hover, .leave-form input:hover, .record-edit select:hover, .record-edit input:hover { border-color: #aeb8c5; }
-.leave-form select:focus, .leave-form input:focus, .record-edit select:focus, .record-edit input:focus { border-color: var(--primary-color); }
-.leave-list article { padding: .75rem 0; border-top: 1px solid #edf0f3; }
+.record-edit > label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: .82rem; font-weight: 650; }
+.record-edit select, .record-edit input[type=date] { width: 100%; min-height: 2.55rem; padding: .6rem .7rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
+.record-edit select:hover, .record-edit input:hover { border-color: #aeb8c5; }
+.record-edit select:focus, .record-edit input:focus { border-color: var(--primary-color); }
 .empty-state { display: grid; place-items: center; min-height: 160px; padding: 1.5rem; border-radius: 10px; background: var(--surface-soft); color: var(--text-color-secondary); text-align: center; }
-.empty-state.compact { min-height: 80px; }
 .record-actions, .edit-actions { display: flex; align-items: center; gap: .35rem; }
 .record-edit { display: grid; grid-template-columns: 1fr 180px; gap: .7rem; margin: .65rem 0; padding: .85rem; border-radius: 9px; background: var(--highlight-bg); }
 .edit-periods { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .5rem; }
@@ -251,22 +178,19 @@ onMounted(async () => {
 .edit-actions { grid-column: 1 / -1; justify-content: flex-end; }
 
 @media (max-width: 900px) {
-  .leave-form { grid-template-columns: 1fr 1fr; }
-  .leave-form .p-button { grid-column: 1 / -1; }
   .leg { flex-direction: column; gap: .2rem; }
   .leg b { text-align: left; }
 }
 
 @media (max-width: 600px) {
-  .page-heading, .leave-heading, .record-summary { flex-direction: column; }
+  .page-heading, .record-summary { flex-direction: column; }
   .today { padding-top: 0; }
   .record-summary, .adjustment-heading { align-items: flex-start; }
   .adjustment-heading { flex-direction: column; }
   .record-actions { justify-content: flex-start; flex-wrap: wrap; }
-  .record-edit, .leave-form { grid-template-columns: 1fr; }
+  .record-edit { grid-template-columns: 1fr; }
   .scope-tabs button { flex: 1; padding: .65rem .4rem; }
   .pagination { justify-content: space-between; gap: .2rem; }
-  .leave-list article { align-items: flex-start; }
   .panel { padding: 1rem; }
 }
 </style>

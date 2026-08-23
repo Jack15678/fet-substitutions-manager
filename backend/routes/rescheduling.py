@@ -1,11 +1,14 @@
 """API for timetable import, absence analysis and confirmed lesson swaps."""
 from datetime import date
+from io import BytesIO
 import json
 import math
 import uuid
+import zipfile
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
@@ -14,6 +17,8 @@ from auth_utils import get_current_user, require_admin
 from dependencies import get_db
 from models import (
     AbsenceCase,
+    Configuracio,
+    Curs,
     Professor,
     ProfessorBaixa,
     ScheduleAdjustment,
@@ -25,13 +30,22 @@ from models import (
     TimetableTeacherSlot,
     TimetableVersion,
 )
+from daily_exports import (
+    build_daily_pdf,
+    build_daily_xlsx,
+    daily_export_data,
+    get_period_times,
+    save_period_times,
+)
 from rescheduling_service import (
+    MAX_CYCLE_LESSONS_KEY,
     analyze_absences,
     apply_import_resolutions,
     build_import_preview,
     bump_schedule_revision,
     candidate_from_analysis,
     effective_occurrences,
+    get_max_cycle_lessons,
     get_schedule_revision,
     validate_move_legs,
     absence_keys,
@@ -109,6 +123,7 @@ class ClosureInput(BaseModel):
 
 class ClosureListRequest(BaseModel):
     closures: list[ClosureInput]
+    course_id: Optional[int] = None
 
 
 class TeacherLeaveRequest(BaseModel):
@@ -116,6 +131,20 @@ class TeacherLeaveRequest(BaseModel):
     start_date: date
     end_date: date
     leave_type: str
+
+
+class PeriodTimeInput(BaseModel):
+    period: int = Field(ge=1, le=9)
+    start: str
+    end: str
+
+
+class PeriodTimesRequest(BaseModel):
+    periods: list[PeriodTimeInput] = Field(min_length=9, max_length=9)
+
+
+class ReschedulingConfigRequest(BaseModel):
+    max_cycle_lessons: int = Field(ge=2, le=5)
 
 
 def _audit(db: Session, action: str, entity_type: str, entity_id, username: str, detail=None):
@@ -524,6 +553,171 @@ def list_teachers(data: Optional[date] = None, db: Session = Depends(get_db)):
                 db.query(Professor).filter(Professor.id.in_(teacher_ids)).order_by(Professor.nom).all()]
 
 
+@router.get("/api/rescheduling/statistics")
+def teacher_statistics(
+    course_id: int,
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_admin),
+):
+    course = db.get(Curs, course_id)
+    if not course:
+        raise HTTPException(404, "找不到學年")
+    if not course.data_fi:
+        raise HTTPException(400, "請先在配置頁補上學年結束日期")
+    start, end = course.data_inici, course.data_fi
+    month_keys = []
+    cursor = date(start.year, start.month, 1)
+    last_month = date(end.year, end.month, 1)
+    while cursor <= last_month:
+        month_keys.append(cursor.strftime("%Y-%m"))
+        cursor = date(cursor.year + (cursor.month == 12), cursor.month % 12 + 1, 1)
+
+    counts: dict[int, dict[str, int]] = {}
+    rows = (
+        db.query(ScheduleAdjustmentLeg, ScheduleAdjustment, AbsenceCase)
+        .join(ScheduleAdjustment, ScheduleAdjustmentLeg.adjustment_id == ScheduleAdjustment.id)
+        .join(AbsenceCase, ScheduleAdjustment.absence_case_id == AbsenceCase.id)
+        .filter(
+            ScheduleAdjustment.status == "confirmed",
+            ScheduleAdjustmentLeg.to_date >= start,
+            ScheduleAdjustmentLeg.to_date <= end,
+        )
+        .order_by(ScheduleAdjustment.id, ScheduleAdjustmentLeg.to_date, ScheduleAdjustmentLeg.id)
+        .all()
+    )
+    counted: set[tuple[int, int]] = set()
+    for leg, adjustment, absence in rows:
+        teacher_ids = (
+            {leg.replacement_teacher_id}
+            if adjustment.kind == "emergency_cover" and leg.replacement_teacher_id
+            else {int(value) for value in json.loads(leg.teachers_json or "[]")}
+        )
+        teacher_ids.discard(absence.professor_id)
+        month = leg.to_date.strftime("%Y-%m")
+        for teacher_id in teacher_ids:
+            key = (adjustment.id, teacher_id)
+            if key in counted:
+                continue
+            counted.add(key)
+            counts.setdefault(teacher_id, {}).setdefault(month, 0)
+            counts[teacher_id][month] += 1
+
+    teachers = db.query(Professor).order_by(Professor.nom).all()
+    return {
+        "course": {
+            "id": course.id,
+            "name": course.nom,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+        },
+        "months": month_keys,
+        "teachers": [{
+            "id": teacher.id,
+            "name": teacher.nom,
+            "monthly": {month: counts.get(teacher.id, {}).get(month, 0) for month in month_keys},
+            "total": sum(counts.get(teacher.id, {}).values()),
+        } for teacher in teachers],
+    }
+
+
+@router.get("/api/rescheduling/period-times")
+def period_time_settings(db: Session = Depends(get_db), _current_user=Depends(require_admin)):
+    return {"periods": get_period_times(db)}
+
+
+@router.put("/api/rescheduling/period-times")
+def update_period_time_settings(
+    request: PeriodTimesRequest,
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_admin),
+):
+    try:
+        periods = save_period_times(db, [item.model_dump() for item in request.periods])
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return {"periods": periods}
+
+
+@router.get("/api/rescheduling/config")
+def rescheduling_config(db: Session = Depends(get_db), _current_user=Depends(require_admin)):
+    return {"max_cycle_lessons": get_max_cycle_lessons(db)}
+
+
+@router.put("/api/rescheduling/config")
+def update_rescheduling_config(
+    request: ReschedulingConfigRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    if get_max_cycle_lessons(db) == request.max_cycle_lessons:
+        return {"max_cycle_lessons": request.max_cycle_lessons,
+                "revision": get_schedule_revision(db)}
+    row = db.get(Configuracio, MAX_CYCLE_LESSONS_KEY)
+    if row:
+        row.valor = str(request.max_cycle_lessons)
+        row.tipus = "integer"
+    else:
+        db.add(Configuracio(
+            clau=MAX_CYCLE_LESSONS_KEY,
+            valor=str(request.max_cycle_lessons),
+            tipus="integer",
+            descripcio="自動分析最大連鎖調課堂數",
+        ))
+    revision = bump_schedule_revision(db)
+    _audit(db, "update", "rescheduling_config", None, current_user.username,
+           {"max_cycle_lessons": request.max_cycle_lessons})
+    db.commit()
+    return {"max_cycle_lessons": request.max_cycle_lessons, "revision": revision}
+
+
+@router.get("/api/rescheduling/exports/daily.xlsx")
+def export_daily_xlsx(
+    data: date,
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_admin),
+):
+    entries = daily_export_data(db, data)
+    if not entries:
+        raise HTTPException(404, "所選日期沒有缺席記錄")
+    content = build_daily_xlsx(entries, get_period_times(db))
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="daily-substitution-{data.isoformat()}.xlsx"'},
+    )
+
+
+@router.get("/api/rescheduling/exports/daily.pdf")
+def export_daily_pdf(
+    data: date,
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_admin),
+):
+    entries = daily_export_data(db, data)
+    if not entries:
+        raise HTTPException(404, "所選日期沒有缺席記錄")
+    periods = get_period_times(db)
+    if len(entries) == 1:
+        content = build_daily_pdf(entries[0], periods)
+        return StreamingResponse(
+            BytesIO(content), media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="daily-substitution-{data.isoformat()}.pdf"'},
+        )
+
+    output = BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        for entry in entries:
+            archive.writestr(
+                f"teacher-{entry['teacher_id']}-{data.isoformat()}.pdf",
+                build_daily_pdf(entry, periods),
+            )
+    output.seek(0)
+    return StreamingResponse(
+        output, media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="daily-substitution-{data.isoformat()}.zip"'},
+    )
+
+
 def _validate_absence_request(
     db: Session,
     request: AbsenceCreateRequest,
@@ -557,6 +751,16 @@ def _active_absences_for_date(db: Session, target_date: date) -> list[AbsenceCas
             .order_by(AbsenceCase.id).all())
 
 
+def _professors_with_lessons(db: Session, target_date: date, periods: list[int]) -> set[int]:
+    selected_periods = set(periods)
+    return {
+        int(professor_id)
+        for occurrence in effective_occurrences(db, target_date, target_date)
+        if occurrence["lesson_id"] is not None and occurrence["period"] in selected_periods
+        for professor_id in occurrence["teachers"]
+    }
+
+
 def _delete_adjustment_rows(db: Session, adjustment: ScheduleAdjustment) -> None:
     db.query(ScheduleAdjustmentLeg).filter_by(adjustment_id=adjustment.id).delete(synchronize_session=False)
     db.delete(adjustment)
@@ -569,6 +773,8 @@ def create_absence(
     current_user=Depends(get_current_user),
 ):
     professor, periods = _validate_absence_request(db, request)
+    if professor.id not in _professors_with_lessons(db, request.data, periods):
+        raise HTTPException(400, "所選節次沒有需要處理的課堂")
     absence = AbsenceCase(
         professor_id=professor.id,
         data=request.data,
@@ -601,6 +807,22 @@ def create_absences_batch(
         )
         for professor_id in professor_ids
     ]
+    professors_with_lessons = _professors_with_lessons(db, request.data, request.periods)
+    validated = [item for item in validated if item[0].id in professors_with_lessons]
+    if not validated:
+        return {
+            "absence_case_id": None,
+            "absence_case_ids": [],
+            "revision": get_schedule_revision(db),
+            "search_dates": [],
+            "tasks": [],
+            "resolved_count": 0,
+            "unresolved_count": 0,
+            "batch_absence_case_ids": [],
+            "created_absence_case_ids": [],
+            "updated_absence_case_ids": [],
+        }
+    professor_ids = [professor.id for professor, _periods in validated]
     existing_cases = {
         row.professor_id: row
         for row in db.query(AbsenceCase).filter(
@@ -1127,7 +1349,19 @@ def get_effective_timetable(
     if class_code:
         rows = [row for row in rows if row["class_code"] == class_code]
     rows.sort(key=lambda row: (row["period"], row["class_code"], row["subject"]))
-    adjustment_ids = {row["adjustment_id"] for row in rows if row["adjustment_id"]}
+    touching_ids = {
+        row[0] for row in (
+            db.query(ScheduleAdjustment.id)
+            .join(ScheduleAdjustmentLeg, ScheduleAdjustmentLeg.adjustment_id == ScheduleAdjustment.id)
+            .filter(
+                ScheduleAdjustment.status == "confirmed",
+                or_(ScheduleAdjustmentLeg.from_date == data, ScheduleAdjustmentLeg.to_date == data),
+            )
+            .distinct()
+            .all()
+        )
+    }
+    adjustment_ids = touching_ids | {row["adjustment_id"] for row in rows if row["adjustment_id"]}
     legs = (db.query(ScheduleAdjustmentLeg)
             .filter(ScheduleAdjustmentLeg.adjustment_id.in_(adjustment_ids)).all()
             if adjustment_ids else [])
@@ -1154,13 +1388,27 @@ def get_effective_timetable(
         "date": data.isoformat(),
         "revision": get_schedule_revision(db),
         "lessons": lessons,
+        "adjustments": [
+            _serialize_adjustment(db, adjustment)
+            for adjustment in (
+                db.query(ScheduleAdjustment)
+                .filter(ScheduleAdjustment.id.in_(touching_ids))
+                .order_by(ScheduleAdjustment.id)
+                .all()
+            )
+        ] if touching_ids else [],
     }
 
 
 @router.get("/api/calendar/closures")
-def get_closures(db: Session = Depends(get_db)):
-    return [{"date": row.data.isoformat(), "note": row.note} for row in
-            db.query(SchoolClosure).order_by(SchoolClosure.data).all()]
+def get_closures(course_id: Optional[int] = None, db: Session = Depends(get_db)):
+    query = db.query(SchoolClosure)
+    if course_id is not None:
+        course = db.get(Curs, course_id)
+        if not course or not course.data_fi:
+            raise HTTPException(404, "找不到具完整日期範圍的學年")
+        query = query.filter(SchoolClosure.data >= course.data_inici, SchoolClosure.data <= course.data_fi)
+    return [{"date": row.data.isoformat(), "note": row.note} for row in query.order_by(SchoolClosure.data).all()]
 
 
 @router.put("/api/calendar/closures")
@@ -1169,11 +1417,23 @@ def replace_closures(
     db: Session = Depends(get_db),
     current_user=Depends(require_admin),
 ):
-    db.query(SchoolClosure).delete()
-    for item in request.closures:
+    course = db.get(Curs, request.course_id) if request.course_id is not None else None
+    if request.course_id is not None and (not course or not course.data_fi):
+        raise HTTPException(404, "找不到具完整日期範圍的學年")
+    if course:
+        if any(not course.data_inici <= item.data <= course.data_fi for item in request.closures):
+            raise HTTPException(400, "假期日期必須位於所選學年範圍內")
+        db.query(SchoolClosure).filter(
+            SchoolClosure.data >= course.data_inici,
+            SchoolClosure.data <= course.data_fi,
+        ).delete(synchronize_session=False)
+    else:
+        db.query(SchoolClosure).delete()
+    unique = {item.data: item for item in request.closures}
+    for item in unique.values():
         db.add(SchoolClosure(data=item.data, note=item.note, created_by=current_user.username))
     revision = bump_schedule_revision(db)
     _audit(db, "replace", "school_closures", None, current_user.username,
-           {"dates": [item.data.isoformat() for item in request.closures]})
+           {"course_id": request.course_id, "dates": [value.isoformat() for value in sorted(unique)]})
     db.commit()
     return {"success": True, "revision": revision}

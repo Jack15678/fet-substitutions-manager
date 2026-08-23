@@ -16,7 +16,7 @@
       "prevDay": "前一日", "nextDay": "下一日", "selectDate": "選擇日期", "today": "今天", "menu": "選單", "settings": "系統設定",
       "profile": "個人資料", "logout": "登出", "course": "所選日期的學年", "courseNone": "不屬於任何學年", "language": "介面語言"
     },
-    "pages": { "workbench": "調課工作台", "records": "記錄", "import": "課表匯入" }
+    "pages": { "workbench": "調課工作台", "records": "記錄", "statistics": "數據統計", "settings": "配置", "import": "課表匯入" }
   },
   "profile": {
     "title": "個人資料", "username": "用戶名稱", "currentPassword": "現時密碼", "newPassword": "新密碼",
@@ -29,9 +29,9 @@
       "demoBannerTitle": "示範環境", "demoBannerText": "資料每日凌晨四時重設，其他使用者可能看到你輸入的內容，請勿輸入真實個人資料。"
     },
     "courses": {
-      "title": "學年", "new": "新增學年", "help": "學年是一段有名稱的日期範圍。只需設定開始日期；系統會以後一個學年的前一日作為結束日期。",
+      "title": "學年", "new": "新增學年", "help": "學年是一段有名稱的明確日期範圍；暑假可留在兩個學年之間。",
       "empty": "尚未設定學年", "name": "名稱", "namePlaceholder": "例如：2025–2026", "start": "開始日期",
-      "startHint": "上一個學年會自動於此前一日結束", "end": "結束日期（自動計算）", "open": "未設定結束日期",
+      "end": "結束日期", "rangeHint": "開始及結束日期均必填，且不可與其他學年重疊。",
       "newTitle": "新增學年", "editTitle": "編輯學年", "loadError": "無法載入學年", "saveError": "無法儲存學年",
       "deleteConfirm": "刪除學年「{nom}」？這不會刪除調課資料。"
     },
@@ -69,7 +69,7 @@
     "previous": "上一頁", "next": "下一頁", "page": "第 {page}／{pages} 頁，共 {total} 項", "resume": "繼續處理",
     "statuses": { "open": "待處理", "resolved": "已解決", "cancelled": "已取消", "confirmed": "已確認", "reverted": "已撤銷" },
     "editReason": "修改原因", "reason": "原因：{reason}", "reasonPrompt": "輸入調課原因（可留空）", "editRemovesAdjustments": "修改缺席後，原有調課方案會失效並被刪除。繼續？", "deleteAbsenceConfirm": "完整刪除此缺席及其所有調課記錄？", "deleteAdjustmentConfirm": "完整刪除此調課記錄並回復基礎課表？",
-    "kinds": { "direct_swap": "直接互調", "three_cycle": "同班三堂連鎖", "emergency_cover": "同科緊急代課", "manual_swap": "人工互調", "manual_three_cycle": "人工三堂連鎖" }
+    "kinds": { "direct_swap": "直接互調", "three_cycle": "同班連鎖互調", "emergency_cover": "同科緊急代課", "manual_swap": "人工互調", "manual_three_cycle": "人工三堂連鎖" }
   },
   "leave": {
     "title": "長期缺席", "description": "日期範圍內的教師會被視為全日不可調動；不儲存醫療詳情。", "teacher": "教師", "type": "類型",
@@ -78,19 +78,36 @@
   },
   "rescheduling": {
     "eyebrow": "學校代課推薦系統", "title": "調課工作台", "description": "先找同班課堂互調；五個上課日內都不可行，才顯示同科緊急代課。",
-    "revision": "課表版本 {revision}", "noTimetable": "所選日期尚未有已生效課表，請由管理員前往「課表匯入」。",
+    "revision": "課表版本 {revision}",
     "steps": { "absence": "缺席老師", "recommendations": "查看並人工確認建議", "effective": "今天受影響的課表" },
-    "teacher": "缺席老師", "teachers": "缺席老師（可多選）", "selectTeachers": "選擇一位或多位老師", "date": "日期", "absenceDate": "缺席日期", "absentPeriods": "缺席節次", "allDay": "全天缺席", "analyzeAll": "分析全部課堂", "checkingDate": "正在核對日期……", "invalidDate": "非法日期",
+    "teacher": "缺席老師", "teachers": "缺席老師（可多選）", "selectTeachers": "選擇一位或多位老師", "date": "日期", "absenceDate": "缺席日期", "absentPeriods": "缺席節次", "allDay": "全天缺席", "analyzeAll": "分析全部課堂", "checkingDate": "正在核對日期……", "invalidDate": "所選日期未有課表資料",
     "counts": "已解決 {resolved} · 未解決 {unresolved}", "cancelAbsence": "取消這次缺席",
     "analysisEmpty": "選擇教師、日期和節次後，系統會協調計算全部受影響課堂。", "noTasks": "所選節次已沒有需要處理的課堂。",
     "originalTeacher": "原任：{teachers}", "recommendable": "可處理", "unresolved": "未解決", "candidates": "可選方案", "specialCourseLater": "特殊課跨日，已降低優先級",
-    "confirmArrangement": "確認這個安排", "noCandidate": "五個上課日內沒有可行互調，也沒有空閒的同科緊急代課教師，需要人工處理。",
-    "manualSwap": "人工互調", "period": "節次", "class": "班別", "subject": "科目", "teacherColumn": "教師", "status": "狀態", "affectedHint": "只顯示已確認的調課安排", "affectedLessons": "{count} 堂受影響課堂", "originalSlot": "原本", "currentSlot": "現在", "coverAt": "代課", "viewMode": "顯示方式", "cardView": "卡片", "timetableView": "班級課表", "movedOut": "移出", "movedIn": "移入", "covered": "代課", "showAllLessons": "顯示完整課表（人工互調）", "noAdjustments": "當日沒有已確認的調課", "noLessons": "當日沒有課堂資料",
+    "confirmArrangement": "確認這個安排", "verifyTimetables": "核對涉及老師的課表", "verifyTitle": "核對涉及老師的課表", "verifyHint": "以下是系統根據現行課表及所選方案重建的確認後課表，只顯示調整後的新安排及沒有改變的課。", "adjusted": "調整", "noCandidate": "五個上課日內沒有可行互調，也沒有空閒的同科緊急代課教師，需要人工處理。",
+    "manualSwap": "人工互調", "period": "節次", "class": "班別", "subject": "科目", "teacherColumn": "教師", "status": "狀態", "affectedHint": "只顯示已確認的調課安排", "affectedLessons": "{count} 堂受影響課堂", "originalSlot": "原本", "currentSlot": "現在", "coverAt": "代課", "viewMode": "顯示方式", "cardView": "課堂閉環", "timetableView": "班級課表", "cycleNode": "課堂 {number}", "cycleClosed": "返回課堂 {number}，閉環完成", "movedOut": "調整", "movedIn": "改為", "covered": "代課", "showAllLessons": "顯示完整課表（人工互調）", "noAdjustments": "當日沒有已確認的調課", "noLessons": "當日沒有課堂資料",
     "manualSelected": "人工互調：已選 {count} 堂", "manualHint": "可切換日期繼續選擇；只允許同班 2 或 3 堂完整互調。",
     "manualReason": "調課原因（必填）", "clear": "清除", "confirmManual": "確認人工互調", "history": "已確認／已撤銷調課",
     "confirmedLocked": "已確認並鎖定", "revert": "撤銷", "noHistory": "尚未有調課紀錄。", "closures": "停課／假期日期",
     "closureHint": "每行一個日期（YYYY-MM-DD）；搜尋下一上課日會自動跳過。", "saveDates": "儲存日期",
-    "sources": { "base": "基礎課表", "base_conflict": "兩表不一致・已鎖定", "teacher_workbook": "教師表忙碌", "direct_swap": "已互調", "three_cycle": "三堂連鎖", "emergency_cover": "緊急代課", "manual_swap": "人工互調", "manual_three_cycle": "人工連鎖" }
+    "sources": { "base": "基礎課表", "base_conflict": "兩表不一致・已鎖定", "teacher_workbook": "教師表忙碌", "direct_swap": "已互調", "three_cycle": "連鎖互調", "emergency_cover": "緊急代課", "manual_swap": "人工互調", "manual_three_cycle": "人工連鎖" }
+  },
+  "statistics": {
+    "title": "數據統計", "description": "按學年查看每位老師參與代課及互調課堂的次數。",
+    "matrixTitle": "教師月份統計", "matrixHint": "只計已確認且未撤銷的安排。", "course": "學年", "teacher": "老師", "total": "學年合計",
+    "noCoursesOption": "尚未設定學年", "noCoursesTitle": "尚未設定學年", "noCoursesHint": "統計及每日導出需要學年名稱、開始及結束日期，請先到配置頁新增學年。", "configureCourses": "前往配置學年",
+    "exportTitle": "導出每日調課／代課表", "exportHint": "Excel 每名缺席老師一個工作表；PDF 每名老師一份，多人時下載 ZIP。", "exportDate": "匯出日期", "exportExcel": "匯出 Excel", "exportPdf": "匯出 PDF"
+  },
+  "settings": {
+    "title": "配置", "description": "管理學年、假期、調課及導出所使用的設定。",
+    "periodTitle": "調課與節次設定", "periodHint": "設定自動分析的連鎖上限，以及 Excel／PDF 共用的第 1 至第 9 節時間。",
+    "maxCycleLessons": "自動分析最大連鎖堂數", "maxCycleHint": "可設為 2 至 5；設為 2 時只建議直接互調。",
+    "holidays": {
+      "title": "假期匯入", "hint": "選擇學年後，可輸入日期或在全年日曆點選假期；兩種方式共用同一份清單。", "course": "學年", "needCourse": "請先新增學年", "completeCourse": "請先為這個學年補上結束日期。",
+      "method": "假期設定方式", "textMethod": "輸入日期", "calendarMethod": "全年日曆", "textLabel": "假期日期（YYYY/MM/DD）", "textPlaceholder": "2026/01/01\n2026/02/19", "importDates": "匯入日期",
+      "invalidDate": "日期「{date}」格式無效，請使用 YYYY/MM/DD。", "outOfRange": "日期「{date}」不在所選學年內。", "imported": "已加入 {count} 個日期，儲存後生效。", "selected": "已選 {count} 日", "clear": "清除本學年", "saved": "假期已儲存。",
+      "weekdays": { "0": "一", "1": "二", "2": "三", "3": "四", "4": "五", "5": "六", "6": "日" }
+    }
   },
   "importCenter": {
     "eyebrow": "管理員", "title": "課表匯入中心", "description": "先檢查兩份課表；資料不一致的課堂會逐項列出並鎖定。",

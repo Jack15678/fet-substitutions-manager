@@ -1,6 +1,7 @@
 <template>
   <div id="app">
     <Toast />
+    <ConfirmDialog />
 
     <div v-if="!autenticat" class="login-screen">
       <div class="login-card">
@@ -116,6 +117,12 @@
           <button class="sidebar-link" :class="{ active: paginaActiva === 'records' }" :aria-current="paginaActiva === 'records' ? 'page' : undefined" @click="paginaActiva = 'records'">
             <i class="pi pi-history" aria-hidden="true"></i><span>{{ $t('app.pages.records') }}</span>
           </button>
+          <button v-if="isAdmin" class="sidebar-link" :class="{ active: paginaActiva === 'statistics' }" :aria-current="paginaActiva === 'statistics' ? 'page' : undefined" @click="paginaActiva = 'statistics'">
+            <i class="pi pi-chart-bar" aria-hidden="true"></i><span>{{ $t('app.pages.statistics') }}</span>
+          </button>
+          <button v-if="isAdmin" class="sidebar-link" :class="{ active: paginaActiva === 'settings' }" :aria-current="paginaActiva === 'settings' ? 'page' : undefined" @click="paginaActiva = 'settings'">
+            <i class="pi pi-sliders-h" aria-hidden="true"></i><span>{{ $t('app.pages.settings') }}</span>
+          </button>
           <button v-if="isAdmin" class="sidebar-link" :class="{ active: paginaActiva === 'import' }" :aria-current="paginaActiva === 'import' ? 'page' : undefined" @click="paginaActiva = 'import'">
             <i class="pi pi-upload" aria-hidden="true"></i><span>{{ $t('app.pages.import') }}</span>
           </button>
@@ -167,6 +174,8 @@
             :isAdmin="isAdmin"
           />
           <RecordsView v-if="paginaActiva === 'records'" :isAdmin="isAdmin" @resume-absence="resumeAbsence" />
+          <StatisticsView v-if="isAdmin && paginaActiva === 'statistics'" :dataGlobal="dataSeleccionada" @configure="paginaActiva = 'settings'" />
+          <SettingsView v-if="isAdmin && paginaActiva === 'settings'" @cursos-canviats="carregarCursos" />
           <TimetableImportView v-if="isAdmin" v-show="paginaActiva === 'import'" />
         </main>
 
@@ -197,6 +206,8 @@
         <div class="mobile-menu">
           <Button icon="pi pi-calendar" class="p-button-text" :label="$t('app.pages.workbench')" @click="paginaActiva = 'workbench'; mostrarMenuMobil = false" />
           <Button icon="pi pi-history" class="p-button-text" :label="$t('app.pages.records')" @click="paginaActiva = 'records'; mostrarMenuMobil = false" />
+          <Button v-if="isAdmin" icon="pi pi-chart-bar" class="p-button-text" :label="$t('app.pages.statistics')" @click="paginaActiva = 'statistics'; mostrarMenuMobil = false" />
+          <Button v-if="isAdmin" icon="pi pi-sliders-h" class="p-button-text" :label="$t('app.pages.settings')" @click="paginaActiva = 'settings'; mostrarMenuMobil = false" />
           <Button v-if="isAdmin" icon="pi pi-upload" class="p-button-text" :label="$t('app.pages.import')" @click="paginaActiva = 'import'; mostrarMenuMobil = false" />
           <hr />
           <Button
@@ -229,6 +240,7 @@ import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Toast from 'primevue/toast'
+import ConfirmDialog from 'primevue/confirmdialog'
 import { useToast } from 'primevue/usetoast'
 import Calendar from 'primevue/calendar'
 import Button from 'primevue/button'
@@ -237,6 +249,8 @@ import Password from 'primevue/password'
 import Dialog from 'primevue/dialog'
 import ReschedulingView from './views/ReschedulingView.vue'
 import RecordsView from './views/RecordsView.vue'
+import StatisticsView from './views/StatisticsView.vue'
+import SettingsView from './views/SettingsView.vue'
 import TimetableImportView from './views/TimetableImportView.vue'
 import ConfiguracioDialog from './components/ConfiguracioDialog.vue'
 import ProfileDialog from './components/ProfileDialog.vue'

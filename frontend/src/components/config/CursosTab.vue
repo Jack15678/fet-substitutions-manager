@@ -24,10 +24,7 @@
       </Column>
 
       <Column :header="$t('config.courses.end')">
-        <template #body="{ data }">
-          <span v-if="data.data_fi">{{ data.data_fi }}</span>
-          <Tag v-else severity="success" :value="$t('config.courses.open')" />
-        </template>
+        <template #body="{ data }">{{ data.data_fi || '—' }}</template>
       </Column>
 
       <Column :header="$t('common.actions')" style="width: 110px;">
@@ -70,7 +67,11 @@
         <div class="field">
           <label>{{ $t('config.courses.start') }}</label>
           <Calendar v-model="cursForm.data_inici" dateFormat="dd/mm/yy" :showIcon="true" />
-          <small class="field-hint">{{ $t('config.courses.startHint') }}</small>
+        </div>
+        <div class="field">
+          <label>{{ $t('config.courses.end') }}</label>
+          <Calendar v-model="cursForm.data_fi" dateFormat="dd/mm/yy" :showIcon="true" />
+          <small class="field-hint">{{ $t('config.courses.rangeHint') }}</small>
         </div>
       </div>
 
@@ -79,7 +80,7 @@
         <Button
           :label="$t('common.save')"
           icon="pi pi-check"
-          :disabled="!cursForm.nom || !cursForm.data_inici"
+          :disabled="!cursForm.nom || !cursForm.data_inici || !cursForm.data_fi"
           :loading="desantCurs"
           @click="desarCurs"
         />
@@ -98,7 +99,6 @@ import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Calendar from 'primevue/calendar'
 import Button from 'primevue/button'
-import Tag from 'primevue/tag'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import { useCursos } from './useCursos.js'
@@ -120,9 +120,7 @@ const {
 
 const desantCurs = ref(false)
 const mostrarDialegCurs = ref(false)
-// Un curs només té nom + data d'inici: la data de fi la deriva el sistema
-// (= inici del curs següent − 1 dia; l'últim queda obert).
-const cursForm = ref({ id: null, nom: '', data_inici: null })
+const cursForm = ref({ id: null, nom: '', data_inici: null, data_fi: null })
 
 const carregarCursosAmbToast = async () => {
   try {
@@ -133,7 +131,7 @@ const carregarCursosAmbToast = async () => {
 }
 
 const obrirNouCurs = () => {
-  cursForm.value = { id: null, nom: '', data_inici: null }
+  cursForm.value = { id: null, nom: '', data_inici: null, data_fi: null }
   mostrarDialegCurs.value = true
 }
 
@@ -141,7 +139,8 @@ const obrirEditarCurs = (curs) => {
   cursForm.value = {
     id: curs.id,
     nom: curs.nom,
-    data_inici: parseIsoDate(curs.data_inici)
+    data_inici: parseIsoDate(curs.data_inici),
+    data_fi: parseIsoDate(curs.data_fi)
   }
   mostrarDialegCurs.value = true
 }
@@ -151,7 +150,8 @@ const desarCurs = async () => {
   try {
     const payload = {
       nom: cursForm.value.nom,
-      data_inici: formatIsoDate(cursForm.value.data_inici)
+      data_inici: formatIsoDate(cursForm.value.data_inici),
+      data_fi: formatIsoDate(cursForm.value.data_fi)
     }
     if (cursForm.value.id) {
       await axios.put(`/api/cursos/${cursForm.value.id}`, payload)

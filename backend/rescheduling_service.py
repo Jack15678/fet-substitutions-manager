@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from io import BytesIO
 import hashlib
+from itertools import permutations
 import json
 import re
 from typing import Iterable
@@ -36,6 +37,7 @@ EMPTY_MARKERS = {"", "-", "--", "—", "/", "x", "X", "-x-"}
 IGNORED_CLASS_ACTIVITIES = {"康樂活動(13:00-14:30)"}
 WEEKDAYS = {f"星期{name}": index for index, name in enumerate("一二三四五")}
 TIME_RANGE = re.compile(r"(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})")
+MAX_CYCLE_LESSONS_KEY = "rescheduling_max_cycle_lessons"
 
 
 def clean(value) -> str:
@@ -635,10 +637,18 @@ def _leg(occurrence: dict, to_date: date, to_period: int) -> dict:
     }
 
 
+def get_max_cycle_lessons(db: Session) -> int:
+    row = db.get(Configuracio, MAX_CYCLE_LESSONS_KEY)
+    try:
+        return min(5, max(2, int(row.valor))) if row else 3
+    except (TypeError, ValueError):
+        return 3
+
+
 def validate_move_legs(legs: list[dict], occurrences: list[dict], absences: set,
-                       closures: set[date] | None = None) -> tuple[bool, str]:
-    if len(legs) not in (2, 3):
-        return False, "調課必須包含 2 或 3 堂課"
+                       closures: set[date] | None = None, max_legs: int = 3) -> tuple[bool, str]:
+    if not 2 <= len(legs) <= max_legs:
+        return False, f"調課必須包含 2 至 {max_legs} 堂課"
     classes = {leg["class_code"] for leg in legs}
     if len(classes) != 1:
         return False, "連鎖調課只可在同一班別內進行"
@@ -775,6 +785,7 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
     occurrences = effective_occurrences(db, start, dates[-1])
     absences = absence_keys(db, start, dates[-1])
     closures = {row.data for row in db.query(SchoolClosure).all()}
+    max_cycle_lessons = get_max_cycle_lessons(db)
     targets = []
     for absence in absence_cases:
         periods = {int(value) for value in json.loads(absence.periods_json or "[]")}
@@ -830,20 +841,26 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
 
             cycle_for_day: list[dict] = []
             pool = [occ for occ in same_class if occ["date"] <= day][:24]
-            for index, second in enumerate(pool):
-                for third in pool[index + 1:]:
-                    if max(second["date"], third["date"]) != day:
+            for cycle_length in range(3, max_cycle_lessons + 1):
+                # ponytail: bounded permutation search; use a solver if chains above five lessons become necessary.
+                length_start = len(cycle_for_day)
+                for visit, chain in enumerate(permutations(pool, cycle_length - 1), 1):
+                    if visit > 10_000 or (cycle_length > 3 and len(cycle_for_day) - length_start >= 200):
+                        break
+                    if max(occurrence["date"] for occurrence in chain) != day:
                         continue
-                    for middle, last in ((second, third), (third, second)):
-                        legs = [
-                            _leg(target, middle["date"], middle["period"]),
-                            _leg(middle, last["date"], last["period"]),
-                            _leg(last, target["date"], target["period"]),
-                        ]
-                        ok, _ = validate_move_legs(legs, occurrences, absences, closures)
-                        if ok:
-                            label = "同班三堂連鎖互調" if day == start else f"最遲於 {day.isoformat()} 完成三堂連鎖"
-                            cycle_for_day.append(_candidate("three_cycle", target, legs, start, label))
+                    cycle = (target, *chain)
+                    legs = [
+                        _leg(source, destination["date"], destination["period"])
+                        for source, destination in zip(cycle, cycle[1:] + cycle[:1])
+                    ]
+                    ok, _ = validate_move_legs(
+                        legs, occurrences, absences, closures, max_cycle_lessons
+                    )
+                    if ok:
+                        label = (f"同班 {cycle_length} 堂連鎖互調" if day == start else
+                                 f"最遲於 {day.isoformat()} 完成 {cycle_length} 堂連鎖")
+                        cycle_for_day.append(_candidate("three_cycle", target, legs, start, label))
             candidates.extend(cycle_for_day)
 
         candidates.sort(key=lambda item: (

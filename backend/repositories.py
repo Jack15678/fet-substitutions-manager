@@ -6,7 +6,7 @@ Encapsula tota la lògica d'accés a dades
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 from typing import List, Optional, Dict, Any
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 import sys
 
@@ -421,23 +421,20 @@ class XMLVersionRepository:
 
 
 class CursRepository:
-    """Cursos acadèmics: seqüència CONTÍGUA de períodes (mateix patró que xml_versions).
-
-    Només es defineix `data_inici`. `data_fi` es deriva sempre: el curs acaba el dia
-    abans que comenci el següent, i l'últim queda obert (`data_fi = NULL`). Així tota
-    data pertany exactament a un curs i no cal cap flag d'"actiu".
-    """
+    """Cursos acadèmics amb rangs explícits, no solapats i possibles buits."""
 
     @staticmethod
-    def _rechain(db: Session) -> None:
-        """Recalcula data_fi de tots els cursos perquè la seqüència sigui contígua."""
-        cursos = db.query(Curs).order_by(Curs.data_inici.asc()).all()
-        for i, curs in enumerate(cursos):
-            seguent = cursos[i + 1] if i + 1 < len(cursos) else None
-            nova_fi = (seguent.data_inici - timedelta(days=1)) if seguent else None
-            if curs.data_fi != nova_fi:
-                curs.data_fi = nova_fi
-        db.commit()
+    def _validate_range(db: Session, data_inici: date, data_fi: date, exclude_id: int | None = None) -> None:
+        if data_inici > data_fi:
+            raise ValueError("結束日期不可早於開始日期")
+        query = db.query(Curs).filter(
+            Curs.data_inici <= data_fi,
+            or_(Curs.data_fi.is_(None), Curs.data_fi >= data_inici),
+        )
+        if exclude_id is not None:
+            query = query.filter(Curs.id != exclude_id)
+        if query.first():
+            raise ValueError("學年日期範圍不可重疊")
 
     @staticmethod
     def list_all(db: Session) -> List[Curs]:
@@ -449,7 +446,7 @@ class CursRepository:
 
     @staticmethod
     def get_for_date(db: Session, data: str) -> Optional[Curs]:
-        """Curs al qual pertany una data. Cap si la data és anterior al primer curs."""
+        """Curs al qual pertany una data; cap si cau fora dels rangs definits."""
         data_obj = parse_date(data)
         return db.query(Curs).filter(
             and_(
@@ -459,23 +456,24 @@ class CursRepository:
         ).order_by(Curs.data_inici.desc()).first()
 
     @staticmethod
-    def create(db: Session, nom: str, data_inici: date) -> Curs:
-        nou = Curs(nom=nom, data_inici=data_inici, data_fi=None)
+    def create(db: Session, nom: str, data_inici: date, data_fi: date) -> Curs:
+        CursRepository._validate_range(db, data_inici, data_fi)
+        nou = Curs(nom=nom, data_inici=data_inici, data_fi=data_fi)
         db.add(nou)
         db.commit()
-        CursRepository._rechain(db)
         db.refresh(nou)
         return nou
 
     @staticmethod
-    def update(db: Session, curs_id: int, nom: str, data_inici: date) -> Optional[Curs]:
+    def update(db: Session, curs_id: int, nom: str, data_inici: date, data_fi: date) -> Optional[Curs]:
         curs = db.query(Curs).filter(Curs.id == curs_id).first()
         if not curs:
             return None
+        CursRepository._validate_range(db, data_inici, data_fi, curs_id)
         curs.nom = nom
         curs.data_inici = data_inici
+        curs.data_fi = data_fi
         db.commit()
-        CursRepository._rechain(db)
         db.refresh(curs)
         return curs
 
@@ -486,7 +484,6 @@ class CursRepository:
             return False
         db.delete(curs)
         db.commit()
-        CursRepository._rechain(db)
         return True
 
 

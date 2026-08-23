@@ -1,13 +1,4 @@
-"""
-Routes per cursos acadèmics.
-
-Els cursos formen una seqüència CONTÍGUA de períodes (mateix patró que `xml_versions`):
-només es defineix `data_inici`; `data_fi` la manté el sistema (= inici del curs següent
-− 1 dia) i l'últim curs queda obert. Per tant tota data pertany exactament a un curs i
-no cal cap flag d'"actiu": el curs es resol per la data on es treballa.
-
-Cap dada de substitucions o vigilàncies es toca en crear, editar o eliminar un curs.
-"""
+"""Routes per cursos acadèmics amb rangs explícits i no solapats."""
 from datetime import date
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -24,6 +15,7 @@ router = APIRouter(prefix="/api/cursos", tags=["cursos"])
 class CursInput(BaseModel):
     nom: str
     data_inici: date
+    data_fi: date
 
 
 def _serialize(c) -> dict:
@@ -31,14 +23,13 @@ def _serialize(c) -> dict:
         "id": c.id,
         "nom": c.nom,
         "data_inici": c.data_inici.isoformat() if c.data_inici else None,
-        # derivada pel sistema; None = últim curs (obert)
         "data_fi": c.data_fi.isoformat() if c.data_fi else None,
     }
 
 
 @router.get("")
 async def llistar_cursos(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    """Llista de cursos (més recent primer), amb la data_fi ja derivada."""
+    """Llista de cursos (més recent primer)."""
     return [_serialize(c) for c in CursRepository.list_all(db)]
 
 
@@ -97,14 +88,20 @@ async def curs_per_data(data: str, db: Session = Depends(get_db),
 @router.post("")
 async def crear_curs(payload: CursInput, db: Session = Depends(get_db),
                      current_user=Depends(require_admin)):
-    c = CursRepository.create(db, payload.nom, payload.data_inici)
+    try:
+        c = CursRepository.create(db, payload.nom, payload.data_inici, payload.data_fi)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     return _serialize(c)
 
 
 @router.put("/{curs_id}")
 async def editar_curs(curs_id: int, payload: CursInput, db: Session = Depends(get_db),
                       current_user=Depends(require_admin)):
-    c = CursRepository.update(db, curs_id, payload.nom, payload.data_inici)
+    try:
+        c = CursRepository.update(db, curs_id, payload.nom, payload.data_inici, payload.data_fi)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     if not c:
         raise HTTPException(status_code=404, detail="找不到學年")
     return _serialize(c)

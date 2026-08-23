@@ -1,8 +1,8 @@
 import { ref, computed } from 'vue'
 import axios from 'axios'
 
-// Estat compartit a nivell de mòdul: el tab Cursos (llista + CRUD) i el tab
-// Sistema (avisos XML + suggeriment de curs futur) llegeixen la mateixa llista,
+// Estat compartit a nivell de mòdul: els blocs de cursos i calendari llegeixen
+// la mateixa llista,
 // de manera que crear/esborrar un curs actualitza els avisos en viu.
 const cursos = ref([])
 const carregantCursos = ref(false)

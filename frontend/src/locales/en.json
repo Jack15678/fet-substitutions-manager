@@ -41,6 +41,8 @@
   "pages": {
     "workbench": "Rescheduling workbench",
     "records": "Records",
+    "statistics": "Statistics",
+    "settings": "Configuration",
     "import": "Timetable import"
   },
   "tabs": {
@@ -367,14 +369,13 @@
     "courses": {
       "title": "Academic years",
       "new": "New year",
-      "help": "An academic year is a named date range. Only the start date is needed: a year ends the day before the next one starts, and the last one stays open. The year for a given day is derived from the date you are working on.",
+      "help": "An academic year is a named, explicit date range. Summer can remain outside the ranges between academic years.",
       "empty": "No academic year defined yet",
       "name": "Name",
       "namePlaceholder": "e.g. 2025-2026",
       "start": "Start date",
-      "startHint": "The previous year will be closed automatically the day before",
-      "end": "End date (derived)",
-      "open": "Open",
+      "end": "End date",
+      "rangeHint": "Start and end dates are required and cannot overlap another academic year.",
       "newTitle": "New academic year",
       "editTitle": "Edit academic year",
       "loadError": "Could not load academic years",
@@ -1711,7 +1712,7 @@
     "page": "Page {page} of {pages}, {total} items", "resume": "Continue handling",
     "statuses": { "open": "Pending", "resolved": "Resolved", "cancelled": "Cancelled", "confirmed": "Confirmed", "reverted": "Reverted" },
     "editReason": "Edit reason", "reason": "Reason: {reason}", "reasonPrompt": "Enter the adjustment reason (optional)", "editRemovesAdjustments": "Editing this absence invalidates and deletes its existing adjustments. Continue?", "deleteAbsenceConfirm": "Permanently delete this absence and all its adjustments?", "deleteAdjustmentConfirm": "Permanently delete this adjustment and restore the base timetable?",
-    "kinds": { "direct_swap": "Direct swap", "three_cycle": "Three-lesson cycle", "emergency_cover": "Emergency subject cover", "manual_swap": "Manual swap", "manual_three_cycle": "Manual three-lesson cycle" }
+    "kinds": { "direct_swap": "Direct swap", "three_cycle": "Same-class cycle", "emergency_cover": "Emergency subject cover", "manual_swap": "Manual swap", "manual_three_cycle": "Manual three-lesson cycle" }
   },
   "leave": {
     "title": "Long-term absence",
@@ -1725,19 +1726,35 @@
     "title": "Rescheduling workbench",
     "description": "Try swaps within the same class first; only show emergency subject cover when no swap is possible within five teaching days.",
     "revision": "Timetable revision {revision}",
-    "noTimetable": "No timetable is in effect on the selected date. Ask an administrator to use Timetable import.",
     "steps": { "absence": "Absent teachers", "recommendations": "Review and manually confirm suggestions", "effective": "Today's affected timetable" },
-    "teacher": "Absent teacher", "teachers": "Absent teachers (multiple)", "selectTeachers": "Select one or more teachers", "date": "Date", "absenceDate": "Absence date", "absentPeriods": "Absent periods", "allDay": "Absent all day", "analyzeAll": "Analyse all lessons", "checkingDate": "Checking date…", "invalidDate": "Invalid date",
+    "teacher": "Absent teacher", "teachers": "Absent teachers (multiple)", "selectTeachers": "Select one or more teachers", "date": "Date", "absenceDate": "Absence date", "absentPeriods": "Absent periods", "allDay": "Absent all day", "analyzeAll": "Analyse all lessons", "checkingDate": "Checking date…", "invalidDate": "No timetable data for the selected date",
     "counts": "Resolved {resolved} · Unresolved {unresolved}", "cancelAbsence": "Cancel this absence",
     "analysisEmpty": "Select a teacher, date and periods to analyse all affected lessons together.", "noTasks": "There are no lessons left to handle in the selected periods.",
     "originalTeacher": "Original teacher: {teachers}", "recommendable": "Can be resolved", "unresolved": "Unresolved", "candidates": "Available arrangements", "specialCourseLater": "cross-day special lesson · lower priority",
-    "confirmArrangement": "Confirm this arrangement", "noCandidate": "No valid swap was found within five teaching days and no same-subject emergency teacher is free. Manual handling is required.",
-    "manualSwap": "Manual swap", "period": "Period", "class": "Class", "subject": "Subject", "teacherColumn": "Teacher", "status": "Status", "affectedHint": "Only confirmed adjustments are shown", "affectedLessons": "{count} affected lessons", "originalSlot": "From", "currentSlot": "Now", "coverAt": "Cover", "viewMode": "View mode", "cardView": "Cards", "timetableView": "Class timetable", "movedOut": "Moved out", "movedIn": "Moved in", "covered": "Cover", "showAllLessons": "Show full timetable (manual swap)", "noAdjustments": "No confirmed adjustments on this date", "noLessons": "No lessons on this date",
+    "confirmArrangement": "Confirm this arrangement", "verifyTimetables": "Check involved teachers' timetables", "verifyTitle": "Check involved teachers' timetables", "verifyHint": "This is the post-confirmation timetable rebuilt from the current timetable and selected arrangement. It shows only adjusted lessons and unchanged lessons.", "adjusted": "Adjusted", "noCandidate": "No valid swap was found within five teaching days and no same-subject emergency teacher is free. Manual handling is required.",
+    "manualSwap": "Manual swap", "period": "Period", "class": "Class", "subject": "Subject", "teacherColumn": "Teacher", "status": "Status", "affectedHint": "Only confirmed adjustments are shown", "affectedLessons": "{count} affected lessons", "originalSlot": "From", "currentSlot": "Now", "coverAt": "Cover", "viewMode": "View mode", "cardView": "Lesson cycle", "timetableView": "Class timetable", "cycleNode": "Lesson {number}", "cycleClosed": "Back to lesson {number}; cycle closed", "movedOut": "Adjust", "movedIn": "Changed to", "covered": "Cover", "showAllLessons": "Show full timetable (manual swap)", "noAdjustments": "No confirmed adjustments on this date", "noLessons": "No lessons on this date",
     "manualSelected": "Manual swap: {count} lessons selected", "manualHint": "You can change dates while selecting. Only complete two- or three-lesson swaps in the same class are allowed.",
     "manualReason": "Reason for change (required)", "clear": "Clear", "confirmManual": "Confirm manual swap", "history": "Confirmed and reverted adjustments",
     "confirmedLocked": "Confirmed and locked", "revert": "Revert", "noHistory": "No rescheduling records yet.", "closures": "School closure and holiday dates",
     "closureHint": "Enter one date per line (YYYY-MM-DD). Searches automatically skip these dates.", "saveDates": "Save dates",
-    "sources": { "base": "Base timetable", "base_conflict": "Workbook mismatch · locked", "teacher_workbook": "Busy in teacher workbook", "direct_swap": "Swapped", "three_cycle": "Three-lesson cycle", "emergency_cover": "Emergency cover", "manual_swap": "Manual swap", "manual_three_cycle": "Manual cycle" }
+    "sources": { "base": "Base timetable", "base_conflict": "Workbook mismatch · locked", "teacher_workbook": "Busy in teacher workbook", "direct_swap": "Swapped", "three_cycle": "Lesson cycle", "emergency_cover": "Emergency cover", "manual_swap": "Manual swap", "manual_three_cycle": "Manual cycle" }
+  },
+  "statistics": {
+    "title": "Statistics", "description": "Review each teacher's confirmed covers and lesson-swap participation by academic year.",
+    "matrixTitle": "Monthly teacher totals", "matrixHint": "Only confirmed, non-reverted arrangements are counted.", "course": "Academic year", "teacher": "Teacher", "total": "Year total",
+    "noCoursesOption": "No academic years configured", "noCoursesTitle": "No academic year has been configured", "noCoursesHint": "Statistics and daily exports need an academic-year name, start date and end date. Add one on the Configuration page first.", "configureCourses": "Configure academic years",
+    "exportTitle": "Export daily rescheduling / cover form", "exportHint": "Excel uses one worksheet per absent teacher. PDF creates one file per teacher and a ZIP when there are several.", "exportDate": "Export date", "exportExcel": "Export Excel", "exportPdf": "Export PDF"
+  },
+  "settings": {
+    "title": "Configuration", "description": "Manage academic-year, holiday, rescheduling and export settings.",
+    "periodTitle": "Rescheduling and period settings", "periodHint": "Set the automatic cycle limit and the period times shared by Excel and PDF.",
+    "maxCycleLessons": "Maximum automatic cycle length", "maxCycleHint": "Choose 2 to 5. A value of 2 allows direct swaps only.",
+    "holidays": {
+      "title": "Holiday import", "hint": "Select an academic year, then enter dates or click holidays on its full-year calendar. Both methods edit the same list.", "course": "Academic year", "needCourse": "Add an academic year first", "completeCourse": "Add an end date to this academic year first.",
+      "method": "Holiday entry method", "textMethod": "Enter dates", "calendarMethod": "Full-year calendar", "textLabel": "Holiday dates (YYYY/MM/DD)", "textPlaceholder": "2026/01/01\n2026/02/19", "importDates": "Import dates",
+      "invalidDate": "“{date}” is invalid. Use YYYY/MM/DD.", "outOfRange": "“{date}” is outside the selected academic year.", "imported": "Added {count} dates. Save to apply them.", "selected": "{count} days selected", "clear": "Clear this year", "saved": "Holidays saved.",
+      "weekdays": { "0": "Mon", "1": "Tue", "2": "Wed", "3": "Thu", "4": "Fri", "5": "Sat", "6": "Sun" }
+    }
   },
   "importCenter": {
     "eyebrow": "Administrator",
