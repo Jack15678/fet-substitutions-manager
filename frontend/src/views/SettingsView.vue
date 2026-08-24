@@ -74,7 +74,7 @@ onMounted(async () => {
 .page-heading h2, h3 { margin: 0; }
 .page-heading h2 { font-size: clamp(1.65rem, 3vw, 2.15rem); letter-spacing: -.035em; }
 .page-heading p, .panel p { margin-top: .3rem; color: var(--text-color-secondary); }
-.panel { width: min(100%, 900px); padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
+.panel { width: 100%; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
 .course-panel :deep(.tab-content) { min-height: 0; padding: 0; }
 form { display: grid; gap: .45rem; margin-top: 1rem; }
 .period-row { display: grid; grid-template-columns: 82px 1fr auto 1fr; align-items: center; gap: .55rem; }

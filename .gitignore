@@ -87,6 +87,10 @@ tmp/
 temp/
 *.tmp
 
+# Browser test artifacts
+.playwright-cli/
+output/playwright/
+
 # XML horaris locals (cada escola té el seu)
 *.xml
 !exam_scheduler/example.xml

@@ -2,9 +2,28 @@
   <div id="app">
     <Toast />
     <ConfirmDialog />
+    <Dialog
+      v-model:visible="feedbackDialog.visible"
+      :header="feedbackDialog.title"
+      :modal="true"
+      :draggable="false"
+      :style="{ width: 'min(92vw, 460px)' }"
+    >
+      <div :class="['feedback-dialog-body', feedbackDialog.severity]" role="alert">
+        <i :class="['pi', feedbackDialog.severity === 'warn' ? 'pi-exclamation-triangle' : 'pi-times-circle']" aria-hidden="true"></i>
+        <p>{{ feedbackDialog.detail }}</p>
+      </div>
+      <template #footer>
+        <Button :label="$t('common.close')" @click="feedbackDialog.visible = false" />
+      </template>
+    </Dialog>
 
     <div v-if="!autenticat" class="login-screen">
       <div class="login-card">
+        <div class="login-brand">
+          <span class="school-mark" aria-hidden="true"><img src="/school-logo.png" alt="" /></span>
+          <span>{{ $t('brand.school') }}</span>
+        </div>
         <div class="language-control login-language">
           <label for="login-language">{{ $t('app.nav.language') }}</label>
           <select id="login-language" v-model="currentLocale">
@@ -12,7 +31,7 @@
             <option value="en">English</option>
           </select>
         </div>
-        <h1 class="login-title"><i class="pi pi-calendar" aria-hidden="true"></i>{{ $t('app.login.title') }}</h1>
+        <h1 class="login-title">{{ $t('app.login.title') }}</h1>
         <p class="login-subtitle">{{ $t('app.login.subtitle') }}</p>
 
         <form class="login-form" @submit.prevent="ferLogin">
@@ -54,19 +73,10 @@
     <div v-else :class="['app-shell', { 'is-mobile': isMobile }]">
       <header v-if="!isMobile" class="navbar">
         <div class="navbar-brand">
-          <h1 class="logo"><i class="pi pi-calendar" aria-hidden="true"></i>{{ $t('app.title') }}</h1>
+          <h1 class="logo">{{ $t('app.title') }}</h1>
         </div>
 
         <div class="navbar-right">
-          <div v-if="cursos.length" class="config-info">
-            <span
-              class="curs-indicador"
-              :class="{ 'curs-indicador--cap': !cursDeLaData }"
-              v-tooltip.bottom="$t('app.nav.course')"
-            >
-              {{ cursDeLaData ? cursDeLaData.nom : $t('app.nav.courseNone') }}
-            </span>
-          </div>
           <div class="language-control navbar-language">
             <label for="navbar-language" class="sr-only">{{ $t('app.nav.language') }}</label>
             <select id="navbar-language" v-model="currentLocale">
@@ -76,20 +86,20 @@
           </div>
           <Button
             v-if="isAdmin"
-            icon="pi pi-cog"
-            class="p-button-rounded p-button-text p-button-plain"
+            :label="$t('app.nav.settings')"
+            class="p-button-text p-button-plain nav-action"
             v-tooltip.bottom="$t('app.nav.settings')"
             @click="obrirConfiguracio"
           />
           <Button
-            icon="pi pi-user"
-            class="p-button-rounded p-button-text p-button-plain"
+            :label="$t('app.nav.profile')"
+            class="p-button-text p-button-plain nav-action"
             v-tooltip.bottom="$t('app.nav.profile')"
             @click="obrirPerfil"
           />
           <Button
-            icon="pi pi-sign-out"
-            class="p-button-rounded p-button-text p-button-plain"
+            :label="$t('app.nav.logout')"
+            class="p-button-text p-button-plain nav-action"
             v-tooltip.bottom="$t('app.nav.logout')"
             @click="ferLogout"
           />
@@ -98,7 +108,10 @@
 
       <header v-else class="mobile-header">
         <div class="mobile-header-top">
-          <h1 class="logo"><i class="pi pi-calendar" aria-hidden="true"></i>{{ $t('app.title') }}</h1>
+          <div class="mobile-brand">
+            <span class="school-mark" aria-hidden="true"><img src="/school-logo.png" alt="" /></span>
+            <h1 class="logo">{{ $t('app.title') }}</h1>
+          </div>
           <div class="mobile-header-actions">
             <select v-model="currentLocale" :aria-label="$t('app.nav.language')">
               <option value="zh-HK">繁中</option>
@@ -110,49 +123,36 @@
       </header>
 
       <aside v-if="!isMobile" class="sidebar">
+        <div class="sidebar-brand">
+          <span class="school-mark" aria-hidden="true"><img src="/school-logo.png" alt="" /></span>
+          <span>{{ $t('brand.schoolShort') }}</span>
+        </div>
         <nav class="sidebar-nav" :aria-label="$t('app.nav.menu')">
           <button class="sidebar-link" :class="{ active: paginaActiva === 'workbench' }" :aria-current="paginaActiva === 'workbench' ? 'page' : undefined" @click="paginaActiva = 'workbench'">
-            <i class="pi pi-calendar" aria-hidden="true"></i><span>{{ $t('app.pages.workbench') }}</span>
+            <span>{{ $t('app.pages.workbench') }}</span>
           </button>
           <button class="sidebar-link" :class="{ active: paginaActiva === 'records' }" :aria-current="paginaActiva === 'records' ? 'page' : undefined" @click="paginaActiva = 'records'">
-            <i class="pi pi-history" aria-hidden="true"></i><span>{{ $t('app.pages.records') }}</span>
+            <span>{{ $t('app.pages.records') }}</span>
           </button>
           <button v-if="isAdmin" class="sidebar-link" :class="{ active: paginaActiva === 'statistics' }" :aria-current="paginaActiva === 'statistics' ? 'page' : undefined" @click="paginaActiva = 'statistics'">
-            <i class="pi pi-chart-bar" aria-hidden="true"></i><span>{{ $t('app.pages.statistics') }}</span>
+            <span>{{ $t('app.pages.statistics') }}</span>
           </button>
           <button v-if="isAdmin" class="sidebar-link" :class="{ active: paginaActiva === 'settings' }" :aria-current="paginaActiva === 'settings' ? 'page' : undefined" @click="paginaActiva = 'settings'">
-            <i class="pi pi-sliders-h" aria-hidden="true"></i><span>{{ $t('app.pages.settings') }}</span>
+            <span>{{ $t('app.pages.settings') }}</span>
           </button>
           <button v-if="isAdmin" class="sidebar-link" :class="{ active: paginaActiva === 'import' }" :aria-current="paginaActiva === 'import' ? 'page' : undefined" @click="paginaActiva = 'import'">
-            <i class="pi pi-upload" aria-hidden="true"></i><span>{{ $t('app.pages.import') }}</span>
+            <span>{{ $t('app.pages.import') }}</span>
           </button>
         </nav>
       </aside>
 
       <section class="app-workspace">
         <div class="content-toolbar">
-          <div class="date-selector" :aria-label="$t('app.nav.selectDate')">
-            <Button
-              icon="pi pi-chevron-left"
-              class="p-button-rounded p-button-text p-button-plain nav-date-btn"
-              v-tooltip.bottom="$t('app.nav.prevDay')"
-              @click="diaAnterior"
-            />
-            <Calendar
-              v-model="dataSeleccionada"
-              dateFormat="dd/mm/yy"
-              :showIcon="true"
-              :showButtonBar="true"
-              :placeholder="$t('app.nav.selectDate')"
-              :inputProps="{ autocomplete: 'nope', 'data-form-type': 'other', 'data-lpignore': 'true' }"
-            />
-            <Button
-              icon="pi pi-chevron-right"
-              class="p-button-rounded p-button-text p-button-plain nav-date-btn"
-              v-tooltip.bottom="$t('app.nav.nextDay')"
-              @click="diaSeguent"
-            />
-            <Button :label="$t('app.nav.today')" outlined class="today-button" @click="dataSeleccionada = hongKongToday()" />
+          <div class="date-navigator">
+            <div class="date-current">
+              <span class="date-main">{{ todayDateLabel }}</span>
+              <span class="date-weekday">{{ todayWeekdayLabel }}</span>
+            </div>
           </div>
         </div>
 
@@ -175,7 +175,7 @@
           />
           <RecordsView v-if="paginaActiva === 'records'" :isAdmin="isAdmin" @resume-absence="resumeAbsence" />
           <StatisticsView v-if="isAdmin && paginaActiva === 'statistics'" :dataGlobal="dataSeleccionada" @configure="paginaActiva = 'settings'" />
-          <SettingsView v-if="isAdmin && paginaActiva === 'settings'" @cursos-canviats="carregarCursos" />
+          <SettingsView v-if="isAdmin && paginaActiva === 'settings'" />
           <TimetableImportView v-if="isAdmin" v-show="paginaActiva === 'import'" />
         </main>
 
@@ -190,7 +190,6 @@
         :currentRole="userProfile?.role"
         :currentInstitucio="userProfile?.institucio"
         :dataGlobal="dataSeleccionada"
-        @cursos-canviats="carregarCursos"
       />
       <ProfileDialog
         v-model:visible="mostrarPerfil"
@@ -202,29 +201,27 @@
         :header="$t('app.nav.menu')"
         :modal="true"
         :style="{ width: '320px' }"
+        class="mobile-menu-dialog"
       >
         <div class="mobile-menu">
-          <Button icon="pi pi-calendar" class="p-button-text" :label="$t('app.pages.workbench')" @click="paginaActiva = 'workbench'; mostrarMenuMobil = false" />
-          <Button icon="pi pi-history" class="p-button-text" :label="$t('app.pages.records')" @click="paginaActiva = 'records'; mostrarMenuMobil = false" />
-          <Button v-if="isAdmin" icon="pi pi-chart-bar" class="p-button-text" :label="$t('app.pages.statistics')" @click="paginaActiva = 'statistics'; mostrarMenuMobil = false" />
-          <Button v-if="isAdmin" icon="pi pi-sliders-h" class="p-button-text" :label="$t('app.pages.settings')" @click="paginaActiva = 'settings'; mostrarMenuMobil = false" />
-          <Button v-if="isAdmin" icon="pi pi-upload" class="p-button-text" :label="$t('app.pages.import')" @click="paginaActiva = 'import'; mostrarMenuMobil = false" />
+          <Button class="p-button-text" :label="$t('app.pages.workbench')" @click="paginaActiva = 'workbench'; mostrarMenuMobil = false" />
+          <Button class="p-button-text" :label="$t('app.pages.records')" @click="paginaActiva = 'records'; mostrarMenuMobil = false" />
+          <Button v-if="isAdmin" class="p-button-text" :label="$t('app.pages.statistics')" @click="paginaActiva = 'statistics'; mostrarMenuMobil = false" />
+          <Button v-if="isAdmin" class="p-button-text" :label="$t('app.pages.settings')" @click="paginaActiva = 'settings'; mostrarMenuMobil = false" />
+          <Button v-if="isAdmin" class="p-button-text" :label="$t('app.pages.import')" @click="paginaActiva = 'import'; mostrarMenuMobil = false" />
           <hr />
           <Button
             v-if="isAdmin"
-            icon="pi pi-cog"
             class="p-button-text"
             :label="$t('app.nav.settings')"
             @click="obrirConfiguracio(); mostrarMenuMobil = false"
           />
           <Button
-            icon="pi pi-user"
             class="p-button-text"
             :label="$t('app.nav.profile')"
             @click="obrirPerfil(); mostrarMenuMobil = false"
           />
           <Button
-            icon="pi pi-sign-out"
             class="p-button-text"
             :label="$t('app.nav.logout')"
             @click="ferLogout(); mostrarMenuMobil = false"
@@ -242,7 +239,6 @@ import axios from 'axios'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
 import { useToast } from 'primevue/usetoast'
-import Calendar from 'primevue/calendar'
 import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
@@ -258,6 +254,21 @@ import { setLocale } from './i18n'
 
 const { t, locale } = useI18n()
 const toast = useToast()
+const nativeToastAdd = toast.add.bind(toast)
+const feedbackDialog = ref({ visible: false, severity: 'error', title: '', detail: '' })
+const feedbackToastAdd = (message) => {
+  if (!['error', 'warn'].includes(message?.severity)) return nativeToastAdd(message)
+  const severity = message.severity
+  const title = severity === 'warn' ? t('common.warning') : t('app.errors.title')
+  feedbackDialog.value = {
+    visible: true,
+    severity,
+    title,
+    detail: message.detail || (message.summary !== title ? message.summary : '') || t('app.errors.unexpected')
+  }
+}
+// ponytail: one blocking dialog keeps the latest failure; add a queue only if concurrent failures must be reviewed.
+toast.add = feedbackToastAdd
 const currentLocale = computed({
   get: () => locale.value,
   set: (value) => setLocale(value)
@@ -272,7 +283,7 @@ const hongKongToday = () => {
   }).formatToParts().filter(part => part.type !== 'literal').map(part => [part.type, part.value]))
   return new Date(Number(parts.year), Number(parts.month) - 1, Number(parts.day), 12)
 }
-const dataSeleccionada = ref(hongKongToday())
+const dataSeleccionada = hongKongToday()
 const mostrarConfiguracio = ref(false)
 const mostrarPerfil = ref(false)
 const mostrarMenuMobil = ref(false)
@@ -303,36 +314,12 @@ const netejarToken = () => {
   axios.post('/api/logout').catch(() => {})
 }
 
-// ===== CURSOS (per institució) =====
-// Els cursos són una seqüència contígua de rangs amb nom. NO es trien: el curs es
-// deriva de la data on treballes, igual que la versió d'XML. Aquí només es mostra.
-const cursos = ref([])
-
-const _isoDate = (d) => {
-  if (!d) return null
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${dd}`
-}
-
-const cursDeLaData = computed(() => {
-  const iso = _isoDate(dataSeleccionada.value)
-  if (!iso) return null
-  // Comparació lexicogràfica: les dates ISO ho permeten
-  return cursos.value.find(
-    c => c.data_inici <= iso && (!c.data_fi || iso <= c.data_fi)
-  ) || null
-})
-
-const carregarCursos = async () => {
-  try {
-    const { data } = await axios.get('/api/cursos')
-    cursos.value = data
-  } catch (error) {
-    cursos.value = []
-  }
-}
+const todayDateLabel = computed(() => new Intl.DateTimeFormat(locale.value === 'en' ? 'en-HK' : 'zh-HK', {
+  year: 'numeric', month: 'long', day: 'numeric',
+}).format(dataSeleccionada))
+const todayWeekdayLabel = computed(() => new Intl.DateTimeFormat(locale.value === 'en' ? 'en-HK' : 'zh-HK', {
+  weekday: 'long',
+}).format(dataSeleccionada))
 
 const carregarPerfil = async () => {
   try {
@@ -371,7 +358,6 @@ onMounted(async () => {
 
   try {
     await carregarPerfil()
-    await carregarCursos()
     aplicarToken()
   } catch (error) {
     // Cookie absent o expirada — es queda a la pantalla de login
@@ -379,6 +365,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  if (toast.add === feedbackToastAdd) toast.add = nativeToastAdd
   if (mediaQuery) {
     mediaQuery.removeEventListener('change', actualitzarModeMobil)
   }
@@ -399,7 +386,6 @@ const ferLogin = async () => {
     const redirectUrl = new URLSearchParams(window.location.search).get('redirect')
     if (redirectUrl) { window.location.href = redirectUrl; return; }
     await carregarPerfil()
-    await carregarCursos()
   } catch (error) {
     const status = error.response?.status
     if (status === 429) {
@@ -444,20 +430,7 @@ const obrirPerfil = () => {
   mostrarPerfil.value = true
 }
 
-const diaAnterior = () => {
-  const novaData = new Date(dataSeleccionada.value)
-  novaData.setDate(novaData.getDate() - 1)
-  dataSeleccionada.value = novaData
-}
-
-const diaSeguent = () => {
-  const novaData = new Date(dataSeleccionada.value)
-  novaData.setDate(novaData.getDate() + 1)
-  dataSeleccionada.value = novaData
-}
-
 const resumeAbsence = (record) => {
-  dataSeleccionada.value = new Date(`${record.date}T12:00:00`)
   paginaActiva.value = 'workbench'
   reschedulingView.value?.resumeAbsence(record)
 }
@@ -465,19 +438,21 @@ const resumeAbsence = (record) => {
 
 <style>
 :root {
-  --primary-color: #2563eb;
-  --primary-color-dark: #1d4ed8;
-  --primary-color-light: #dbeafe;
+  --primary-color: #193f66;
+  --primary-color-dark: #0c2948;
+  --primary-color-light: #e7eff7;
   --primary-color-text: #ffffff;
-  --highlight-bg: #eff6ff;
-  --highlight-text-color: #1d4ed8;
-  --text-color-primary: #172033;
-  --text-color-secondary: #647085;
-  --background-light: #f4f6f9;
+  --highlight-bg: #edf3f8;
+  --highlight-text-color: #173d62;
+  --text-color-primary: #15263a;
+  --text-color-secondary: #687588;
+  --background-light: #f3f6f9;
   --card-background: #ffffff;
-  --border-color: #dfe4ea;
-  --surface-soft: #f8fafc;
-  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.18);
+  --border-color: #d8e0e9;
+  --surface-soft: #f7f9fb;
+  --sidebar-background: #0c2948;
+  --sidebar-active: #254c75;
+  --focus-ring: 0 0 0 3px rgba(25, 63, 102, 0.2);
 }
 
 * {
@@ -495,7 +470,7 @@ body {
 }
 
 html[lang="zh-HK"] body {
-  font-family: "Songti TC", "STSong", "SimSun", "NSimSun", "PMingLiU", "MingLiU", serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
 }
 
 .p-button.progress-fill-button {
@@ -578,6 +553,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   width: 2.25rem;
   height: 2.25rem;
   align-self: stretch;
+  border-color: var(--primary-color);
+  background: var(--primary-color);
+}
+
+.p-datepicker-trigger.p-button:hover {
+  border-color: var(--primary-color-dark);
+  background: var(--primary-color-dark);
 }
 
 .p-inputtext.p-inputtext-sm ~ .p-datepicker-trigger.p-button {
@@ -671,20 +653,30 @@ input.p-inputtext.p-inputtext-sm {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #eaf1fb 0 42%, var(--background-light) 42% 100%);
+  background: #edf2f7;
   padding: 2rem;
 }
 
 .login-card {
   width: min(430px, 100%);
   background: var(--card-background);
-  border-radius: 12px;
+  border-radius: 6px;
   padding: 2.25rem;
-  box-shadow: 0 22px 60px rgba(33, 52, 82, 0.12);
+  box-shadow: 0 18px 48px rgba(12, 41, 72, 0.1);
   border: 1px solid var(--border-color);
 }
 
-.language-control{display:flex;align-items:center;gap:.45rem}.language-control label{font-size:.78rem}.language-control select,.mobile-header-actions select{border:1px solid #d7dce7;border-radius:7px;background:#fff;color:#243047;padding:.35rem .5rem}.login-language{justify-content:flex-end;margin-bottom:1rem;color:var(--text-color-secondary)}.navbar-language select{border-color:rgba(255,255,255,.45)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.mobile-header-actions{display:flex;align-items:center;gap:.35rem}
+.language-control{display:flex;align-items:center;gap:.45rem}.language-control label{font-size:.78rem}.language-control select,.mobile-header-actions select{border:1px solid #d7dce7;border-radius:4px;background:#fff;color:#243047;padding:.35rem .5rem}.login-language{justify-content:flex-end;margin-bottom:1rem;color:var(--text-color-secondary)}.navbar-language select{border-color:var(--border-color)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.mobile-header-actions{display:flex;align-items:center;gap:.35rem}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  margin-bottom: 1.35rem;
+  color: var(--primary-color-dark);
+  font-size: .9rem;
+  font-weight: 700;
+}
 
 .login-title {
   display: flex;
@@ -695,8 +687,6 @@ input.p-inputtext.p-inputtext-sm {
   color: var(--text-color-primary);
   letter-spacing: -.025em;
 }
-
-.login-title .pi { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 10px; background: var(--primary-color); color: #fff; font-size: 1.1rem; }
 
 .login-subtitle {
   margin: 0.5rem 0 1.8rem;
@@ -769,20 +759,20 @@ input.p-inputtext.p-inputtext-sm {
 .app-shell {
   min-height: 100dvh;
   display: grid;
-  grid-template-columns: 236px minmax(0, 1fr);
-  grid-template-rows: 64px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-rows: 72px minmax(0, 1fr);
 }
 
 .navbar {
-  grid-column: 1 / -1;
+  grid-column: 2;
   grid-row: 1;
   position: sticky;
   top: 0;
   z-index: 20;
-  min-height: 64px;
+  min-height: 72px;
   background: var(--card-background);
   color: var(--text-color-primary);
-  padding: .65rem 1.25rem;
+  padding: .75rem 2rem;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
@@ -790,46 +780,44 @@ input.p-inputtext.p-inputtext-sm {
   gap: 1.5rem;
 }
 
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 1rem;
+}
+
 .logo {
   display: flex;
   align-items: center;
   gap: .65rem;
-  font-size: 1.08rem;
-  font-weight: 720;
+  font-size: .95rem;
+  font-weight: 650;
   margin: 0;
-  letter-spacing: -.015em;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 
-.logo .pi { display: grid; place-items: center; width: 2.15rem; height: 2.15rem; border-radius: 9px; color: #fff; background: var(--primary-color); font-size: .95rem; }
+.school-mark {
+  display: block;
+  width: 42px;
+  height: 42px;
+  overflow: hidden;
+  flex: 0 0 42px;
+  border-radius: 50%;
+}
+
+.school-mark img {
+  display: block;
+  width: auto;
+  height: 100%;
+  max-width: none;
+}
 
 .navbar-right {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-}
-
-.config-info {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-  font-size: 0.85rem;
-  color: var(--text-color-secondary);
-}
-
-/* Indicador de curs a la barra: només lectura, derivat de la data seleccionada */
-.curs-indicador {
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
-  padding-left: .8rem;
-  border-left: 1px solid var(--border-color);
-}
-
-/* Data anterior al primer curs definit */
-.curs-indicador--cap {
-  opacity: 0.6;
-  font-style: italic;
 }
 
 .navbar-right .p-button {
@@ -841,122 +829,119 @@ input.p-inputtext.p-inputtext-sm {
   background: var(--primary-color-light) !important;
 }
 
+.navbar-right .nav-action {
+  padding: .45rem .65rem;
+  font-size: .82rem;
+  font-weight: 600;
+}
+
 .navbar-language select { border-color: var(--border-color); background: var(--surface-soft); color: var(--text-color-primary); }
 
 .sidebar {
   grid-column: 1;
-  grid-row: 2;
+  grid-row: 1 / -1;
   position: sticky;
-  top: 64px;
+  top: 0;
   align-self: start;
-  height: calc(100dvh - 64px);
-  padding: 1rem 0.8rem;
-  background: var(--card-background);
-  border-right: 1px solid var(--border-color);
+  height: 100dvh;
+  padding: 0;
+  background: var(--sidebar-background);
+  color: #fff;
+  border-right: 0;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  min-height: 88px;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, .13);
+  color: #fff;
+  font-size: .88rem;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.2rem;
+  padding: 1rem .8rem;
 }
 
 .sidebar-link {
-  display: grid;
-  grid-template-columns: 1.75rem minmax(0, 1fr);
+  display: block;
   align-items: center;
-  gap: 0.55rem;
   width: 100%;
-  padding: 0.72rem 0.8rem;
+  padding: 0.78rem 1rem;
   border: 0;
-  border-radius: 8px;
+  border-left: 3px solid transparent;
+  border-radius: 3px;
   background: transparent;
-  color: var(--text-color-secondary);
+  color: rgba(255, 255, 255, .72);
   font: inherit;
   font-size: 0.9rem;
-  font-weight: 650;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
   transition: color .15s ease, background-color .15s ease;
 }
 
-.sidebar-link .pi {
-  color: #64748b;
-  text-align: center;
-}
-
 .sidebar-link:hover {
-  color: var(--primary-color);
-  background: var(--surface-soft);
+  color: #fff;
+  background: rgba(255, 255, 255, .07);
 }
 
 .sidebar-link.active {
-  color: #1d4ed8;
-  background: #edf4ff;
-}
-
-.sidebar-link.active .pi {
-  color: #2563eb;
+  color: #fff;
+  border-left-color: #9bbad5;
+  background: var(--sidebar-active);
 }
 
 .app-workspace {
   grid-column: 2;
   grid-row: 2;
   min-width: 0;
-  min-height: calc(100dvh - 64px);
+  min-height: calc(100dvh - 72px);
   display: flex;
   flex-direction: column;
 }
 
 .content-toolbar {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;
-  padding: 1.25rem 2rem 0;
+  padding: 1.35rem 2rem 0;
 }
 
-.date-selector {
+.date-navigator {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.25rem 0.35rem;
-  border: 1px solid var(--border-color);
-  border-radius: 9px;
-  background: var(--card-background);
+  gap: .25rem;
+  min-height: 3.15rem;
 }
 
-.date-selector .p-calendar {
-  width: 10.75rem;
+.date-current {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  min-width: 0;
 }
 
-.date-selector .p-calendar .p-inputtext {
-  width: 100%;
-  background: #fff;
-  border: 1px solid var(--border-color);
-  padding: 0.5rem 0.7rem;
+.date-main {
+  color: var(--primary-color-dark);
+  font-size: 1rem;
+  font-weight: 720;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
 }
 
-.date-selector .p-calendar .p-inputtext:focus {
-  border-color: var(--primary-color);
-  box-shadow: var(--focus-ring);
-}
-
-.nav-date-btn {
-  color: var(--text-color-secondary) !important;
-  font-size: 0.9rem !important;
-}
-
-.nav-date-btn:hover {
-  color: var(--primary-color) !important;
-  background: var(--primary-color-light) !important;
-}
-
-.today-button {
-  height: 2.25rem;
-  border-width: 1px !important;
-  white-space: nowrap;
+.date-weekday {
+  color: var(--text-color-secondary);
+  font-size: .78rem;
 }
 
 /* PrimeVue TabView unificat (diàlegs + scheduler) */
@@ -1053,20 +1038,35 @@ input.p-inputtext.p-inputtext-sm {
   font-size: 0.9rem;
 }
 
+.feedback-dialog-body { display: flex; align-items: flex-start; gap: .75rem; }
+.feedback-dialog-body i { color: #9b3b30; font-size: 1.45rem; }
+.feedback-dialog-body.warn i { color: #8a5b16; }
+.feedback-dialog-body p { margin: 0; color: var(--text-color-primary); line-height: 1.5; white-space: pre-wrap; }
+
 /* Millores per PrimeVue */
 .p-button {
-  border-radius: 8px;
+  border-radius: 4px;
   transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
   padding: 0.65rem 1rem;
   font-size: 0.9rem;
   min-width: unset;
 }
 
+.p-button:not(.p-button-text, .p-button-outlined, .p-button-link, .p-button-success, .p-button-danger, .p-button-warning, .p-button-secondary, .p-button-info, .p-button-help) {
+  border-color: var(--primary-color);
+  background: var(--primary-color);
+}
+
+.p-button:not(.p-button-text, .p-button-outlined, .p-button-link, .p-button-success, .p-button-danger, .p-button-warning, .p-button-secondary, .p-button-info, .p-button-help):hover {
+  border-color: var(--primary-color-dark);
+  background: var(--primary-color-dark);
+}
+
 .p-button:active { transform: translateY(1px); }
 
 /* Override per botons amb outline */
 .p-button.p-button-outlined {
-  border-width: 2px;
+  border-width: 1px;
 }
 
 /* Botons de text, mantenir petits */
@@ -1078,7 +1078,7 @@ input.p-inputtext.p-inputtext-sm {
 .p-datatable {
   box-shadow: none;
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: 4px;
   overflow: hidden;
 }
 
@@ -1093,7 +1093,6 @@ input.p-inputtext.p-inputtext-sm {
     padding: .65rem 1rem;
   }
 
-  .config-info { display: none; }
 }
 
 @media (max-width: 720px) {
@@ -1111,23 +1110,25 @@ input.p-inputtext.p-inputtext-sm {
     padding: 0.75rem 0.75rem 0;
   }
 
-  .content-toolbar .date-selector {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
-    width: 100%;
-  }
-
-  .date-selector .p-calendar {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .date-selector .p-calendar .p-inputtext {
-    width: 100%;
-  }
+  .date-current { justify-content: center; }
+  .date-main { font-size: .9rem; }
+  .date-weekday { font-size: .72rem; }
 
   .logo {
     font-size: 1rem;
+  }
+
+  .mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    min-width: 0;
+  }
+
+  .mobile-brand .school-mark {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
   }
 
   .main-content {
@@ -1149,10 +1150,10 @@ input.p-inputtext.p-inputtext-sm {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: var(--card-background);
-  color: var(--text-color-primary);
+  background: var(--sidebar-background);
+  color: #fff;
   padding: 0.65rem 0.75rem;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid rgba(255, 255, 255, .14);
 }
 
 .mobile-header-top {
@@ -1161,7 +1162,28 @@ input.p-inputtext.p-inputtext-sm {
   justify-content: space-between;
 }
 
-.mobile-header-actions .p-button { color: var(--text-color-secondary) !important; }
+.mobile-header-actions select { border-color: rgba(255, 255, 255, .35); background: rgba(255, 255, 255, .08); color: #fff; }
+.mobile-header-actions .p-button { color: #fff !important; }
+
+.mobile-menu-dialog .p-dialog-header {
+  background: var(--sidebar-background);
+  color: #fff;
+}
+
+.mobile-menu-dialog .p-dialog-header .p-dialog-header-icon {
+  color: #fff;
+}
+
+.mobile-menu-dialog .p-dialog-content {
+  padding: .75rem;
+}
+
+.mobile-menu-dialog .mobile-menu .p-button {
+  justify-content: flex-start;
+  width: 100%;
+  border-radius: 3px;
+  color: var(--primary-color-dark);
+}
 
 .mobile-menu {
   display: flex;

@@ -5,7 +5,6 @@
         <h2>{{ $t('records.title') }}</h2>
         <p>{{ $t('records.description') }}</p>
       </div>
-      <span class="today">{{ $t('records.today', { date: records.today || '-' }) }}</span>
     </header>
 
     <section class="panel">
@@ -142,7 +141,6 @@ onMounted(loadRecords)
 .page-heading { display: flex; justify-content: space-between; gap: 1.5rem; align-items: flex-start; }
 .page-heading h2 { margin: 0 0 .35rem; font-size: clamp(1.65rem, 3vw, 2.15rem); line-height: 1.15; letter-spacing: -.035em; }
 .page-heading p, .meta { color: var(--text-color-secondary); }
-.today { padding-top: .4rem; color: var(--text-color-secondary); font-size: .8rem; white-space: nowrap; }
 .panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
 .scope-tabs { display: flex; gap: .2rem; margin: -.25rem 0 1rem; border-bottom: 1px solid var(--border-color); }
 .scope-tabs button { padding: .7rem .9rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-color-secondary); font-weight: 650; cursor: pointer; transition: color .15s ease, border-color .15s ease, background-color .15s ease, transform .15s ease; }
@@ -184,7 +182,6 @@ onMounted(loadRecords)
 
 @media (max-width: 600px) {
   .page-heading, .record-summary { flex-direction: column; }
-  .today { padding-top: 0; }
   .record-summary, .adjustment-heading { align-items: flex-start; }
   .adjustment-heading { flex-direction: column; }
   .record-actions { justify-content: flex-start; flex-wrap: wrap; }

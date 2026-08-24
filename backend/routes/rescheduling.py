@@ -83,9 +83,7 @@ class AbsenceCreateRequest(BaseModel):
 
 
 class AbsenceBatchCreateRequest(BaseModel):
-    professor_ids: list[int] = Field(min_length=1)
-    data: date
-    periods: list[int] = Field(min_length=1)
+    items: list[AbsenceCreateRequest] = Field(min_length=1, max_length=3)
 
 
 class AbsenceBatchCancelRequest(BaseModel):
@@ -798,66 +796,42 @@ def create_absences_batch(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    professor_ids = list(dict.fromkeys(request.professor_ids))
-    validated = [
-        _validate_absence_request(
-            db,
-            AbsenceCreateRequest(professor_id=professor_id, data=request.data, periods=request.periods),
-            allow_existing=True,
-        )
-        for professor_id in professor_ids
-    ]
-    professors_with_lessons = _professors_with_lessons(db, request.data, request.periods)
-    validated = [item for item in validated if item[0].id in professors_with_lessons]
-    if not validated:
-        return {
-            "absence_case_id": None,
-            "absence_case_ids": [],
-            "revision": get_schedule_revision(db),
-            "search_dates": [],
-            "tasks": [],
-            "resolved_count": 0,
-            "unresolved_count": 0,
-            "batch_absence_case_ids": [],
-            "created_absence_case_ids": [],
-            "updated_absence_case_ids": [],
-        }
-    professor_ids = [professor.id for professor, _periods in validated]
-    existing_cases = {
-        row.professor_id: row
-        for row in db.query(AbsenceCase).filter(
-            AbsenceCase.professor_id.in_(professor_ids),
-            AbsenceCase.data == request.data,
-            AbsenceCase.status != "cancelled",
-        ).all()
-    }
-    requested_periods = sorted(set(request.periods))
-    for existing in existing_cases.values():
-        if json.loads(existing.periods_json or "[]") == requested_periods:
-            continue
-        confirmed = (db.query(ScheduleAdjustment)
-                     .filter_by(absence_case_id=existing.id, status="confirmed").count())
-        if confirmed:
-            raise HTTPException(409, "已有確認的調課，請先撤銷後再修改缺席節次")
+    keys = [(item.professor_id, item.data) for item in request.items]
+    if len(set(keys)) != len(keys):
+        raise HTTPException(400, "同一教師及日期不可在同一批次重複")
+
+    validated = []
+    for item in request.items:
+        professor, periods = _validate_absence_request(db, item, allow_existing=True)
+        if professor.id not in _professors_with_lessons(db, item.data, periods):
+            raise HTTPException(400, f"{professor.nom} 在 {item.data.isoformat()} 所選節次沒有需要處理的課堂")
+        existing = (db.query(AbsenceCase)
+                    .filter_by(professor_id=professor.id, data=item.data)
+                    .filter(AbsenceCase.status != "cancelled").first())
+        if existing and json.loads(existing.periods_json or "[]") != periods:
+            confirmed = (db.query(ScheduleAdjustment)
+                         .filter_by(absence_case_id=existing.id, status="confirmed").count())
+            if confirmed:
+                raise HTTPException(409, "已有確認的調課，請先撤銷後再修改缺席節次")
+        validated.append((item, professor, periods, existing))
 
     selected_cases: list[AbsenceCase] = []
     created_ids: list[int] = []
     updated_ids: list[int] = []
-    for professor, periods in validated:
-        existing = existing_cases.get(professor.id)
+    for item, professor, periods, existing in validated:
         if existing:
             if json.loads(existing.periods_json or "[]") != periods:
                 existing.periods_json = json.dumps(periods)
                 existing.status = "open"
                 updated_ids.append(existing.id)
                 _audit(db, "update", "absence_case", existing.id, current_user.username,
-                       {"teacher": professor.nom, "date": request.data.isoformat(),
+                       {"teacher": professor.nom, "date": item.data.isoformat(),
                         "periods": periods})
             selected_cases.append(existing)
             continue
         absence = AbsenceCase(
             professor_id=professor.id,
-            data=request.data,
+            data=item.data,
             periods_json=json.dumps(periods),
             created_by=current_user.username,
         )
@@ -866,13 +840,18 @@ def create_absences_batch(
         selected_cases.append(absence)
         created_ids.append(absence.id)
         _audit(db, "create", "absence_case", absence.id, current_user.username,
-               {"teacher": professor.nom, "date": request.data.isoformat(), "periods": periods})
+               {"teacher": professor.nom, "date": item.data.isoformat(), "periods": periods})
     if created_ids or updated_ids:
         bump_schedule_revision(db)
         db.commit()
-    analysis = analyze_absences(db, _active_absences_for_date(db, request.data))
+
+    analyses = [
+        {"date": target_date.isoformat(), **analyze_absences(db, _active_absences_for_date(db, target_date))}
+        for target_date in sorted({item.data for item in request.items})
+    ]
     return {
-        **analysis,
+        **analyses[0],
+        "analyses": analyses,
         "batch_absence_case_ids": [absence.id for absence in selected_cases],
         "created_absence_case_ids": created_ids,
         "updated_absence_case_ids": updated_ids,

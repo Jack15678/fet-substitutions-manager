@@ -1,16 +1,20 @@
 {
+  "brand": {
+    "school": "Hoi Ping Chamber of Commerce Primary School",
+    "schoolShort": "Hoi Ping Primary School"
+  },
   "app": {
-  "title": "School Rescheduling Management System",
-  "footer": "School Rescheduling Management System",
+  "title": "Substitute Teacher Management System",
+  "footer": "Hoi Ping Chamber of Commerce Primary School · Substitute Teacher Management System",
     "login": {
-    "title": "School Rescheduling Management System",
+    "title": "Substitute Teacher Management System",
       "subtitle": "Sign in to continue",
       "username": "Username",
       "password": "Password",
       "submit": "Sign in",
       "error": "Invalid username or password",
-      "rateLimit": "🕐 Too many login attempts. Try again in one minute.",
-      "rateLimitWithWait": "🕐 Too many login attempts. Try again in {seconds} seconds."
+      "rateLimit": "Too many login attempts. Try again in one minute.",
+      "rateLimitWithWait": "Too many login attempts. Try again in {seconds} seconds."
     },
     "errors": {
       "title": "Error",
@@ -23,6 +27,7 @@
       "nextDay": "Next day",
       "selectDate": "Select date",
       "today": "Today",
+      "returnToday": "Return to today",
       "teachers": "Teachers",
       "hours": "Hours",
       "menu": "Menu",
@@ -1724,12 +1729,12 @@
   "rescheduling": {
     "eyebrow": "School cover recommendation system",
     "title": "Rescheduling workbench",
-    "description": "Try swaps within the same class first; only show emergency subject cover when no swap is possible within five teaching days.",
     "revision": "Timetable revision {revision}",
     "steps": { "absence": "Absent teachers", "recommendations": "Review and manually confirm suggestions", "effective": "Today's affected timetable" },
-    "teacher": "Absent teacher", "teachers": "Absent teachers (multiple)", "selectTeachers": "Select one or more teachers", "date": "Date", "absenceDate": "Absence date", "absentPeriods": "Absent periods", "allDay": "Absent all day", "analyzeAll": "Analyse all lessons", "checkingDate": "Checking date…", "invalidDate": "No timetable data for the selected date",
-    "counts": "Resolved {resolved} · Unresolved {unresolved}", "cancelAbsence": "Cancel this absence",
-    "analysisEmpty": "Select a teacher, date and periods to analyse all affected lessons together.", "noTasks": "There are no lessons left to handle in the selected periods.",
+    "teacher": "Absent teacher", "teachers": "Absent teachers (multiple)", "selectTeacher": "Select teacher", "selectTeachers": "Select one or more teachers", "date": "Date", "absenceDate": "Absence date", "absentPeriods": "Absent periods", "allDay": "Absent all day", "analyzeAll": "Analyse all lessons", "checkingDate": "Checking date…", "invalidDate": "No timetable data for the selected date",
+    "addAbsence": "Add absence", "addAbsenceHint": "Add up to three teachers at a time, each with their own date and periods.", "newAbsenceRecord": "No teacher selected", "addAnotherTeacher": "Add another teacher", "absenceLimit": "{count} of 3 teachers added", "createAndAnalyze": "Add and analyse", "analysisDates": "Absence analysis dates",
+    "counts": "Resolved {resolved} · Unresolved {unresolved}", "cancelAbsence": "Cancel added absences",
+    "analysisEmpty": "Select Add absence to enter each teacher, date and periods, then analyse all affected lessons.", "noTasks": "There are no lessons left to handle in the selected periods.",
     "originalTeacher": "Original teacher: {teachers}", "recommendable": "Can be resolved", "unresolved": "Unresolved", "candidates": "Available arrangements", "specialCourseLater": "cross-day special lesson · lower priority",
     "confirmArrangement": "Confirm this arrangement", "verifyTimetables": "Check involved teachers' timetables", "verifyTitle": "Check involved teachers' timetables", "verifyHint": "This is the post-confirmation timetable rebuilt from the current timetable and selected arrangement. It shows only adjusted lessons and unchanged lessons.", "adjusted": "Adjusted", "noCandidate": "No valid swap was found within five teaching days and no same-subject emergency teacher is free. Manual handling is required.",
     "manualSwap": "Manual swap", "period": "Period", "class": "Class", "subject": "Subject", "teacherColumn": "Teacher", "status": "Status", "affectedHint": "Only confirmed adjustments are shown", "affectedLessons": "{count} affected lessons", "originalSlot": "From", "currentSlot": "Now", "coverAt": "Cover", "viewMode": "View mode", "cardView": "Lesson cycle", "timetableView": "Class timetable", "cycleNode": "Lesson {number}", "cycleClosed": "Back to lesson {number}; cycle closed", "movedOut": "Adjust", "movedIn": "Changed to", "covered": "Cover", "showAllLessons": "Show full timetable (manual swap)", "noAdjustments": "No confirmed adjustments on this date", "noLessons": "No lessons on this date",

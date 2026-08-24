@@ -119,7 +119,7 @@ class ReschedulingTests(unittest.TestCase):
                 SimpleNamespace(username="admin"),
             )
 
-    def test_batch_absence_creates_full_day_cases_atomically(self):
+    def test_batch_absence_creates_independent_cases_atomically(self):
         teachers = [Professor(nom=f"{name}老師", actiu=True) for name in ("A", "B", "C")]
         version = TimetableVersion(
             effective_from=date(2026, 8, 10), effective_to=date(2026, 8, 31),
@@ -128,39 +128,42 @@ class ReschedulingTests(unittest.TestCase):
         self.db.add_all([*teachers, version])
         self.db.flush()
         self.db.add_all([
-            TimetableLesson(
-                version_id=version.id, weekday=0, period=index + 1, class_code=f"{index + 1}A",
-                subject="中文", teachers_json=json.dumps([teacher.id]),
-            )
-            for index, teacher in enumerate(teachers)
+            TimetableLesson(version_id=version.id, weekday=0, period=1, class_code="1A", subject="中文", teachers_json=json.dumps([teachers[0].id])),
+            TimetableLesson(version_id=version.id, weekday=0, period=2, class_code="2A", subject="英文", teachers_json=json.dumps([teachers[1].id])),
+            TimetableLesson(version_id=version.id, weekday=1, period=3, class_code="3A", subject="數學", teachers_json=json.dumps([teachers[2].id])),
         ])
         self.db.commit()
 
         result = create_absences_batch(
             AbsenceBatchCreateRequest(
-                professor_ids=[teachers[0].id, teachers[1].id, teachers[0].id],
-                data=date(2026, 8, 10), periods=list(range(1, 10)),
+                items=[
+                    AbsenceCreateRequest(professor_id=teachers[0].id, data=date(2026, 8, 10), periods=[1]),
+                    AbsenceCreateRequest(professor_id=teachers[1].id, data=date(2026, 8, 10), periods=[2]),
+                    AbsenceCreateRequest(professor_id=teachers[2].id, data=date(2026, 8, 11), periods=[3]),
+                ],
             ),
             self.db,
             SimpleNamespace(username="admin"),
         )
 
         rows = self.db.query(AbsenceCase).order_by(AbsenceCase.id).all()
-        self.assertEqual(len(rows), 2)
-        self.assertTrue(all(json.loads(row.periods_json) == list(range(1, 10)) for row in rows))
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([json.loads(row.periods_json) for row in rows], [[1], [2], [3]])
         self.assertEqual(result["batch_absence_case_ids"], [row.id for row in rows])
-        self.assertEqual(set(result["absence_case_ids"]), {row.id for row in rows})
+        self.assertEqual([item["date"] for item in result["analyses"]], ["2026-08-10", "2026-08-11"])
 
         with self.assertRaises(HTTPException):
             create_absences_batch(
                 AbsenceBatchCreateRequest(
-                    professor_ids=[teachers[2].id, 999999],
-                    data=date(2026, 8, 10), periods=[1],
+                    items=[
+                        AbsenceCreateRequest(professor_id=teachers[0].id, data=date(2026, 8, 10), periods=[1]),
+                        AbsenceCreateRequest(professor_id=999999, data=date(2026, 8, 10), periods=[1]),
+                    ],
                 ),
                 self.db,
                 SimpleNamespace(username="admin"),
             )
-        self.assertEqual(self.db.query(AbsenceCase).count(), 2)
+        self.assertEqual(self.db.query(AbsenceCase).count(), 3)
 
     def test_batch_absence_reuses_case_with_latest_periods(self):
         teacher = Professor(nom="A老師", actiu=True)
@@ -185,7 +188,7 @@ class ReschedulingTests(unittest.TestCase):
 
         result = create_absences_batch(
             AbsenceBatchCreateRequest(
-                professor_ids=[teacher.id], data=date(2026, 8, 10), periods=[4],
+                items=[AbsenceCreateRequest(professor_id=teacher.id, data=date(2026, 8, 10), periods=[4])],
             ),
             self.db,
             SimpleNamespace(username="admin"),
@@ -210,16 +213,15 @@ class ReschedulingTests(unittest.TestCase):
         ))
         self.db.commit()
 
-        result = create_absences_batch(
-            AbsenceBatchCreateRequest(
-                professor_ids=[teacher.id], data=date(2026, 8, 10), periods=[1],
-            ),
-            self.db,
-            SimpleNamespace(username="admin"),
-        )
+        with self.assertRaises(HTTPException):
+            create_absences_batch(
+                AbsenceBatchCreateRequest(
+                    items=[AbsenceCreateRequest(professor_id=teacher.id, data=date(2026, 8, 10), periods=[1])],
+                ),
+                self.db,
+                SimpleNamespace(username="admin"),
+            )
 
-        self.assertEqual(result["tasks"], [])
-        self.assertEqual(result["batch_absence_case_ids"], [])
         self.assertEqual(self.db.query(AbsenceCase).count(), 0)
         self.assertEqual(list_records(scope="today", page=1, page_size=20, db=self.db)["total"], 0)
         self.assertEqual(daily_export_data(self.db, date(2026, 8, 10)), [])

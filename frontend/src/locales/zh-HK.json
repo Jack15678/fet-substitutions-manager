@@ -1,22 +1,26 @@
 {
+  "brand": {
+    "school": "旅港開平商會學校",
+    "schoolShort": "旅港開平商會學校"
+  },
   "common": {
     "save": "儲存", "cancel": "取消", "close": "關閉", "add": "新增", "delete": "刪除", "edit": "編輯",
     "actions": "操作", "all": "全部", "loading": "載入中……", "error": "錯誤", "warning": "警告",
     "saved": "已儲存", "deleted": "已刪除", "confirmation": "確認", "selectOption": "請選擇", "noData": "沒有資料"
   },
   "app": {
-    "title": "學校調課管理系統",
-    "footer": "學校調課管理系統",
+    "title": "代課教師管理系統",
+    "footer": "旅港開平商會學校 · 代課教師管理系統",
     "login": {
-      "title": "學校調課管理系統", "subtitle": "請登入以繼續", "username": "用戶名稱", "password": "密碼",
+      "title": "代課教師管理系統", "subtitle": "請登入以繼續", "username": "用戶名稱", "password": "密碼",
       "submit": "登入", "error": "用戶名稱或密碼不正確", "rateLimitWithWait": "登入嘗試次數過多，請於 {seconds} 秒後再試。"
     },
     "errors": { "title": "錯誤", "connection": "無法連接伺服器", "server": "伺服器內部錯誤", "unexpected": "發生未預期的錯誤" },
     "nav": {
-      "prevDay": "前一日", "nextDay": "下一日", "selectDate": "選擇日期", "today": "今天", "menu": "選單", "settings": "系統設定",
+      "prevDay": "前一日", "nextDay": "下一日", "selectDate": "選擇日期", "today": "今天", "returnToday": "返回今天", "menu": "選單", "settings": "系統設定",
       "profile": "個人資料", "logout": "登出", "course": "所選日期的學年", "courseNone": "不屬於任何學年", "language": "介面語言"
     },
-    "pages": { "workbench": "調課工作台", "records": "記錄", "statistics": "數據統計", "settings": "配置", "import": "課表匯入" }
+    "pages": { "workbench": "調課工作台", "records": "記錄", "statistics": "統計", "settings": "配置", "import": "課表匯入" }
   },
   "profile": {
     "title": "個人資料", "username": "用戶名稱", "currentPassword": "現時密碼", "newPassword": "新密碼",
@@ -77,12 +81,13 @@
     "types": { "sick": "長期病假", "maternity": "產假", "other": "其他長期缺席" }
   },
   "rescheduling": {
-    "eyebrow": "學校代課推薦系統", "title": "調課工作台", "description": "先找同班課堂互調；五個上課日內都不可行，才顯示同科緊急代課。",
+    "eyebrow": "學校代課推薦系統", "title": "調課工作台",
     "revision": "課表版本 {revision}",
-    "steps": { "absence": "缺席老師", "recommendations": "查看並人工確認建議", "effective": "今天受影響的課表" },
-    "teacher": "缺席老師", "teachers": "缺席老師（可多選）", "selectTeachers": "選擇一位或多位老師", "date": "日期", "absenceDate": "缺席日期", "absentPeriods": "缺席節次", "allDay": "全天缺席", "analyzeAll": "分析全部課堂", "checkingDate": "正在核對日期……", "invalidDate": "所選日期未有課表資料",
-    "counts": "已解決 {resolved} · 未解決 {unresolved}", "cancelAbsence": "取消這次缺席",
-    "analysisEmpty": "選擇教師、日期和節次後，系統會協調計算全部受影響課堂。", "noTasks": "所選節次已沒有需要處理的課堂。",
+    "steps": { "absence": "缺席老師", "recommendations": "查看並人工確認建議", "effective": "調課安排" },
+    "teacher": "缺席老師", "teachers": "缺席老師（可多選）", "selectTeacher": "選擇老師", "selectTeachers": "選擇一位或多位老師", "date": "日期", "absenceDate": "缺席日期", "absentPeriods": "缺席節次", "allDay": "全天缺席", "analyzeAll": "分析全部課堂", "checkingDate": "正在核對日期……", "invalidDate": "所選日期未有課表資料",
+    "addAbsence": "新增缺席", "addAbsenceHint": "每次最多新增 3 位老師；每位老師可使用不同日期及節次。", "newAbsenceRecord": "未選擇老師", "addAnotherTeacher": "再加入一位老師", "absenceLimit": "已加入 {count}／3 位", "createAndAnalyze": "新增並分析", "analysisDates": "缺席分析日期",
+    "counts": "已解決 {resolved} · 未解決 {unresolved}", "cancelAbsence": "取消已新增缺席",
+    "analysisEmpty": "按「新增缺席」登記老師、日期和節次，系統會分析全部受影響課堂。", "noTasks": "所選節次已沒有需要處理的課堂。",
     "originalTeacher": "原任：{teachers}", "recommendable": "可處理", "unresolved": "未解決", "candidates": "可選方案", "specialCourseLater": "特殊課跨日，已降低優先級",
     "confirmArrangement": "確認這個安排", "verifyTimetables": "核對涉及老師的課表", "verifyTitle": "核對涉及老師的課表", "verifyHint": "以下是系統根據現行課表及所選方案重建的確認後課表，只顯示調整後的新安排及沒有改變的課。", "adjusted": "調整", "noCandidate": "五個上課日內沒有可行互調，也沒有空閒的同科緊急代課教師，需要人工處理。",
     "manualSwap": "人工互調", "period": "節次", "class": "班別", "subject": "科目", "teacherColumn": "教師", "status": "狀態", "affectedHint": "只顯示已確認的調課安排", "affectedLessons": "{count} 堂受影響課堂", "originalSlot": "原本", "currentSlot": "現在", "coverAt": "代課", "viewMode": "顯示方式", "cardView": "課堂閉環", "timetableView": "班級課表", "cycleNode": "課堂 {number}", "cycleClosed": "返回課堂 {number}，閉環完成", "movedOut": "調整", "movedIn": "改為", "covered": "代課", "showAllLessons": "顯示完整課表（人工互調）", "noAdjustments": "當日沒有已確認的調課", "noLessons": "當日沒有課堂資料",
@@ -93,7 +98,7 @@
     "sources": { "base": "基礎課表", "base_conflict": "兩表不一致・已鎖定", "teacher_workbook": "教師表忙碌", "direct_swap": "已互調", "three_cycle": "連鎖互調", "emergency_cover": "緊急代課", "manual_swap": "人工互調", "manual_three_cycle": "人工連鎖" }
   },
   "statistics": {
-    "title": "數據統計", "description": "按學年查看每位老師參與代課及互調課堂的次數。",
+    "title": "統計", "description": "按學年查看每位老師參與代課及互調課堂的次數。",
     "matrixTitle": "教師月份統計", "matrixHint": "只計已確認且未撤銷的安排。", "course": "學年", "teacher": "老師", "total": "學年合計",
     "noCoursesOption": "尚未設定學年", "noCoursesTitle": "尚未設定學年", "noCoursesHint": "統計及每日導出需要學年名稱、開始及結束日期，請先到配置頁新增學年。", "configureCourses": "前往配置學年",
     "exportTitle": "導出每日調課／代課表", "exportHint": "Excel 每名缺席老師一個工作表；PDF 每名老師一份，多人時下載 ZIP。", "exportDate": "匯出日期", "exportExcel": "匯出 Excel", "exportPdf": "匯出 PDF"
