@@ -85,7 +85,7 @@
     "revision": "課表版本 {revision}",
     "steps": { "absence": "缺席老師", "recommendations": "查看並人工確認建議", "effective": "調課安排" },
     "teacher": "缺席老師", "teachers": "缺席老師（可多選）", "selectTeacher": "選擇老師", "selectTeachers": "選擇一位或多位老師", "date": "日期", "absenceDate": "缺席日期", "absentPeriods": "缺席節次", "allDay": "全天缺席", "analyzeAll": "分析全部課堂", "checkingDate": "正在核對日期……", "invalidDate": "所選日期未有課表資料",
-    "addAbsence": "新增缺席", "addAbsenceHint": "每次最多新增 3 位老師；每位老師可使用不同日期及節次。", "newAbsenceRecord": "未選擇老師", "addAnotherTeacher": "再加入一位老師", "absenceLimit": "已加入 {count}／3 位", "createAndAnalyze": "新增並分析", "analysisDates": "缺席分析日期",
+    "addAbsence": "新增缺席", "addAbsenceHint": "每次最多新增 3 位老師；每位老師可使用不同日期及節次。", "currentAbsences": "本次缺席", "newAbsenceRecord": "未選擇老師", "addAnotherTeacher": "再加入一位老師", "absenceLimit": "已加入 {count}／3 位", "removeAbsenceRecord": "移除此記錄", "noPeriodsSelected": "尚未選擇節次", "createAndAnalyze": "新增並分析", "analysisDates": "缺席分析日期",
     "counts": "已解決 {resolved} · 未解決 {unresolved}", "cancelAbsence": "取消已新增缺席",
     "analysisEmpty": "按「新增缺席」登記老師、日期和節次，系統會分析全部受影響課堂。", "noTasks": "所選節次已沒有需要處理的課堂。",
     "originalTeacher": "原任：{teachers}", "recommendable": "可處理", "unresolved": "未解決", "candidates": "可選方案", "specialCourseLater": "特殊課跨日，已降低優先級",

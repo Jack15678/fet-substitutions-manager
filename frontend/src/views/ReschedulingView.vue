@@ -1,6 +1,6 @@
 <template>
   <section class="rescheduling-page">
-    <header class="page-heading">
+    <header v-show="!absencePanelVisible" class="page-heading">
       <div>
         <h2>{{ $t('rescheduling.title') }}</h2>
       </div>
@@ -10,7 +10,7 @@
       </div>
     </header>
 
-    <section class="panel recommendations-panel">
+    <section v-show="!absencePanelVisible" class="panel recommendations-panel">
       <div class="panel-title">
         <div><h3>{{ $t('rescheduling.steps.recommendations') }}</h3></div>
         <div v-if="analysis" class="analysis-actions">
@@ -63,55 +63,81 @@
       </article>
     </section>
 
-    <Sidebar v-model:visible="absencePanelVisible" position="right" :modal="true" :style="{ width: 'min(100vw, 680px)' }" class="absence-sidebar">
-      <template #header>
-        <div class="absence-sidebar-title">
-          <h3>{{ $t('rescheduling.addAbsence') }}</h3>
-          <p>{{ $t('rescheduling.addAbsenceHint') }}</p>
-        </div>
-      </template>
-      <form class="absence-form" @submit.prevent="createAndAnalyze">
-        <section v-for="entry in absenceEntries" :key="entry.id" class="absence-entry">
-          <header>
+    <form v-if="absencePanelVisible" class="absence-editor" @submit.prevent="createAndAnalyze">
+      <aside class="absence-master">
+        <header>
+          <h3>{{ $t('rescheduling.currentAbsences') }}</h3>
+          <small>{{ $t('rescheduling.absenceLimit', { count: absenceEntries.length }) }}</small>
+        </header>
+        <div class="absence-master-list" :aria-label="$t('rescheduling.currentAbsences')">
+          <button
+            v-for="entry in absenceEntries"
+            :key="entry.id"
+            type="button"
+            :aria-pressed="activeAbsenceEntryId === entry.id"
+            :class="['absence-master-item', { active: activeAbsenceEntryId === entry.id }]"
+            @click="activeAbsenceEntryId = entry.id"
+          >
             <strong>{{ entryTeacherName(entry) || $t('rescheduling.newAbsenceRecord') }}</strong>
-            <Button v-if="absenceEntries.length > 1" type="button" :label="$t('common.delete')" severity="danger" text size="small" @click="removeAbsenceEntry(entry.id)" />
-          </header>
+            <span>{{ entry.data }}</span>
+            <small>{{ entryPeriodSummary(entry) }}</small>
+          </button>
+        </div>
+        <div class="absence-master-actions">
+          <Button type="button" :label="$t('rescheduling.addAnotherTeacher')" outlined :disabled="absenceEntries.length >= 3" @click="addAbsenceEntry" />
+          <span>{{ absenceEntries.length }}／3</span>
+        </div>
+      </aside>
+
+      <section class="absence-detail">
+        <header class="absence-detail-heading">
+          <div>
+            <h3>{{ $t('rescheduling.addAbsence') }}</h3>
+            <p>{{ $t('rescheduling.addAbsenceHint') }}</p>
+          </div>
+          <Button
+            v-if="absenceEntries.length > 1"
+            type="button"
+            :label="$t('rescheduling.removeAbsenceRecord')"
+            severity="danger"
+            text
+            @click="removeAbsenceEntry(activeAbsenceEntry.id)"
+          />
+        </header>
+
+        <div v-if="activeAbsenceEntry" class="absence-detail-body">
           <div class="absence-entry-grid">
             <label>{{ $t('rescheduling.teacher') }}
-              <select v-model.number="entry.professor_id" :disabled="entry.loading || !entry.active" required>
-                <option :value="null">{{ entry.loading ? $t('rescheduling.checkingDate') : entry.active ? $t('rescheduling.selectTeacher') : $t('rescheduling.invalidDate') }}</option>
-                <option v-for="teacher in entry.teachers" :key="teacher.id" :value="teacher.id">{{ teacher.name }}</option>
+              <select v-model.number="activeAbsenceEntry.professor_id" :disabled="activeAbsenceEntry.loading || !activeAbsenceEntry.active" required>
+                <option :value="null">{{ activeAbsenceEntry.loading ? $t('rescheduling.checkingDate') : activeAbsenceEntry.active ? $t('rescheduling.selectTeacher') : $t('rescheduling.invalidDate') }}</option>
+                <option v-for="teacher in activeAbsenceEntry.teachers" :key="teacher.id" :value="teacher.id">{{ teacher.name }}</option>
               </select>
             </label>
             <label>{{ $t('rescheduling.absenceDate') }}
-              <input v-model="entry.data" type="date" required @change="loadAbsenceEntryContext(entry)" />
+              <input v-model="activeAbsenceEntry.data" type="date" required @change="loadAbsenceEntryContext(activeAbsenceEntry)" />
             </label>
           </div>
-          <p v-if="!entry.loading && entry.data && !entry.active" class="entry-error">{{ $t('rescheduling.invalidDate') }}</p>
+          <p v-if="!activeAbsenceEntry.loading && activeAbsenceEntry.data && !activeAbsenceEntry.active" class="entry-error">{{ $t('rescheduling.invalidDate') }}</p>
           <div class="period-field">
             <div class="period-heading">
               <span>{{ $t('rescheduling.absentPeriods') }}</span>
-              <label class="all-day"><input type="checkbox" :checked="entryAllDay(entry)" @change="setEntryAllDay(entry, $event.target.checked)" />{{ $t('rescheduling.allDay') }}</label>
+              <label class="all-day"><input type="checkbox" :checked="entryAllDay(activeAbsenceEntry)" @change="setEntryAllDay(activeAbsenceEntry, $event.target.checked)" />{{ $t('rescheduling.allDay') }}</label>
             </div>
             <div class="periods">
-              <label v-for="period in 9" :key="period" :class="{ selected: entry.periods.includes(period) }">
-                <input v-model="entry.periods" type="checkbox" :value="period" />{{ $t('records.period', { period }) }}
+              <label v-for="period in 9" :key="period" :class="{ selected: activeAbsenceEntry.periods.includes(period) }">
+                <input v-model="activeAbsenceEntry.periods" type="checkbox" :value="period" />{{ $t('records.period', { period }) }}
               </label>
             </div>
           </div>
-        </section>
-
-        <div class="add-entry-row">
-          <Button type="button" :label="$t('rescheduling.addAnotherTeacher')" text :disabled="absenceEntries.length >= 3" @click="addAbsenceEntry" />
-          <small>{{ $t('rescheduling.absenceLimit', { count: absenceEntries.length }) }}</small>
         </div>
+
         <p v-if="absenceError" class="absence-form-error" role="alert">{{ absenceError }}</p>
         <footer class="absence-form-actions">
-          <Button :label="$t('common.cancel')" text type="button" @click="absencePanelVisible = false" />
+          <Button :label="$t('common.cancel')" outlined type="button" @click="absencePanelVisible = false" />
           <Button type="submit" :label="$t('rescheduling.createAndAnalyze')" class="progress-fill-button" :class="{ 'is-progressing': busy === 'analyze' }" :loading="busy === 'analyze'" :disabled="!canAnalyze" />
         </footer>
-      </form>
-    </Sidebar>
+      </section>
+    </form>
 
     <Dialog v-model:visible="verificationVisible" modal :header="$t('rescheduling.verifyTitle')" :style="{ width: 'min(96vw, 1120px)' }">
       <div v-if="verificationLoading" class="verification-loading">{{ $t('common.loading') }}</div>
@@ -140,7 +166,7 @@
       </div>
     </Dialog>
 
-    <section class="panel effective-panel">
+    <section v-show="!absencePanelVisible" class="panel effective-panel">
       <div class="panel-title">
         <div>
           <div class="title-copy"><h3>{{ $t('rescheduling.steps.effective') }}</h3><small>{{ $t('rescheduling.affectedHint') }}</small></div>
@@ -233,7 +259,7 @@
       </div>
     </section>
 
-    <section v-if="isAdmin" class="panel leave-panel">
+    <section v-if="isAdmin" v-show="!absencePanelVisible" class="panel leave-panel">
       <div class="leave-heading">
         <div><h3>{{ $t('leave.title') }}</h3><p>{{ $t('leave.description') }}</p></div>
         <Button v-if="editingLeaveId" :label="$t('leave.cancelEdit')" text @click="resetLeave" />
@@ -274,7 +300,6 @@ import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
-import Sidebar from 'primevue/sidebar'
 
 const props = defineProps({ dataGlobal: Date, isAdmin: Boolean })
 const { t, locale } = useI18n()
@@ -300,6 +325,7 @@ const newAbsenceEntry = () => ({
 })
 const absencePanelVisible = ref(false)
 const absenceEntries = ref([])
+const activeAbsenceEntryId = ref(null)
 const absenceError = ref('')
 const currentAbsenceIds = ref([])
 const analysis = ref(null)
@@ -322,6 +348,7 @@ const leave = reactive({ professor_id: null, leave_type: 'sick', start_date: '',
 const canAnalyze = computed(() => absenceEntries.value.length > 0 && absenceEntries.value.every(entry => (
   !entry.loading && entry.active && entry.professor_id && entry.data && entry.periods.length
 )))
+const activeAbsenceEntry = computed(() => absenceEntries.value.find(entry => entry.id === activeAbsenceEntryId.value))
 const affectedGroups = computed(() => (effective.value.adjustments || []).map(adjustment => ({
   id: adjustment.id,
   source: adjustment.kind,
@@ -403,6 +430,7 @@ const loadAbsenceEntryContext = async (entry) => {
 const openAbsencePanel = () => {
   absenceError.value = ''
   absenceEntries.value = [newAbsenceEntry()]
+  activeAbsenceEntryId.value = absenceEntries.value[0].id
   absencePanelVisible.value = true
   loadAbsenceEntryContext(absenceEntries.value[0])
 }
@@ -411,17 +439,24 @@ const addAbsenceEntry = () => {
   if (absenceEntries.value.length >= 3) return
   const entry = newAbsenceEntry()
   absenceEntries.value.push(entry)
+  activeAbsenceEntryId.value = entry.id
   loadAbsenceEntryContext(entry)
 }
 
 const removeAbsenceEntry = (id) => {
   absenceEntries.value = absenceEntries.value.filter(entry => entry.id !== id)
+  if (!absenceEntries.value.some(entry => entry.id === activeAbsenceEntryId.value)) {
+    activeAbsenceEntryId.value = absenceEntries.value[0]?.id || null
+  }
 }
 const entryAllDay = (entry) => entry.periods.length === 9
 const setEntryAllDay = (entry, checked) => {
   entry.periods = checked ? Array.from({ length: 9 }, (_, index) => index + 1) : []
 }
 const entryTeacherName = (entry) => entry.teachers.find(teacher => teacher.id === entry.professor_id)?.name
+const entryPeriodSummary = (entry) => entry.periods.length
+  ? joinItems([...entry.periods].sort((a, b) => a - b).map(period => t('records.period', { period })))
+  : t('rescheduling.noPeriodsSelected')
 
 const applyDefaults = () => {
   for (const key of Object.keys(selectedCandidates)) delete selectedCandidates[key]
@@ -448,6 +483,7 @@ const createAndAnalyze = async () => {
     await selectAnalysisDate(firstDate, false)
     absencePanelVisible.value = false
     absenceEntries.value = []
+    activeAbsenceEntryId.value = null
   } catch (error) {
     absenceError.value = error.response?.data?.detail || t('app.errors.unexpected')
   } finally { busy.value = '' }
@@ -622,30 +658,42 @@ onMounted(async () => {
 .analysis-dates button.active { border-bottom-color: var(--primary-color); color: var(--primary-color-dark); }
 .analysis-dates button:focus-visible { box-shadow: var(--focus-ring); }
 .analysis-dates button:disabled { cursor: wait; opacity: .6; }
-.absence-sidebar-title h3 { margin: 0; color: var(--primary-color-dark); font-size: 1.1rem; }
-.absence-sidebar-title p { margin: .25rem 0 0; color: var(--text-color-secondary); font-size: .82rem; font-weight: 400; }
-.absence-form { display: flex; min-height: calc(100dvh - 7rem); flex-direction: column; gap: 1rem; }
-.absence-entry { padding: 0 0 1.15rem; border-bottom: 1px solid var(--border-color); }
-.absence-entry + .absence-entry { padding-top: .15rem; }
-.absence-entry > header { display: flex; align-items: center; justify-content: space-between; min-height: 2.25rem; margin-bottom: .7rem; }
+.absence-editor { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: calc(100dvh - 10rem); overflow: hidden; border: 1px solid var(--border-color); background: #fff; }
+.absence-master { display: flex; min-width: 0; flex-direction: column; border-right: 1px solid var(--border-color); background: #f5f7f9; }
+.absence-master > header { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; padding: 1.4rem 1.2rem 1rem; border-bottom: 1px solid var(--border-color); }
+.absence-master h3 { margin: 0; color: var(--primary-color-dark); font-size: 1rem; }
+.absence-master > header small, .absence-master-actions span { color: var(--text-color-secondary); font-size: .75rem; }
+.absence-master-list { display: grid; }
+.absence-master-item { display: flex; min-width: 0; flex-direction: column; gap: .28rem; padding: 1rem 1.15rem; border: 0; border-left: 3px solid transparent; border-bottom: 1px solid var(--border-color); background: transparent; color: var(--text-color-primary); text-align: left; cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
+.absence-master-item:hover { background: #edf2f6; }
+.absence-master-item.active { border-left-color: var(--primary-color-dark); background: #fff; }
+.absence-master-item:focus-visible { position: relative; z-index: 1; box-shadow: inset var(--focus-ring); outline: none; }
+.absence-master-item strong { overflow: hidden; color: var(--primary-color-dark); font-size: .92rem; text-overflow: ellipsis; white-space: nowrap; }
+.absence-master-item span { color: #42566a; font-size: .8rem; font-variant-numeric: tabular-nums; }
+.absence-master-item small { overflow: hidden; color: var(--text-color-secondary); font-size: .73rem; text-overflow: ellipsis; white-space: nowrap; }
+.absence-master-actions { display: grid; gap: .75rem; margin-top: auto; padding: 1.1rem; text-align: center; }
+.absence-detail { display: flex; min-width: 0; flex-direction: column; background: #fff; }
+.absence-detail-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; padding: 1.6rem 2rem 1.35rem; border-bottom: 1px solid var(--border-color); }
+.absence-detail-heading h3 { margin: 0; color: var(--primary-color-dark); font-size: clamp(1.45rem, 2.4vw, 1.85rem); letter-spacing: -.025em; }
+.absence-detail-heading p { max-width: 58ch; margin: .35rem 0 0; color: var(--text-color-secondary); font-size: .84rem; }
+.absence-detail-body { display: grid; gap: 2rem; width: 100%; max-width: 960px; padding: 2rem; }
 .absence-entry-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: .75rem; }
-.absence-entry label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: .84rem; font-weight: 650; }
+.absence-detail label { display: flex; flex-direction: column; gap: .4rem; color: #344054; font-size: .84rem; font-weight: 650; }
 .entry-error, .absence-form-error { margin: .55rem 0 0; color: #9b3b30; font-size: .8rem; }
-.add-entry-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
-.add-entry-row small { color: var(--text-color-secondary); }
-.absence-form-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border-color); }
+.absence-form-error { padding: 0 2rem; }
+.absence-form-actions { display: flex; justify-content: flex-end; gap: .65rem; margin-top: auto; padding: 1rem 2rem; border-top: 1px solid var(--border-color); background: #fbfcfd; }
 select, input[type=date], input[type=file], textarea { width: 100%; min-height: 2.55rem; border: 1px solid #c8d2dd; border-radius: 4px; padding: .6rem .7rem; background: #fff; color: var(--text-color-primary); }
 select:hover, input:hover, textarea:hover { border-color: #aeb8c5; }
 select:focus, input:focus, textarea:focus { border-color: var(--primary-color); }
 input[type=checkbox] { accent-color: var(--primary-color); }
 input[type=file] { padding: .45rem; }
 .period-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; font-size: .84rem; font-weight: 650; }
-.absence-form .all-day { flex-direction: row; align-items: center; gap: .35rem; font-weight: 600; cursor: pointer; }
+.absence-editor .all-day { flex-direction: row; align-items: center; gap: .4rem; font-weight: 600; cursor: pointer; }
 .all-day input { width: auto; min-height: auto; }
-.periods { display: grid; grid-template-columns: repeat(3, 1fr); gap: .45rem; margin-top: .4rem; }
-.periods label { display: flex; flex-direction: row; align-items: center; justify-content: center; border: 1px solid var(--border-color); border-radius: 3px; padding: .55rem !important; font-weight: 550 !important; cursor: pointer; }
+.periods { display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem; margin-top: .65rem; }
+.periods label { display: flex; min-height: 4.35rem; flex-direction: row; align-items: center; justify-content: center; border: 1px solid #cbd5df; border-radius: 3px; padding: .7rem !important; font-weight: 600 !important; cursor: pointer; transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
 .periods label:hover { border-color: #aeb8c5; background: var(--surface-soft); }
-.periods label.selected { border-color: #6f91b1; background: var(--highlight-bg); color: var(--primary-color-dark); }
+.periods label.selected { border-color: var(--primary-color-dark); background: var(--primary-color-dark); color: #fff; }
 .periods input { width: auto; min-height: auto; }
 .notice { padding: .8rem 1rem; border-radius: 3px; border-left: 3px solid currentColor; }
 .warning { background: #fff8e8; color: #8a5b16; }
@@ -756,6 +804,9 @@ tbody tr:hover { background: #fbfcfe; }
 .leave-list span { font-size: .82rem; }
 .empty-state.compact { min-height: 80px; }
 @media (max-width: 900px) {
+  .absence-editor { grid-template-columns: 220px minmax(0, 1fr); }
+  .absence-detail-heading, .absence-detail-body { padding-inline: 1.25rem; }
+  .absence-form-actions { padding-inline: 1.25rem; }
   .leave-form { grid-template-columns: 1fr 1fr; }
   .leave-form .p-button { grid-column: 1 / -1; }
   .movement-list div { flex-direction: column; gap: .2rem; }
@@ -763,7 +814,20 @@ tbody tr:hover { background: #fbfcfe; }
 }
 
 @media (max-width: 600px) {
-  :deep(.absence-sidebar) { width: 100vw !important; max-width: 100vw; }
+  .absence-editor { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); min-height: calc(100dvh - 9rem); }
+  .absence-master { border-right: 0; border-bottom: 1px solid var(--border-color); }
+  .absence-master > header { padding: .8rem .85rem .65rem; }
+  .absence-master-list { display: flex; overflow-x: auto; }
+  .absence-master-item { flex: 0 0 165px; padding: .75rem .85rem; border-left: 0; border-bottom: 3px solid transparent; border-right: 1px solid var(--border-color); }
+  .absence-master-item.active { border-bottom-color: var(--primary-color-dark); }
+  .absence-master-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 0; padding: .7rem .85rem; text-align: left; }
+  .absence-detail-heading { align-items: flex-start; flex-direction: column; gap: .4rem; padding: 1.15rem .85rem 1rem; }
+  .absence-detail-heading h3 { font-size: 1.35rem; }
+  .absence-detail-body { gap: 1.25rem; padding: 1.1rem .85rem 1.5rem; }
+  .absence-form-error { padding-inline: .85rem; }
+  .absence-form-actions { position: sticky; bottom: 0; padding: .8rem .85rem; }
+  .periods { gap: .4rem; }
+  .periods label { min-height: 3.25rem; padding: .45rem !important; font-size: .78rem; }
   .page-heading { flex-direction: column; gap: .35rem; }
   .page-actions { width: 100%; justify-content: space-between; }
   .panel-title { align-items: flex-start; }
@@ -778,7 +842,6 @@ tbody tr:hover { background: #fbfcfe; }
   .leave-heading, .leave-list article { align-items: flex-start; flex-direction: column; }
   .leave-form { grid-template-columns: 1fr; }
   .absence-entry-grid { grid-template-columns: 1fr; }
-  .add-entry-row { align-items: flex-start; flex-direction: column; }
   .panel { padding: 1rem; }
 }
 </style>
