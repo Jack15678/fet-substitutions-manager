@@ -45,7 +45,7 @@
     },
   "pages": {
     "workbench": "Rescheduling workbench",
-    "records": "Records",
+    "records": "Rescheduling records",
     "statistics": "Statistics",
     "settings": "Configuration",
     "import": "Timetable import"
@@ -1703,11 +1703,15 @@
   },
   "records": {
     "eyebrow": "Rescheduling archive",
-    "title": "Future, today and past records",
-    "description": "Only active and confirmed arrangements are shown; cancelled and reverted data is retained for audit only.",
+    "title": "Rescheduling records",
+    "description": "Find absence cases and their arrangements; add and handle cases in the rescheduling workbench.",
+    "search": "Search", "searchPlaceholder": "Teacher, class or subject", "dateFrom": "From", "dateTo": "To", "status": "Status", "type": "Type", "apply": "Search", "reset": "Reset",
+    "filterStatuses": { "open": "Pending", "completed": "Arranged" }, "filterKinds": { "swap": "Swap", "cover": "Cover", "manual": "Manual adjustment" },
+    "columns": { "date": "Date", "teacher": "Absent teacher", "periods": "Absent periods", "arrangements": "Arrangement summary", "status": "Status" },
+    "resultCount": "{count} records", "resultHint": "Select View for full details and administrative actions.", "view": "View", "empty": "No rescheduling records match these filters.",
+    "absenceDetails": "Absence details", "arrangementDetails": "Swap / cover arrangements", "createdByLabel": "Created by", "editAbsence": "Edit absence", "arrangementCount": "{count} arrangements", "noAdjustmentShort": "Not arranged",
     "today": "Today in Hong Kong: {date}",
     "scopes": { "future": "Future", "today": "Today", "past": "Past" },
-    "empty": "There are no records on this tab.",
     "manual": "Manual swap",
     "period": "Period {period}",
     "createdBy": "Created by: {user}",
@@ -1715,7 +1719,7 @@
     "previous": "Previous",
     "next": "Next",
     "page": "Page {page} of {pages}, {total} items", "resume": "Continue handling",
-    "statuses": { "open": "Pending", "resolved": "Resolved", "cancelled": "Cancelled", "confirmed": "Confirmed", "reverted": "Reverted" },
+    "statuses": { "open": "Pending", "resolved": "Arranged", "cancelled": "Cancelled", "confirmed": "Confirmed", "reverted": "Reverted" },
     "editReason": "Edit reason", "reason": "Reason: {reason}", "reasonPrompt": "Enter the adjustment reason (optional)", "editRemovesAdjustments": "Editing this absence invalidates and deletes its existing adjustments. Continue?", "deleteAbsenceConfirm": "Permanently delete this absence and all its adjustments?", "deleteAdjustmentConfirm": "Permanently delete this adjustment and restore the base timetable?",
     "kinds": { "direct_swap": "Direct swap", "three_cycle": "Same-class cycle", "emergency_cover": "Emergency subject cover", "manual_swap": "Manual swap", "manual_three_cycle": "Manual three-lesson cycle" }
   },

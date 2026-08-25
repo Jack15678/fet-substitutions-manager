@@ -807,11 +807,20 @@ class ReschedulingTests(unittest.TestCase):
         self.db.add(ScheduleAdjustment(
             absence_case_id=cases[2].id, kind="direct_swap", status="reverted", locked=False,
         ))
+        cases[3].status = "resolved"
+        self.db.add(ScheduleAdjustment(
+            absence_case_id=cases[3].id, kind="emergency_cover", status="confirmed", locked=True,
+        ))
         self.db.commit()
 
         today = list_records(scope="today", page=1, page_size=20, db=self.db)
         future = list_records(scope="future", page=1, page_size=1, db=self.db)
         past = list_records(scope="past", page=1, page_size=20, db=self.db)
+        filtered = list_records(
+            scope="all", page=1, page_size=20, date_from=date(2026, 8, 11),
+            date_to=date(2026, 8, 12), q="A老師", status="open", db=self.db,
+        )
+        covers = list_records(scope="all", page=1, page_size=20, status="completed", kind="cover", db=self.db)
 
         self.assertEqual([item["date"] for item in today["items"]], ["2026-08-11"])
         self.assertEqual(future["total"], 2)
@@ -819,6 +828,8 @@ class ReschedulingTests(unittest.TestCase):
         self.assertEqual(future["items"][0]["date"], "2026-08-12")
         self.assertEqual(future["items"][0]["adjustments"], [])
         self.assertEqual([item["date"] for item in past["items"]], ["2026-08-10"])
+        self.assertEqual([item["date"] for item in filtered["items"]], ["2026-08-12", "2026-08-11"])
+        self.assertEqual([item["date"] for item in covers["items"]], ["2026-08-13"])
 
     def test_statistics_daily_exports_and_complete_cycle_payload(self):
         absent, swap_teacher, cover_teacher = [Professor(nom=name, actiu=True) for name in ("甲老師", "乙老師", "丙老師")]

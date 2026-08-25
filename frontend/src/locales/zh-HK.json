@@ -20,7 +20,7 @@
       "prevDay": "前一日", "nextDay": "下一日", "selectDate": "選擇日期", "today": "今天", "returnToday": "返回今天", "menu": "選單", "settings": "系統設定",
       "profile": "個人資料", "logout": "登出", "course": "所選日期的學年", "courseNone": "不屬於任何學年", "language": "介面語言"
     },
-    "pages": { "workbench": "調課工作台", "records": "記錄", "statistics": "統計", "settings": "配置", "import": "課表匯入" }
+    "pages": { "workbench": "調課工作台", "records": "調課記錄", "statistics": "統計", "settings": "配置", "import": "課表匯入" }
   },
   "profile": {
     "title": "個人資料", "username": "用戶名稱", "currentPassword": "現時密碼", "newPassword": "新密碼",
@@ -67,11 +67,16 @@
     }
   },
   "records": {
-    "eyebrow": "調課檔案", "title": "未來、今日及過往記錄", "description": "只顯示仍需處理及已確認的安排；取消及撤銷資料只保留作審計。",
-    "today": "香港今日：{date}", "scopes": { "future": "未來", "today": "今日", "past": "過往" }, "empty": "此分頁暫時沒有記錄。",
+    "eyebrow": "調課檔案", "title": "調課記錄", "description": "查詢缺席個案及相關調課安排；新增及處理工作繼續在調課工作臺進行。",
+    "search": "搜尋", "searchPlaceholder": "老師、班別或科目", "dateFrom": "開始日期", "dateTo": "結束日期", "status": "狀態", "type": "類型", "apply": "查詢", "reset": "重設",
+    "filterStatuses": { "open": "待處理", "completed": "已安排" }, "filterKinds": { "swap": "互調", "cover": "代課", "manual": "人工調課" },
+    "columns": { "date": "日期", "teacher": "缺席老師", "periods": "缺席節次", "arrangements": "安排摘要", "status": "狀態" },
+    "resultCount": "共 {count} 項", "resultHint": "按「查看」開啟完整資料及管理操作。", "view": "查看", "empty": "沒有符合條件的調課記錄。",
+    "absenceDetails": "缺席資料", "arrangementDetails": "調課／代課安排", "createdByLabel": "建立者", "editAbsence": "修改缺席", "arrangementCount": "{count} 個安排", "noAdjustmentShort": "尚未安排",
+    "today": "香港今日：{date}", "scopes": { "future": "未來", "today": "今日", "past": "過往" },
     "manual": "人工互調", "period": "第 {period} 節", "createdBy": "建立者：{user}", "noAdjustment": "尚未確認任何調課安排。",
     "previous": "上一頁", "next": "下一頁", "page": "第 {page}／{pages} 頁，共 {total} 項", "resume": "繼續處理",
-    "statuses": { "open": "待處理", "resolved": "已解決", "cancelled": "已取消", "confirmed": "已確認", "reverted": "已撤銷" },
+    "statuses": { "open": "待處理", "resolved": "已安排", "cancelled": "已取消", "confirmed": "已確認", "reverted": "已撤銷" },
     "editReason": "修改原因", "reason": "原因：{reason}", "reasonPrompt": "輸入調課原因（可留空）", "editRemovesAdjustments": "修改缺席後，原有調課方案會失效並被刪除。繼續？", "deleteAbsenceConfirm": "完整刪除此缺席及其所有調課記錄？", "deleteAdjustmentConfirm": "完整刪除此調課記錄並回復基礎課表？",
     "kinds": { "direct_swap": "直接互調", "three_cycle": "同班連鎖互調", "emergency_cover": "同科緊急代課", "manual_swap": "人工互調", "manual_three_cycle": "人工三堂連鎖" }
   },

@@ -1118,11 +1118,22 @@ def delete_adjustment(
 
 @router.get("/api/records")
 def list_records(
-    scope: str = Query("today", pattern="^(future|today|past)$"),
+    scope: str = Query("all", pattern="^(all|future|today|past)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=5, le=50),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    q: str | None = None,
+    status: str | None = None,
+    kind: str | None = None,
     db: Session = Depends(get_db),
 ):
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(400, "開始日期不可遲於結束日期")
+    if status not in {None, "open", "completed"}:
+        raise HTTPException(400, "無效的記錄狀態")
+    if kind not in {None, "swap", "cover", "manual"}:
+        raise HTTPException(400, "無效的調課類型")
     today = hong_kong_today()
     adjustments = (db.query(ScheduleAdjustment)
                    .filter(ScheduleAdjustment.status != "reverted")
@@ -1170,12 +1181,33 @@ def list_records(
 
     def in_scope(item):
         item_date = date.fromisoformat(item["date"])
-        return ((scope == "future" and item_date > today)
+        return (scope == "all"
+                or (scope == "future" and item_date > today)
                 or (scope == "today" and item_date == today)
                 or (scope == "past" and item_date < today))
 
+    # ponytail: in-memory filters fit the current single-school volume; move them to SQL if records become large.
     items = [item for item in items if in_scope(item)]
-    items.sort(key=lambda item: (item["date"], item["_sort_id"]), reverse=scope == "past")
+    if date_from:
+        items = [item for item in items if date.fromisoformat(item["date"]) >= date_from]
+    if date_to:
+        items = [item for item in items if date.fromisoformat(item["date"]) <= date_to]
+    if status == "open":
+        items = [item for item in items if item["status"] == "open"]
+    elif status == "completed":
+        items = [item for item in items if item["status"] in {"resolved", "confirmed"}]
+    if kind:
+        allowed_kinds = {
+            "swap": {"direct_swap", "three_cycle"},
+            "cover": {"emergency_cover"},
+            "manual": {"manual_swap", "manual_three_cycle"},
+        }[kind]
+        items = [item for item in items
+                 if any(adjustment["kind"] in allowed_kinds for adjustment in item["adjustments"])]
+    if q and (term := q.strip().casefold()):
+        items = [item for item in items
+                 if term in json.dumps(item, ensure_ascii=False).casefold()]
+    items.sort(key=lambda item: (item["date"], item["_sort_id"]), reverse=scope != "future")
     total = len(items)
     start = (page - 1) * page_size
     page_items = items[start:start + page_size]
