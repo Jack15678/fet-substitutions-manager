@@ -10,16 +10,6 @@
   >
     <div class="config-container">
       <TabView class="app-tabview app-tabview--dialog">
-        <TabPanel v-if="canManageUsers">
-          <template #header>
-            <span class="tab-header-lines">
-              <span>{{ $t('config.tabs.coursesLine1') }}</span>
-              <span>&nbsp;</span>
-            </span>
-          </template>
-          <CursosTab @cursos-canviats="emit('cursos-canviats')" />
-        </TabPanel>
-
         <!-- TAB: GOVERNANÇA DE DADES (RGPD) -->
         <TabPanel v-if="canManageUsers">
           <template #header>
@@ -62,7 +52,6 @@ import Dialog from 'primevue/dialog'
 import Button from 'primevue/button'
 import TabView from 'primevue/tabview'
 import TabPanel from 'primevue/tabpanel'
-import CursosTab from './config/CursosTab.vue'
 import GestioDadesTab from './config/GestioDadesTab.vue'
 import UsuarisTab from './config/UsuarisTab.vue'
 
@@ -85,7 +74,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:visible', 'cursos-canviats'])
+const emit = defineEmits(['update:visible'])
 
 const canManageUsers = computed(() => ['admin', 'super_admin'].includes(props.currentRole || ''))
 

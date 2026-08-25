@@ -19,7 +19,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from models import AbsenceCase, Professor, ScheduleAdjustment, ScheduleAdjustmentLeg, TimetableLesson
-from repositories import ConfiguracioRepository, CursRepository
+from repositories import ConfiguracioRepository
 from rescheduling_service import effective_occurrences, version_for_date
 
 
@@ -137,7 +137,6 @@ def daily_export_data(db, day) -> list[dict]:
         .filter(ScheduleAdjustment.status == "confirmed", ScheduleAdjustmentLeg.to_date == day)
         .all()
     )
-    course = CursRepository.get_for_date(db, day.isoformat())
     result = []
 
     for teacher_id, absent_periods in periods_by_teacher.items():
@@ -157,7 +156,7 @@ def daily_export_data(db, day) -> list[dict]:
             ]
             incoming = next((
                 (leg, adjustment) for leg, adjustment in confirmed_legs
-                if adjustment.kind != "emergency_cover" and leg.to_period == period
+                if adjustment.kind not in {"emergency_cover", "co_teacher_solo"} and leg.to_period == period
                 and leg.class_code in class_codes
             ), None)
             remark = ""
@@ -178,7 +177,6 @@ def daily_export_data(db, day) -> list[dict]:
         result.append({
             "date": day,
             "weekday": WEEKDAYS[day.weekday()],
-            "course_name": course.nom if course else "",
             "teacher_id": teacher_id,
             "teacher_name": names.get(teacher_id, str(teacher_id)),
             "rows": rows,
@@ -224,7 +222,7 @@ def build_daily_xlsx(entries: list[dict], period_times: list[dict]) -> bytes:
             sheet.column_dimensions[get_column_letter(index)].width = width
 
         sheet.merge_cells("A1:G1")
-        sheet["A1"] = f"{entry['course_name']} 年度" if entry["course_name"] else "學年度"
+        sheet["A1"] = f"{entry['date'].year} 年"
         sheet.merge_cells("A2:G2")
         sheet["A2"] = "調課／代課表（全日制）"
         sheet.merge_cells("A3:G3")
@@ -288,7 +286,7 @@ def build_daily_pdf(entry: dict, period_times: list[dict]) -> bytes:
     )
     day = entry["date"]
     story = [
-        Paragraph(f"{entry['course_name']} 年度" if entry["course_name"] else "學年度", title),
+        Paragraph(f"{day.year} 年", title),
         Paragraph("調課／代課表（全日制）", title),
         Spacer(1, 2 * mm),
         Paragraph(f"代課日期：{day.year} 年 {day.month} 月 {day.day} 日（{entry['weekday']}）", info),

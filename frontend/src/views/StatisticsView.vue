@@ -7,18 +7,14 @@
     <section class="panel">
       <div class="panel-title">
         <div><h3>{{ $t('statistics.matrixTitle') }}</h3><p>{{ $t('statistics.matrixHint') }}</p></div>
-        <label>{{ $t('statistics.course') }}
-          <select v-model.number="courseId" :disabled="!courses.length" @change="loadStatistics">
-            <option v-if="!courses.length" :value="null">{{ $t('statistics.noCoursesOption') }}</option>
-            <option v-for="course in courses" :key="course.id" :value="course.id">{{ course.nom }}</option>
-          </select>
-        </label>
+        <form class="range-form" @submit.prevent="loadStatistics">
+          <label>{{ $t('statistics.startDate') }}<input v-model="startDate" type="date" required /></label>
+          <label>{{ $t('statistics.endDate') }}<input v-model="endDate" type="date" required /></label>
+          <Button type="submit" :label="$t('statistics.apply')" icon="pi pi-search" :loading="loading" />
+        </form>
       </div>
-      <div v-if="!courses.length" class="course-empty">
-        <div><strong>{{ $t('statistics.noCoursesTitle') }}</strong><p>{{ $t('statistics.noCoursesHint') }}</p></div>
-        <Button :label="$t('statistics.configureCourses')" icon="pi pi-cog" @click="emit('configure')" />
-      </div>
-      <div v-else-if="loading" class="empty-state">{{ $t('common.loading') }}</div>
+      <p v-if="error" class="field-error" role="alert">{{ error }}</p>
+      <div v-if="loading" class="empty-state">{{ $t('common.loading') }}</div>
       <div v-else class="table-wrap">
         <table>
           <thead><tr><th>{{ $t('statistics.teacher') }}</th><th v-for="month in statistics.months" :key="month">{{ monthLabel(month) }}</th><th>{{ $t('statistics.total') }}</th></tr></thead>
@@ -36,8 +32,8 @@
       <div><h3>{{ $t('statistics.exportTitle') }}</h3><p>{{ $t('statistics.exportHint') }}</p></div>
       <label>{{ $t('statistics.exportDate') }}<input v-model="exportDate" type="date" /></label>
       <div class="actions">
-        <Button :label="$t('statistics.exportExcel')" icon="pi pi-file-excel" :loading="busy === 'xlsx'" :disabled="!courses.length" @click="download('xlsx')" />
-        <Button :label="$t('statistics.exportPdf')" icon="pi pi-file-pdf" severity="danger" :loading="busy === 'pdf'" :disabled="!courses.length" @click="download('pdf')" />
+        <Button :label="$t('statistics.exportExcel')" icon="pi pi-file-excel" :loading="busy === 'xlsx'" @click="download('xlsx')" />
+        <Button :label="$t('statistics.exportPdf')" icon="pi pi-file-pdf" severity="danger" :loading="busy === 'pdf'" @click="download('pdf')" />
       </div>
     </section>
   </section>
@@ -50,29 +46,39 @@ import axios from 'axios'
 import Button from 'primevue/button'
 
 const props = defineProps({ dataGlobal: Date })
-const emit = defineEmits(['configure'])
-const { locale } = useI18n()
+const { locale, t } = useI18n()
 const iso = (value) => {
   const date = value || new Date()
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
   return local.toISOString().slice(0, 10)
 }
-const courses = ref([])
-const courseId = ref(null)
+const selectedYear = (props.dataGlobal || new Date()).getFullYear()
+const startDate = ref(`${selectedYear}-01-01`)
+const endDate = ref(`${selectedYear}-12-31`)
 const statistics = ref({ months: [], teachers: [] })
 const exportDate = ref(iso(props.dataGlobal))
 const loading = ref(false)
 const busy = ref('')
+const error = ref('')
 
 watch(() => props.dataGlobal, value => { exportDate.value = iso(value) })
 const monthLabel = (month) => new Intl.DateTimeFormat(locale.value === 'en' ? 'en-HK' : 'zh-HK', { year: '2-digit', month: 'short' }).format(new Date(`${month}-01T12:00:00`))
 
 const loadStatistics = async () => {
-  if (!courseId.value) return
+  error.value = ''
+  if (!startDate.value || !endDate.value || startDate.value > endDate.value) {
+    error.value = t('statistics.invalidRange')
+    return
+  }
   loading.value = true
   try {
-    statistics.value = (await axios.get('/api/rescheduling/statistics', { params: { course_id: courseId.value } })).data
+    statistics.value = (await axios.get('/api/rescheduling/statistics', {
+      params: { start_date: startDate.value, end_date: endDate.value }
+    })).data
     statistics.value.teachers = statistics.value.teachers.filter(teacher => teacher.total > 0)
+  }
+  catch (requestError) {
+    error.value = requestError.response?.data?.detail || t('statistics.loadError')
   }
   finally { loading.value = false }
 }
@@ -91,12 +97,7 @@ const download = async (format) => {
   } finally { busy.value = '' }
 }
 
-onMounted(async () => {
-  courses.value = (await axios.get('/api/cursos')).data
-  const selectedDate = exportDate.value
-  courseId.value = courses.value.find(course => course.data_inici <= selectedDate && (!course.data_fi || selectedDate <= course.data_fi))?.id || courses.value[0]?.id || null
-  await loadStatistics()
-})
+onMounted(loadStatistics)
 </script>
 
 <style scoped>
@@ -107,7 +108,9 @@ onMounted(async () => {
 .panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
 .panel-title { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-end; margin-bottom: 1rem; }
 label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: .84rem; font-weight: 650; }
-select, input { min-height: 2.5rem; padding: .55rem .65rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
+input { min-height: 2.5rem; padding: .55rem .65rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
+.range-form { display: flex; align-items: flex-end; gap: .6rem; }
+.field-error { margin: 0 0 1rem; padding: .75rem .9rem; border-radius: 8px; background: #fff0f0; color: #a12626; }
 .table-wrap { overflow: auto; border: 1px solid var(--border-color); border-radius: 10px; }
 table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: .82rem; }
 th, td { padding: .65rem .7rem; border-bottom: 1px solid #edf0f3; text-align: center; white-space: nowrap; }
@@ -117,8 +120,6 @@ tbody tr:hover th, tbody tr:hover td { background: #fbfcfe; }
 .total { background: var(--highlight-bg); color: var(--primary-color-dark); font-weight: 750; }
 .export-panel { display: grid; grid-template-columns: 1fr minmax(220px, .35fr) auto; align-items: end; gap: 1rem; }
 .actions { display: flex; justify-content: flex-end; gap: .6rem; }
-.course-empty { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; border-radius: 10px; background: #fff8e8; color: #8a5b16; }
-.course-empty p { margin: .2rem 0 0; color: #8a5b16; }
 .empty-state, .empty-row { padding: 2rem; color: var(--text-color-secondary); text-align: center; }
-@media (max-width: 800px) { .panel-title, .export-panel, .course-empty { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; } .actions { justify-content: flex-start; } }
+@media (max-width: 800px) { .panel-title, .export-panel, .range-form { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; } .actions { justify-content: flex-start; } }
 </style>

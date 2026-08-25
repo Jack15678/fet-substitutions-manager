@@ -38,6 +38,7 @@ IGNORED_CLASS_ACTIVITIES = {"康樂活動(13:00-14:30)"}
 WEEKDAYS = {f"星期{name}": index for index, name in enumerate("一二三四五")}
 TIME_RANGE = re.compile(r"(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})")
 MAX_CYCLE_LESSONS_KEY = "rescheduling_max_cycle_lessons"
+CORE_CONSECUTIVE_SUBJECTS = {"中文", "中國語文", "英文", "英語", "數學"}
 
 
 def clean(value) -> str:
@@ -61,6 +62,51 @@ def normalize_subject(value) -> str:
     if value.endswith("課") and len(value) > 1:
         value = value[:-1]
     return value
+
+
+def adjacent_teaching_count(occurrences: list[dict], teacher_id: int,
+                            target_date: date, target_period: int) -> int:
+    """Count adjacent formal periods in which the teacher is already teaching."""
+    return sum(any(
+        occurrence["date"] == target_date
+        and occurrence["period"] == period
+        and teacher_id in occurrence["teachers"]
+        for occurrence in occurrences
+    ) for period in (target_period - 1, target_period + 1) if 1 <= period <= 9)
+
+
+def _core_consecutive_pairs(occurrences: list[dict]) -> set[tuple[str, str]]:
+    by_slot: dict[tuple, set[str]] = {}
+    for occurrence in occurrences:
+        subject = normalize_subject(occurrence["subject"])
+        if occurrence["lesson_id"] is None or subject not in CORE_CONSECUTIVE_SUBJECTS:
+            continue
+        for teacher_id in occurrence["teachers"]:
+            key = (int(teacher_id), occurrence["date"], occurrence["class_code"],
+                   subject, int(occurrence["period"]))
+            by_slot.setdefault(key, set()).add(occurrence["occurrence_id"])
+    pairs = set()
+    for key, occurrence_ids in by_slot.items():
+        teacher_id, day, class_code, subject, period = key
+        next_ids = by_slot.get((teacher_id, day, class_code, subject, period + 1), set())
+        pairs.update(tuple(sorted((left, right))) for left in occurrence_ids for right in next_ids)
+    return pairs
+
+
+def _broken_core_consecutive_count(legs: list[dict], occurrence_slots: dict[str, tuple[date, int]],
+                                   pairs: set[tuple[str, str]]) -> int:
+    destinations = {
+        leg["occurrence_id"]: (date.fromisoformat(leg["to_date"]), int(leg["to_period"]))
+        for leg in legs
+    }
+    broken = 0
+    for left, right in pairs:
+        if left not in destinations and right not in destinations:
+            continue
+        left_slot = destinations.get(left, occurrence_slots[left])
+        right_slot = destinations.get(right, occurrence_slots[right])
+        broken += left_slot[0] != right_slot[0] or abs(left_slot[1] - right_slot[1]) != 1
+    return broken
 
 
 def _is_real(value: str) -> bool:
@@ -561,6 +607,15 @@ def effective_occurrences(db: Session, start: date, end: date) -> list[dict]:
                  .join(ScheduleAdjustment, ScheduleAdjustmentLeg.adjustment_id == ScheduleAdjustment.id)
                  .filter(ScheduleAdjustment.status == "confirmed").all())
     for leg, adjustment in confirmed:
+        if adjustment.kind == "co_teacher_solo":
+            for occ in occurrences:
+                if (occ["lesson_id"] == leg.lesson_id and occ["date"] == leg.from_date
+                        and occ["period"] == leg.from_period):
+                    occ["teachers"] = [t for t in occ["teachers"] if t != leg.replaced_teacher_id]
+                    occ["locked"] = True
+                    occ["adjustment_id"] = adjustment.id
+                    occ["source"] = adjustment.kind
+            continue
         if leg.replacement_teacher_id:
             for occ in occurrences:
                 if (occ["lesson_id"] == leg.lesson_id and occ["date"] == leg.from_date
@@ -705,6 +760,8 @@ def _candidate(kind: str, target: dict, legs: list[dict], start: date, reason: s
         "day_distance": (completion - start).days,
         "moved_lessons": len(legs),
         "special_cross_day_moves": special_cross_day_moves,
+        "breaks_consecutive_lessons": 0,
+        "new_consecutive_classes": 0,
         "reason": reason,
         "legs": legs,
     }
@@ -735,10 +792,12 @@ def choose_global(option_groups: list[list[dict]]) -> dict[int, dict]:
                 used |= candidate_resources
                 break
 
-    def score(chosen: dict[int, dict]) -> tuple[int, int, int, int]:
+    def score(chosen: dict[int, dict]) -> tuple[int, int, int, int, int, int]:
         return (
             len(chosen),
             -sum(candidate.get("special_cross_day_moves", 0) for candidate in chosen.values()),
+            -sum(candidate.get("breaks_consecutive_lessons", 0) for candidate in chosen.values()),
+            -sum(candidate.get("new_consecutive_classes", 0) for candidate in chosen.values()),
             -sum(candidate["day_distance"] for candidate in chosen.values()),
             -sum(candidate["moved_lessons"] for candidate in chosen.values()),
         )
@@ -783,6 +842,11 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
 
     dates = teaching_dates(db, start, 5)
     occurrences = effective_occurrences(db, start, dates[-1])
+    occurrence_slots = {
+        occurrence["occurrence_id"]: (occurrence["date"], int(occurrence["period"]))
+        for occurrence in occurrences
+    }
+    consecutive_pairs = _core_consecutive_pairs(occurrences)
     absences = absence_keys(db, start, dates[-1])
     closures = {row.data for row in db.query(SchoolClosure).all()}
     max_cycle_lessons = get_max_cycle_lessons(db)
@@ -816,6 +880,13 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
     option_groups: list[list[dict]] = []
     for target in targets:
         absent_professor_id = target["_absent_professor_id"]
+        if any(
+            teacher_id != absent_professor_id
+            and (teacher_id, target["date"], target["period"]) not in absences
+            for teacher_id in target["teachers"]
+        ):
+            option_groups.append([])
+            continue
         same_class = [
             occ for occ in occurrences
             if occ["class_code"] == target["class_code"] and occ["lesson_id"] is not None
@@ -836,7 +907,11 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
                 ok, _ = validate_move_legs(legs, occurrences, absences, closures)
                 if ok:
                     label = "同日直接互調" if day == start else f"與 {day.isoformat()} 直接互調"
-                    direct_for_day.append(_candidate("direct_swap", target, legs, start, label))
+                    candidate = _candidate("direct_swap", target, legs, start, label)
+                    candidate["breaks_consecutive_lessons"] = _broken_core_consecutive_count(
+                        legs, occurrence_slots, consecutive_pairs
+                    )
+                    direct_for_day.append(candidate)
             candidates.extend(direct_for_day)
 
             cycle_for_day: list[dict] = []
@@ -860,11 +935,16 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
                     if ok:
                         label = (f"同班 {cycle_length} 堂連鎖互調" if day == start else
                                  f"最遲於 {day.isoformat()} 完成 {cycle_length} 堂連鎖")
-                        cycle_for_day.append(_candidate("three_cycle", target, legs, start, label))
+                        candidate = _candidate("three_cycle", target, legs, start, label)
+                        candidate["breaks_consecutive_lessons"] = _broken_core_consecutive_count(
+                            legs, occurrence_slots, consecutive_pairs
+                        )
+                        cycle_for_day.append(candidate)
             candidates.extend(cycle_for_day)
 
         candidates.sort(key=lambda item: (
-            bool(item["special_cross_day_moves"]), item["day_distance"],
+            bool(item["special_cross_day_moves"]), bool(item["breaks_consecutive_lessons"]),
+            item["day_distance"],
             0 if item["kind"] == "direct_swap" else 1,
             item["moved_lessons"], item["id"]
         ))
@@ -893,10 +973,18 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
                 leg["replaced_teacher_id"] = absent_professor_id
                 leg["replacement_teacher_id"] = teacher_id
                 leg["replacement_teacher_name"] = teacher_name
-                candidates.append(_candidate(
+                candidate = _candidate(
                     "emergency_cover", target, [leg], start,
                     f"迫不得已：由同科的 {teacher_name} 原節代課"
-                ))
+                )
+                candidate["new_consecutive_classes"] = adjacent_teaching_count(
+                    occurrences, teacher_id, target["date"], int(target["period"])
+                )
+                candidates.append(candidate)
+            candidates.sort(key=lambda item: (
+                item["new_consecutive_classes"],
+                item["legs"][0]["replacement_teacher_name"],
+            ))
 
         option_groups.append(candidates[:30])
 

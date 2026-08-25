@@ -174,7 +174,7 @@
             :isAdmin="isAdmin"
           />
           <RecordsView v-if="paginaActiva === 'records'" :isAdmin="isAdmin" @resume-absence="resumeAbsence" />
-          <StatisticsView v-if="isAdmin && paginaActiva === 'statistics'" :dataGlobal="dataSeleccionada" @configure="paginaActiva = 'settings'" />
+          <StatisticsView v-if="isAdmin && paginaActiva === 'statistics'" :dataGlobal="dataSeleccionada" />
           <SettingsView v-if="isAdmin && paginaActiva === 'settings'" />
           <TimetableImportView v-if="isAdmin" v-show="paginaActiva === 'import'" />
         </main>

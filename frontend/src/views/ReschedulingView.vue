@@ -1,16 +1,17 @@
 <template>
   <section class="rescheduling-page">
-    <header v-show="!absencePanelVisible" class="page-heading">
+    <header v-show="!workflowPanelVisible" class="page-heading">
       <div>
         <h2>{{ $t('rescheduling.title') }}</h2>
       </div>
       <div class="page-actions">
         <span class="revision">{{ $t('rescheduling.revision', { revision: timetable.revision ?? '-' }) }}</span>
+        <Button v-if="isAdmin" :label="$t('rescheduling.manualArrangement')" severity="secondary" outlined @click="openManualPanel()" />
         <Button :label="$t('rescheduling.addAbsence')" @click="openAbsencePanel" />
       </div>
     </header>
 
-    <section v-show="!absencePanelVisible" class="panel recommendations-panel">
+    <section v-show="!workflowPanelVisible" class="panel recommendations-panel">
       <div class="panel-title">
         <div><h3>{{ $t('rescheduling.steps.recommendations') }}</h3></div>
         <div v-if="analysis" class="analysis-actions">
@@ -53,14 +54,125 @@
               <span>{{ leg.class_code }} {{ leg.subject }}（{{ joinItems(leg.teacher_names) }}）</span>
               <b>{{ leg.from_date }} {{ $t('records.period', { period: leg.from_period }) }} → {{ leg.to_date }} {{ $t('records.period', { period: leg.to_period }) }}</b>
             </div>
+            <small v-if="candidate.breaks_consecutive_lessons" class="candidate-warning">{{ $t('rescheduling.breaksConsecutiveLesson') }}</small>
           </div>
           <div class="candidate-actions">
             <Button :label="$t('rescheduling.verifyTimetables')" severity="secondary" outlined :loading="verificationLoading" @click="verifyTask(task)" />
             <Button :label="$t('rescheduling.confirmArrangement')" severity="success" :loading="busy === task.task_key" @click="confirmTask(task)" />
           </div>
         </template>
-        <p v-else class="unresolved-copy">{{ $t('rescheduling.noCandidate') }}</p>
+        <div v-else class="unresolved-actions">
+          <p class="unresolved-copy">{{ $t('rescheduling.noCandidate') }}</p>
+          <Button v-if="isAdmin" :label="$t('rescheduling.arrangeThisLesson')" severity="secondary" outlined @click="openManualPanel(task.task_key)" />
+        </div>
       </article>
+    </section>
+
+    <section v-if="manualPanelVisible" class="manual-workspace">
+      <header class="manual-heading">
+        <div>
+          <Button icon="pi pi-arrow-left" :aria-label="$t('common.back')" text rounded @click="manualPanelVisible = false" />
+          <div><span>{{ $t('rescheduling.manualEyebrow') }}</span><h2>{{ $t('rescheduling.manualArrangement') }}</h2></div>
+        </div>
+        <small>{{ $t('rescheduling.manualQueueCount', { count: manualTasks.length }) }}</small>
+      </header>
+
+      <div v-if="manualLoading" class="manual-state">{{ $t('common.loading') }}</div>
+      <div v-else-if="manualError" class="manual-state error">{{ manualError }}</div>
+      <div v-else-if="!manualTasks.length" class="manual-state success">
+        <strong>{{ $t('rescheduling.manualEmptyTitle') }}</strong>
+        <span>{{ $t('rescheduling.manualEmptyHint') }}</span>
+        <Button :label="$t('common.back')" outlined @click="manualPanelVisible = false" />
+      </div>
+      <template v-else>
+        <section class="manual-queue" :aria-label="$t('rescheduling.manualQueue')">
+          <header><strong>{{ $t('rescheduling.manualQueue') }}</strong><span>{{ $t('rescheduling.manualQueueHint') }}</span></header>
+          <div class="manual-queue-scroll">
+            <button
+              v-for="task in manualTasks"
+              :key="task.task_key"
+              type="button"
+              :class="['manual-queue-card', { active: task.task_key === selectedManualTaskKey }]"
+              @click="selectManualTask(task.task_key)"
+            >
+              <span>{{ dateLabel(task.target.date) }} · {{ $t('records.period', { period: task.target.period }) }}</span>
+              <strong>{{ task.target.class_code }} · {{ task.target.subject }}</strong>
+              <small>{{ task.absent_teacher_name }}</small>
+            </button>
+          </div>
+        </section>
+
+        <div v-if="selectedManualTask" class="manual-layout">
+          <section class="candidate-area">
+            <header class="candidate-area-heading">
+              <div><span>{{ $t('rescheduling.manualStep', { step: 1 }) }}</span><h3>{{ $t('rescheduling.chooseCoverTeacher') }}</h3></div>
+              <small>{{ $t('rescheduling.candidateRule') }}</small>
+            </header>
+            <div v-if="selectedManualTask.co_teachers?.length" class="co-teacher-option">
+              <div>
+                <strong>{{ $t('rescheduling.coTeacherAvailableTitle', { teachers: coTeacherNames(selectedManualTask) }) }}</strong>
+                <span>{{ $t('rescheduling.coTeacherAvailableHint') }}</span>
+              </div>
+              <Button
+                :label="$t('rescheduling.confirmCoTeacherOnly')"
+                severity="secondary"
+                outlined
+                :loading="busy === 'manual-co-teacher'"
+                @click="confirmManualArrangement(true)"
+              />
+            </div>
+            <div v-if="!selectedManualTask.candidates.length" class="manual-state compact error">
+              {{ $t('rescheduling.noManualCandidate') }}
+            </div>
+            <div v-else class="teacher-card-grid">
+              <button
+                v-for="candidate in selectedManualTask.candidates"
+                :key="candidate.id"
+                type="button"
+                :class="['teacher-card', { selected: candidate.id === selectedManualTeacherId }]"
+                @click="selectedManualTeacherId = candidate.id"
+              >
+                <div class="teacher-card-heading">
+                  <div><strong>{{ candidate.name }}</strong><span>{{ $t('rescheduling.coverCount', { count: candidate.cover_count }) }}</span></div>
+                  <i aria-hidden="true"></i>
+                </div>
+                <div class="candidate-badges">
+                  <span v-if="candidate.same_subject" class="same-subject">{{ $t('rescheduling.sameSubject') }}</span>
+                  <span>{{ adjacentLabel(candidate) }}</span>
+                </div>
+                <div class="teacher-schedule">
+                  <div v-for="slot in candidate.slots" :key="slot.period" :class="['teacher-slot', slot.state, { adjacent: isAdjacentSlot(slot.period) }]">
+                    <b>{{ slot.period }}</b>
+                    <span v-if="slot.state === 'target'">{{ $t('rescheduling.availableToCover') }}</span>
+                    <span v-else-if="slot.lessons.length">{{ slot.lessons[0].class_code }}<small>{{ slot.lessons[0].subject }}</small></span>
+                    <span v-else-if="slot.state === 'busy'">{{ $t('rescheduling.unavailable') }}</span>
+                    <span v-else>{{ $t('rescheduling.freePeriod') }}</span>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </section>
+
+          <aside class="manual-summary">
+            <div class="summary-step"><span>{{ $t('rescheduling.manualStep', { step: 2 }) }}</span><h3>{{ $t('rescheduling.confirmManualArrangement') }}</h3></div>
+            <dl>
+              <div><dt>{{ $t('rescheduling.lessonToHandle') }}</dt><dd>{{ dateLabel(selectedManualTask.target.date) }} · {{ $t('records.period', { period: selectedManualTask.target.period }) }}</dd></div>
+              <div><dt>{{ $t('rescheduling.classSubject') }}</dt><dd>{{ selectedManualTask.target.class_code }} · {{ selectedManualTask.target.subject }}</dd></div>
+              <div><dt>{{ $t('rescheduling.absentTeacher') }}</dt><dd>{{ selectedManualTask.absent_teacher_name }}</dd></div>
+              <div v-if="selectedManualTask.co_teachers?.length"><dt>{{ $t('rescheduling.remainingCoTeacher') }}</dt><dd>{{ coTeacherNames(selectedManualTask) }}</dd></div>
+              <div><dt>{{ $t('rescheduling.coverTeacher') }}</dt><dd :class="{ pending: !selectedManualCandidate }">{{ selectedManualCandidate?.name || $t('rescheduling.notSelected') }}</dd></div>
+            </dl>
+            <p>{{ $t('rescheduling.manualConfirmHint') }}</p>
+            <Button
+              :label="$t('rescheduling.confirmManualCover')"
+              severity="success"
+              :loading="busy === 'manual-confirm'"
+              :disabled="!selectedManualCandidate"
+              @click="confirmManualArrangement()"
+            />
+          </aside>
+        </div>
+      </template>
     </section>
 
     <form v-if="absencePanelVisible" class="absence-editor" @submit.prevent="createAndAnalyze">
@@ -166,7 +278,7 @@
       </div>
     </Dialog>
 
-    <section v-show="!absencePanelVisible" class="panel effective-panel">
+    <section v-show="!workflowPanelVisible" class="panel effective-panel">
       <div class="panel-title">
         <div>
           <div class="title-copy"><h3>{{ $t('rescheduling.steps.effective') }}</h3><small>{{ $t('rescheduling.affectedHint') }}</small></div>
@@ -197,17 +309,17 @@
                 <span>{{ $t('rescheduling.affectedLessons', { count: group.legs.length }) }}</span>
                 <span class="source-tag changed">{{ sourceLabel(group.source) }}</span>
               </div>
-              <div v-if="group.source !== 'emergency_cover'" class="cycle-route" :aria-label="$t('rescheduling.cycleClosed', { number: 1 })">
+              <div v-if="!isCoverKind(group.source)" class="cycle-route" :aria-label="$t('rescheduling.cycleClosed', { number: 1 })">
                 <template v-for="(_, index) in group.legs" :key="`route-${group.id}-${index}`">
                   <span class="cycle-route-step">{{ index + 1 }}</span><span class="cycle-route-arrow" aria-hidden="true">→</span>
                 </template>
                 <span class="cycle-route-step">1</span>
               </div>
             </header>
-            <div v-if="group.source === 'emergency_cover'" class="cover-link">
+            <div v-if="isCoverKind(group.source)" class="cover-link">
               <div><small>{{ $t('rescheduling.coverAt') }}</small><b>{{ group.legs[0].from_date }} · {{ periodLabel(group.legs[0].from_period) }}</b></div>
               <span aria-hidden="true">→</span>
-              <div><strong>{{ group.legs[0].class_code }} · {{ group.legs[0].subject }}</strong><span>{{ group.legs[0].replacement_teacher_name }}</span></div>
+              <div><strong>{{ group.legs[0].class_code }} · {{ group.legs[0].subject }}</strong><span>{{ joinItems(adjustmentTeacherNames(group.source, group.legs[0])) }}</span></div>
             </div>
             <div v-else class="cycle-table-wrap">
               <table class="cycle-table" :aria-label="$t('rescheduling.cardView')">
@@ -243,8 +355,8 @@
                     <div v-for="lesson in slot.outgoing" :key="`out-${lesson.occurrence_id}`" class="slot-change moved-out">
                       <small>{{ $t('rescheduling.movedOut') }}</small><strong>{{ lesson.subject }}</strong><span>{{ joinItems(lesson.teacher_names) }}</span>
                     </div>
-                    <div v-for="lesson in slot.incoming" :key="`in-${lesson.occurrence_id}`" :class="['slot-change', lesson.source === 'emergency_cover' ? 'covered' : 'moved-in']">
-                      <small>{{ $t(lesson.source === 'emergency_cover' ? 'rescheduling.covered' : 'rescheduling.movedIn') }}</small><strong>{{ lesson.subject }}</strong><span>{{ joinItems(lesson.teacher_names) }}</span>
+                    <div v-for="lesson in slot.incoming" :key="`in-${lesson.occurrence_id}`" :class="['slot-change', isCoverKind(lesson.source) ? 'covered' : 'moved-in']">
+                      <small>{{ $t(isCoverKind(lesson.source) ? 'rescheduling.covered' : 'rescheduling.movedIn') }}</small><strong>{{ lesson.subject }}</strong><span>{{ joinItems(lesson.teacher_names) }}</span>
                     </div>
                     <div v-if="!slot.outgoing.length && !slot.incoming.length && slot.current.length" class="slot-current">
                       <template v-for="lesson in slot.current" :key="lesson.occurrence_id"><strong>{{ lesson.subject }}</strong><span>{{ joinItems(lesson.teacher_names) }}</span></template>
@@ -259,7 +371,7 @@
       </div>
     </section>
 
-    <section v-if="isAdmin" v-show="!absencePanelVisible" class="panel leave-panel">
+    <section v-if="isAdmin" v-show="!workflowPanelVisible" class="panel leave-panel">
       <div class="leave-heading">
         <div><h3>{{ $t('leave.title') }}</h3><p>{{ $t('leave.description') }}</p></div>
         <Button v-if="editingLeaveId" :label="$t('leave.cancelEdit')" text @click="resetLeave" />
@@ -324,6 +436,13 @@ const newAbsenceEntry = () => ({
   loading: false,
 })
 const absencePanelVisible = ref(false)
+const manualPanelVisible = ref(false)
+const manualLoading = ref(false)
+const manualError = ref('')
+const manualRevision = ref(0)
+const manualTasks = ref([])
+const selectedManualTaskKey = ref('')
+const selectedManualTeacherId = ref(null)
 const absenceEntries = ref([])
 const activeAbsenceEntryId = ref(null)
 const absenceError = ref('')
@@ -345,6 +464,18 @@ const leaveBusy = ref(false)
 const editingLeaveId = ref(null)
 const leave = reactive({ professor_id: null, leave_type: 'sick', start_date: '', end_date: '' })
 
+const workflowPanelVisible = computed(() => absencePanelVisible.value || manualPanelVisible.value)
+const selectedManualTask = computed(() => manualTasks.value.find(task => task.task_key === selectedManualTaskKey.value))
+const selectedManualCandidate = computed(() => selectedManualTask.value?.candidates.find(candidate => candidate.id === selectedManualTeacherId.value))
+const coTeacherNames = (task) => joinItems((task?.co_teachers || []).map(teacher => teacher.name))
+const isCoverKind = (kind) => ['emergency_cover', 'co_teacher_solo'].includes(kind)
+const adjustmentTeacherNames = (source, leg) => {
+  if (source === 'emergency_cover' && leg.replacement_teacher_name) return [leg.replacement_teacher_name]
+  if (source === 'co_teacher_solo') {
+    return leg.teacher_names.filter((_, index) => Number(leg.teacher_ids[index]) !== Number(leg.replaced_teacher_id))
+  }
+  return leg.teacher_names
+}
 const canAnalyze = computed(() => absenceEntries.value.length > 0 && absenceEntries.value.every(entry => (
   !entry.loading && entry.active && entry.professor_id && entry.data && entry.periods.length
 )))
@@ -361,9 +492,7 @@ const affectedLessons = computed(() => affectedGroups.value.flatMap(group => gro
     ...leg,
     occurrence_id: `adjustment-${group.id}-${index}`,
     source: group.source,
-    teacher_names: group.source === 'emergency_cover' && leg.replacement_teacher_name
-      ? [leg.replacement_teacher_name]
-      : leg.teacher_names,
+    teacher_names: adjustmentTeacherNames(group.source, leg),
     displayFromPeriod: leg.from_period,
     displayToPeriod: leg.to_period,
     displayFromDate: leg.from_date,
@@ -428,11 +557,77 @@ const loadAbsenceEntryContext = async (entry) => {
 }
 
 const openAbsencePanel = () => {
+  manualPanelVisible.value = false
   absenceError.value = ''
   absenceEntries.value = [newAbsenceEntry()]
   activeAbsenceEntryId.value = absenceEntries.value[0].id
   absencePanelVisible.value = true
   loadAbsenceEntryContext(absenceEntries.value[0])
+}
+
+const selectManualTask = (taskKey) => {
+  selectedManualTaskKey.value = taskKey
+  selectedManualTeacherId.value = manualTasks.value.find(task => task.task_key === taskKey)?.candidates[0]?.id || null
+}
+
+const loadManualArrangements = async (preferredTaskKey = '') => {
+  manualLoading.value = true
+  manualError.value = ''
+  try {
+    const response = (await axios.get('/api/manual-arrangements', { _silent: true })).data
+    manualRevision.value = response.revision
+    manualTasks.value = response.tasks || []
+    const nextKey = [preferredTaskKey, selectedManualTaskKey.value]
+      .find(key => manualTasks.value.some(task => task.task_key === key)) || manualTasks.value[0]?.task_key || ''
+    if (nextKey) selectManualTask(nextKey)
+    else {
+      selectedManualTaskKey.value = ''
+      selectedManualTeacherId.value = null
+    }
+  } catch (error) {
+    manualTasks.value = []
+    manualError.value = error.response?.data?.detail || t('app.errors.unexpected')
+  } finally { manualLoading.value = false }
+}
+
+const openManualPanel = async (taskKey = '') => {
+  absencePanelVisible.value = false
+  manualPanelVisible.value = true
+  await loadManualArrangements(taskKey)
+}
+
+const isAdjacentSlot = (period) => {
+  const targetPeriod = selectedManualTask.value?.target.period
+  return targetPeriod && Math.abs(Number(period) - Number(targetPeriod)) === 1
+}
+
+const adjacentLabel = (candidate) => {
+  if (!candidate.adjacent_total || candidate.adjacent_busy_count === 0) return t('rescheduling.adjacentAllFree')
+  if (candidate.adjacent_busy_count === candidate.adjacent_total) return t('rescheduling.adjacentAllBusy')
+  return t('rescheduling.adjacentPartlyFree')
+}
+
+const confirmManualArrangement = async (coTeacherOnly = false) => {
+  const task = selectedManualTask.value
+  const candidate = selectedManualCandidate.value
+  if (!task || (!coTeacherOnly && !candidate)) return
+  busy.value = coTeacherOnly ? 'manual-co-teacher' : 'manual-confirm'
+  manualError.value = ''
+  const handledDate = task.target.date
+  try {
+    await axios.post('/api/manual-arrangements/cover', {
+      absence_case_id: task.absence_case_id,
+      occurrence_id: task.target.occurrence_id,
+      replacement_teacher_id: coTeacherOnly ? null : candidate.id,
+      co_teacher_only: coTeacherOnly,
+      expected_revision: manualRevision.value,
+    }, { _silent: true })
+    await loadManualArrangements()
+    if (analysis.value && selectedAnalysisDate.value === handledDate) await selectAnalysisDate(handledDate)
+    await Promise.all([loadDateContext(), loadEffective()])
+  } catch (error) {
+    manualError.value = error.response?.data?.detail || t('app.errors.unexpected')
+  } finally { busy.value = '' }
 }
 
 const addAbsenceEntry = () => {
@@ -616,6 +811,8 @@ const removeLeave = async (id) => {
 }
 
 const resumeAbsence = async (record) => {
+  absencePanelVisible.value = false
+  manualPanelVisible.value = false
   busy.value = 'analyze'
   currentAbsenceIds.value = [record.entity_id]
   effectiveDate.value = record.date
@@ -645,6 +842,68 @@ onMounted(async () => {
 .page-heading p { max-width: 65ch; color: var(--text-color-secondary); }
 .page-actions { display: flex; align-items: center; gap: 1rem; }
 .revision { color: var(--text-color-secondary); font-size: .8rem; white-space: nowrap; }
+.manual-workspace { display: grid; gap: 1rem; min-width: 0; }
+.manual-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: .8rem; border-bottom: 1px solid var(--border-color); }
+.manual-heading > div { display: flex; align-items: center; gap: .55rem; }
+.manual-heading h2 { margin: .05rem 0 0; color: var(--primary-color-dark); font-size: clamp(1.45rem, 3vw, 1.85rem); letter-spacing: -.025em; }
+.manual-heading span, .candidate-area-heading span, .summary-step span { color: #58708b; font-size: .7rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.manual-heading small { color: var(--text-color-secondary); }
+.manual-state { display: grid; min-height: 230px; place-items: center; gap: .6rem; padding: 2rem; border: 1px solid var(--border-color); background: #fff; color: var(--text-color-secondary); text-align: center; }
+.manual-state.success { background: #f4fbf6; color: #216a42; }
+.manual-state.error { background: #fff8f6; color: #9b3b30; }
+.manual-state.compact { min-height: 150px; }
+.manual-queue { min-width: 0; padding: 1rem; border: 1px solid var(--border-color); background: #fff; }
+.manual-queue > header { display: flex; align-items: baseline; gap: .65rem; margin-bottom: .75rem; }
+.manual-queue > header span { color: var(--text-color-secondary); font-size: .75rem; }
+.manual-queue-scroll { display: flex; gap: .6rem; overflow-x: auto; padding-bottom: .2rem; }
+.manual-queue-card { display: flex; flex: 0 0 215px; flex-direction: column; gap: .25rem; padding: .8rem .85rem; border: 1px solid var(--border-color); border-left: 3px solid #9aa9b9; border-radius: 3px; background: #fff; color: var(--text-color-primary); text-align: left; cursor: pointer; }
+.manual-queue-card:hover { border-color: #8aa0b8; background: #f9fbfc; }
+.manual-queue-card.active { border-color: #315f8f; border-left-color: #315f8f; background: #f0f5fa; box-shadow: 0 0 0 1px #315f8f; }
+.manual-queue-card span, .manual-queue-card small { color: var(--text-color-secondary); font-size: .72rem; }
+.manual-queue-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.manual-layout { display: grid; grid-template-columns: minmax(0, 1fr) 295px; gap: 1rem; align-items: start; }
+.candidate-area { min-width: 0; padding: 1rem; border: 1px solid var(--border-color); background: #fff; }
+.candidate-area-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: .9rem; }
+.candidate-area-heading h3, .summary-step h3 { margin: .12rem 0 0; color: var(--primary-color-dark); font-size: 1rem; }
+.candidate-area-heading small { max-width: 44ch; color: var(--text-color-secondary); font-size: .72rem; text-align: right; }
+.co-teacher-option { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .85rem; padding: .8rem .85rem; border: 1px solid #a9c8b4; border-left: 3px solid #2f7d55; border-radius: 4px; background: #f2faf5; }
+.co-teacher-option > div { display: flex; flex-direction: column; gap: .18rem; }
+.co-teacher-option strong { color: #216a42; font-size: .86rem; }
+.co-teacher-option span { color: var(--text-color-secondary); font-size: .72rem; }
+.co-teacher-option .p-button { flex: 0 0 auto; }
+.teacher-card-grid { display: grid; grid-auto-columns: minmax(250px, 1fr); grid-auto-flow: column; gap: .75rem; overflow-x: auto; padding: 2px 2px .55rem; }
+.teacher-card { min-width: 0; padding: 0; overflow: hidden; border: 1px solid var(--border-color); border-radius: 4px; background: #fff; color: var(--text-color-primary); text-align: left; cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.teacher-card:hover { border-color: #7e97af; transform: translateY(-1px); }
+.teacher-card.selected { border-color: #315f8f; box-shadow: 0 0 0 2px rgba(49, 95, 143, .16); }
+.teacher-card-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .8rem .85rem .55rem; }
+.teacher-card-heading > div { display: flex; min-width: 0; flex-direction: column; gap: .1rem; }
+.teacher-card-heading strong { overflow: hidden; color: var(--primary-color-dark); font-size: .95rem; text-overflow: ellipsis; white-space: nowrap; }
+.teacher-card-heading span { color: var(--text-color-secondary); font-size: .68rem; }
+.teacher-card-heading i { width: .85rem; height: .85rem; flex: 0 0 auto; border: 2px solid #a6b2bf; border-radius: 50%; }
+.teacher-card.selected .teacher-card-heading i { border: 3px solid #fff; background: #315f8f; box-shadow: 0 0 0 1px #315f8f; }
+.candidate-badges { display: flex; flex-wrap: wrap; gap: .3rem; padding: 0 .85rem .65rem; }
+.candidate-badges span { padding: .18rem .4rem; border-radius: 2px; background: #eef2f5; color: #536274; font-size: .62rem; font-weight: 700; }
+.candidate-badges .same-subject { background: #e6f4ea; color: #216a42; }
+.teacher-schedule { display: grid; border-top: 1px solid var(--border-color); }
+.teacher-slot { display: grid; grid-template-columns: 1.8rem minmax(0, 1fr); min-height: 35px; align-items: stretch; border-bottom: 1px solid #edf0f3; background: #fff; }
+.teacher-slot:last-child { border-bottom: 0; }
+.teacher-slot > b { display: grid; place-items: center; border-right: 1px solid #edf0f3; background: #f7f9fa; color: #6d7886; font-size: .68rem; font-variant-numeric: tabular-nums; }
+.teacher-slot > span { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .35rem; padding: .35rem .45rem; color: #8b96a3; font-size: .68rem; }
+.teacher-slot small { overflow: hidden; color: inherit; font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
+.teacher-slot.busy > span { color: #536274; }
+.teacher-slot.adjacent { background: #fffaf0; }
+.teacher-slot.adjacent > b { background: #fff4da; color: #805c12; }
+.teacher-slot.target { background: #e7f5eb; }
+.teacher-slot.target > b { background: #cfe9d8; color: #216a42; }
+.teacher-slot.target > span { color: #216a42; font-weight: 750; }
+.manual-summary { position: sticky; top: 1rem; display: grid; gap: 1rem; padding: 1rem; border: 1px solid #315f8f; border-top: 3px solid #315f8f; background: #fff; }
+.manual-summary dl { display: grid; gap: 0; margin: 0; }
+.manual-summary dl div { display: grid; gap: .16rem; padding: .65rem 0; border-bottom: 1px solid #edf0f3; }
+.manual-summary dt { color: var(--text-color-secondary); font-size: .7rem; }
+.manual-summary dd { margin: 0; color: var(--primary-color-dark); font-size: .84rem; font-weight: 700; }
+.manual-summary dd.pending { color: #8b96a3; font-weight: 500; }
+.manual-summary p { margin: 0; color: var(--text-color-secondary); font-size: .72rem; line-height: 1.5; }
+.manual-summary .p-button { width: 100%; }
 .panel { min-width: 0; background: var(--card-background); border: 1px solid var(--border-color); border-radius: 4px; padding: 1.2rem; }
 .panel-title { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .panel-title > div { display: flex; align-items: center; gap: .65rem; }
@@ -727,6 +986,8 @@ input[type=file] { padding: .45rem; }
 .verification-lesson strong { font-size: .72rem; }
 .verification-lesson span { overflow: hidden; font-size: .65rem; text-overflow: ellipsis; white-space: nowrap; }
 .unresolved-copy { margin: 0; color: #9b493d; }
+.candidate-warning { display: block; margin-top: .4rem; color: #8a5b16; font-size: .7rem; }
+.unresolved-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .effective-filters { display: flex; align-items: center; gap: 1rem; }
 .effective-panel .inline-date { display: flex; align-items: center; gap: .55rem; color: var(--text-color-secondary); font-size: .82rem; }
 .effective-panel .inline-date input { width: auto; }
@@ -804,6 +1065,9 @@ tbody tr:hover { background: #fbfcfe; }
 .leave-list span { font-size: .82rem; }
 .empty-state.compact { min-height: 80px; }
 @media (max-width: 900px) {
+  .manual-layout { grid-template-columns: 1fr; }
+  .manual-summary { position: static; }
+  .teacher-card-grid { grid-auto-columns: 240px; }
   .absence-editor { grid-template-columns: 220px minmax(0, 1fr); }
   .absence-detail-heading, .absence-detail-body { padding-inline: 1.25rem; }
   .absence-form-actions { padding-inline: 1.25rem; }
@@ -814,6 +1078,14 @@ tbody tr:hover { background: #fbfcfe; }
 }
 
 @media (max-width: 600px) {
+  .manual-heading { align-items: flex-start; }
+  .manual-heading small { padding-top: .4rem; }
+  .manual-queue { padding: .8rem; }
+  .candidate-area { padding: .85rem; }
+  .candidate-area-heading { align-items: flex-start; flex-direction: column; }
+  .candidate-area-heading small { text-align: left; }
+  .co-teacher-option { align-items: stretch; flex-direction: column; }
+  .unresolved-actions { align-items: stretch; flex-direction: column; }
   .absence-editor { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); min-height: calc(100dvh - 9rem); }
   .absence-master { border-right: 0; border-bottom: 1px solid var(--border-color); }
   .absence-master > header { padding: .8rem .85rem .65rem; }
@@ -829,7 +1101,8 @@ tbody tr:hover { background: #fbfcfe; }
   .periods { gap: .4rem; }
   .periods label { min-height: 3.25rem; padding: .45rem !important; font-size: .78rem; }
   .page-heading { flex-direction: column; gap: .35rem; }
-  .page-actions { width: 100%; justify-content: space-between; }
+  .page-actions { width: 100%; flex-wrap: wrap; justify-content: space-between; }
+  .page-actions .revision { width: 100%; }
   .panel-title { align-items: flex-start; }
   .effective-panel .panel-title { flex-direction: column; }
   .effective-filters { width: 100%; align-items: flex-start; flex-direction: column-reverse; }

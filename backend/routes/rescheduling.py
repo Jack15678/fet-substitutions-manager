@@ -18,7 +18,6 @@ from dependencies import get_db
 from models import (
     AbsenceCase,
     Configuracio,
-    Curs,
     Professor,
     ProfessorBaixa,
     ScheduleAdjustment,
@@ -39,6 +38,7 @@ from daily_exports import (
 )
 from rescheduling_service import (
     MAX_CYCLE_LESSONS_KEY,
+    adjacent_teaching_count,
     analyze_absences,
     apply_import_resolutions,
     build_import_preview,
@@ -47,12 +47,13 @@ from rescheduling_service import (
     effective_occurrences,
     get_max_cycle_lessons,
     get_schedule_revision,
+    normalize_subject,
     validate_move_legs,
     absence_keys,
     professor_ids_for_version,
     version_for_date,
 )
-from time_utils import hong_kong_today, utc_iso, utc_now
+from time_utils import hong_kong_now, hong_kong_today, utc_iso, utc_now
 
 
 router = APIRouter(tags=["調課推薦"])
@@ -97,6 +98,15 @@ class ConfirmRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class ManualCoverRequest(BaseModel):
+    absence_case_id: int
+    occurrence_id: str
+    replacement_teacher_id: Optional[int] = None
+    co_teacher_only: bool = False
+    expected_revision: int
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
 class UpdateAdjustmentRequest(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=500)
 
@@ -121,7 +131,7 @@ class ClosureInput(BaseModel):
 
 class ClosureListRequest(BaseModel):
     closures: list[ClosureInput]
-    course_id: Optional[int] = None
+    year: int
 
 
 class TeacherLeaveRequest(BaseModel):
@@ -164,6 +174,7 @@ def _serialize_adjustment(db: Session, adjustment: ScheduleAdjustment) -> dict:
         "kind": adjustment.kind,
         "status": adjustment.status,
         "locked": adjustment.locked,
+        "needs_review": bool(adjustment.needs_review),
         "reason": adjustment.reason,
         "confirmed_by": adjustment.confirmed_by,
         "confirmed_at": utc_iso(adjustment.confirmed_at),
@@ -179,6 +190,7 @@ def _serialize_adjustment(db: Session, adjustment: ScheduleAdjustment) -> dict:
             "from_period": leg.from_period,
             "to_date": leg.to_date.isoformat(),
             "to_period": leg.to_period,
+            "replaced_teacher_id": leg.replaced_teacher_id,
             "replacement_teacher_id": leg.replacement_teacher_id,
             "replacement_teacher_name": professor_names.get(leg.replacement_teacher_id) if leg.replacement_teacher_id else None,
         } for leg in legs],
@@ -251,6 +263,46 @@ def _mark_latest_version_active(db: Session) -> None:
         row.active = bool(latest and row.id == latest.id)
 
 
+def _mark_special_adjustments_for_review(db: Session, version: TimetableVersion,
+                                         changed_subjects: set[str]) -> int:
+    if not changed_subjects:
+        return 0
+    adjustment_ids = {
+        row[0] for row in (
+            db.query(ScheduleAdjustmentLeg.adjustment_id)
+            .join(ScheduleAdjustment, ScheduleAdjustmentLeg.adjustment_id == ScheduleAdjustment.id)
+            .join(TimetableLesson, ScheduleAdjustmentLeg.lesson_id == TimetableLesson.id)
+            .filter(
+                ScheduleAdjustment.status == "confirmed",
+                TimetableLesson.version_id == version.id,
+                ScheduleAdjustmentLeg.subject.in_(changed_subjects),
+                ScheduleAdjustmentLeg.from_date != ScheduleAdjustmentLeg.to_date,
+            )
+            .distinct().all()
+        )
+    }
+    if not adjustment_ids:
+        return 0
+    now = hong_kong_now()
+    period_ends = {item["period"]: item["end"] for item in get_period_times(db)}
+
+    def unfinished(day: date, period: int) -> bool:
+        if day != now.date():
+            return day > now.date()
+        hour, minute = map(int, period_ends[int(period)].split(":"))
+        return (now.hour, now.minute) < (hour, minute)
+
+    marked = 0
+    for adjustment in db.query(ScheduleAdjustment).filter(ScheduleAdjustment.id.in_(adjustment_ids)).all():
+        legs = db.query(ScheduleAdjustmentLeg).filter_by(adjustment_id=adjustment.id).all()
+        if any(unfinished(day, period) for leg in legs for day, period in (
+            (leg.from_date, leg.from_period), (leg.to_date, leg.to_period)
+        )) and not adjustment.needs_review:
+            adjustment.needs_review = True
+            marked += 1
+    return marked
+
+
 @router.get("/api/timetables")
 def list_timetable_versions(db: Session = Depends(get_db)):
     versions = (db.query(TimetableVersion)
@@ -317,15 +369,19 @@ def update_timetable_version(
     version.effective_to = request.effective_to
     for lesson in lessons:
         lesson.special = lesson.subject in requested_specials
+    review_required_count = _mark_special_adjustments_for_review(
+        db, version, current_specials ^ requested_specials
+    )
     _mark_latest_version_active(db)
     revision = bump_schedule_revision(db)
     _audit(db, "update", "timetable_version", version.id, current_user.username,
            {"old": old_range, "effective_from": request.effective_from.isoformat(),
             "effective_to": request.effective_to.isoformat(),
             "old_special_subjects": sorted(current_specials),
-            "special_subjects": sorted(requested_specials)})
+            "special_subjects": sorted(requested_specials),
+            "review_required_count": review_required_count})
     db.commit()
-    return {"success": True, "revision": revision}
+    return {"success": True, "revision": revision, "review_required_count": review_required_count}
 
 
 @router.delete("/api/timetables/{version_id}")
@@ -553,16 +609,14 @@ def list_teachers(data: Optional[date] = None, db: Session = Depends(get_db)):
 
 @router.get("/api/rescheduling/statistics")
 def teacher_statistics(
-    course_id: int,
+    start_date: date,
+    end_date: date,
     db: Session = Depends(get_db),
     _current_user=Depends(require_admin),
 ):
-    course = db.get(Curs, course_id)
-    if not course:
-        raise HTTPException(404, "找不到學年")
-    if not course.data_fi:
-        raise HTTPException(400, "請先在配置頁補上學年結束日期")
-    start, end = course.data_inici, course.data_fi
+    if start_date > end_date:
+        raise HTTPException(400, "結束日期不可早於開始日期")
+    start, end = start_date, end_date
     month_keys = []
     cursor = date(start.year, start.month, 1)
     last_month = date(end.year, end.month, 1)
@@ -585,6 +639,8 @@ def teacher_statistics(
     )
     counted: set[tuple[int, int]] = set()
     for leg, adjustment, absence in rows:
+        if adjustment.kind == "co_teacher_solo":
+            continue
         teacher_ids = (
             {leg.replacement_teacher_id}
             if adjustment.kind == "emergency_cover" and leg.replacement_teacher_id
@@ -602,9 +658,7 @@ def teacher_statistics(
 
     teachers = db.query(Professor).order_by(Professor.nom).all()
     return {
-        "course": {
-            "id": course.id,
-            "name": course.nom,
+        "range": {
             "start_date": start.isoformat(),
             "end_date": end.isoformat(),
         },
@@ -1001,6 +1055,235 @@ def _save_candidate(db: Session, candidate: dict, absence_case_id: int | None,
     return adjustment
 
 
+def _manual_cover_candidates(
+    db: Session,
+    absence: AbsenceCase,
+    target: dict,
+    occurrences: list[dict] | None = None,
+) -> list[dict]:
+    """Return free teachers ranked by how clear the periods around the target are."""
+    version = version_for_date(db, absence.data)
+    if not version:
+        return []
+    occurrences = occurrences or effective_occurrences(db, absence.data, absence.data)
+    absences = absence_keys(db, absence.data, absence.data)
+    teacher_ids = professor_ids_for_version(db, version)
+    teachers = {
+        row.id: row.nom
+        for row in db.query(Professor)
+        .filter(Professor.id.in_(teacher_ids), Professor.actiu.is_(True)).all()
+    }
+    subjects_by_teacher: dict[int, set[str]] = {}
+    for lesson in db.query(TimetableLesson).filter_by(version_id=version.id).all():
+        subject = normalize_subject(lesson.subject)
+        for teacher_id in json.loads(lesson.teachers_json or "[]"):
+            subjects_by_teacher.setdefault(int(teacher_id), set()).add(subject)
+
+    cover_counts = {
+        int(teacher_id): int(count)
+        for teacher_id, count in (
+            db.query(ScheduleAdjustmentLeg.replacement_teacher_id, func.count(ScheduleAdjustmentLeg.id))
+            .join(ScheduleAdjustment, ScheduleAdjustmentLeg.adjustment_id == ScheduleAdjustment.id)
+            .filter(
+                ScheduleAdjustment.status == "confirmed",
+                ScheduleAdjustment.kind == "emergency_cover",
+                ScheduleAdjustmentLeg.replacement_teacher_id.is_not(None),
+            )
+            .group_by(ScheduleAdjustmentLeg.replacement_teacher_id)
+            .all()
+        )
+    }
+    busy_by_teacher: dict[int, dict[int, list[dict]]] = {}
+    for occurrence in occurrences:
+        for teacher_id in occurrence["teachers"]:
+            busy_by_teacher.setdefault(int(teacher_id), {}).setdefault(occurrence["period"], []).append(occurrence)
+
+    target_period = int(target["period"])
+    adjacent_periods = [period for period in (target_period - 1, target_period + 1) if 1 <= period <= 9]
+    target_subject = normalize_subject(target["subject"])
+    candidates = []
+    for teacher_id, teacher_name in teachers.items():
+        if teacher_id == absence.professor_id or teacher_id in target["teachers"]:
+            continue
+        if (teacher_id, absence.data, target_period) in absences:
+            continue
+        if busy_by_teacher.get(teacher_id, {}).get(target_period):
+            continue
+        adjacent_busy_count = sum(
+            bool(busy_by_teacher.get(teacher_id, {}).get(period))
+            or (teacher_id, absence.data, period) in absences
+            for period in adjacent_periods
+        )
+        adjacent_teaching = adjacent_teaching_count(
+            occurrences, teacher_id, absence.data, target_period
+        )
+        slots = []
+        for period in range(1, 10):
+            lessons = busy_by_teacher.get(teacher_id, {}).get(period, [])
+            unavailable = (teacher_id, absence.data, period) in absences
+            slots.append({
+                "period": period,
+                "state": "target" if period == target_period else "busy" if lessons or unavailable else "free",
+                "lessons": [{
+                    "class_code": lesson["class_code"],
+                    "subject": lesson["subject"],
+                    "source": lesson["source"],
+                } for lesson in lessons],
+            })
+        candidates.append({
+            "id": teacher_id,
+            "name": teacher_name,
+            "same_subject": target_subject in subjects_by_teacher.get(teacher_id, set()),
+            "cover_count": cover_counts.get(teacher_id, 0),
+            "adjacent_busy_count": adjacent_busy_count,
+            "adjacent_teaching_count": adjacent_teaching,
+            "adjacent_total": len(adjacent_periods),
+            "slots": slots,
+        })
+    candidates.sort(key=lambda item: (
+        item["adjacent_teaching_count"],
+        item["adjacent_busy_count"],
+        not item["same_subject"],
+        item["cover_count"],
+        item["name"],
+    ))
+    return candidates
+
+
+def _manual_arrangements(db: Session) -> dict:
+    professor_names = {row.id: row.nom for row in db.query(Professor).all()}
+    open_dates = [
+        row[0]
+        for row in (
+            db.query(AbsenceCase.data)
+            .filter(AbsenceCase.status == "open")
+            .distinct()
+            .order_by(AbsenceCase.data)
+            .all()
+        )
+    ]
+    tasks = []
+    for target_date in open_dates:
+        active_absences = _active_absences_for_date(db, target_date)
+        analysis = analyze_absences(db, active_absences)
+        occurrences = effective_occurrences(db, target_date, target_date)
+        occurrence_map = {row["occurrence_id"]: row for row in occurrences}
+        unavailable = absence_keys(db, target_date, target_date)
+        absences_by_id = {row.id: row for row in active_absences}
+        for task in analysis["tasks"]:
+            if task["status"] != "unresolved":
+                continue
+            absence = absences_by_id.get(task["absence_case_id"])
+            target = occurrence_map.get(task["target"]["occurrence_id"])
+            if not absence or not target:
+                continue
+            tasks.append({
+                **task,
+                "absent_teacher_id": absence.professor_id,
+                "absent_teacher_name": professor_names.get(absence.professor_id, str(absence.professor_id)),
+                "co_teachers": [{
+                    "id": teacher_id,
+                    "name": professor_names.get(teacher_id, str(teacher_id)),
+                } for teacher_id in target["teachers"]
+                    if teacher_id != absence.professor_id
+                    and (teacher_id, target_date, target["period"]) not in unavailable],
+                "candidates": _manual_cover_candidates(db, absence, target, occurrences),
+            })
+    return {"revision": get_schedule_revision(db), "tasks": tasks}
+
+
+@router.get("/api/manual-arrangements")
+def list_manual_arrangements(
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_admin),
+):
+    return _manual_arrangements(db)
+
+
+@router.post("/api/manual-arrangements/cover")
+def confirm_manual_cover(
+    request: ManualCoverRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    if request.co_teacher_only == (request.replacement_teacher_id is not None):
+        raise HTTPException(400, "請選擇原任老師單獨上課或一位代課老師")
+    if request.expected_revision != get_schedule_revision(db):
+        raise HTTPException(409, "課表已被其他人修改，請重新載入")
+    absence = db.get(AbsenceCase, request.absence_case_id)
+    if not absence or absence.status != "open":
+        raise HTTPException(404, "找不到未處理的缺席紀錄")
+    active_absences = _active_absences_for_date(db, absence.data)
+    analysis = analyze_absences(db, active_absences)
+    task = next((item for item in analysis["tasks"] if (
+        item["absence_case_id"] == absence.id
+        and item["target"]["occurrence_id"] == request.occurrence_id
+        and item["status"] == "unresolved"
+    )), None)
+    if not task:
+        raise HTTPException(409, "這堂課的狀態已改變，請重新載入")
+    occurrences = effective_occurrences(db, absence.data, absence.data)
+    target = next((row for row in occurrences if row["occurrence_id"] == request.occurrence_id), None)
+    if not target or target["lesson_id"] is None or absence.professor_id not in target["teachers"]:
+        raise HTTPException(409, "這堂課的狀態已改變，請重新載入")
+
+    leg = {
+        "occurrence_id": target["occurrence_id"],
+        "lesson_id": target["lesson_id"],
+        "class_code": target["class_code"],
+        "subject": target["subject"],
+        "teachers": target["teachers"],
+        "from_date": absence.data.isoformat(),
+        "from_period": target["period"],
+        "to_date": absence.data.isoformat(),
+        "to_period": target["period"],
+        "replaced_teacher_id": absence.professor_id,
+    }
+    if request.co_teacher_only:
+        unavailable = absence_keys(db, absence.data, absence.data)
+        co_teacher_ids = [
+            teacher_id for teacher_id in target["teachers"]
+            if teacher_id != absence.professor_id
+            and (teacher_id, absence.data, target["period"]) not in unavailable
+        ]
+        if not co_teacher_ids:
+            raise HTTPException(409, "目前沒有仍在場的共同任教老師")
+        names = {row.id: row.nom for row in db.query(Professor).filter(Professor.id.in_(co_teacher_ids)).all()}
+        co_teacher_names = "、".join(names.get(teacher_id, str(teacher_id)) for teacher_id in co_teacher_ids)
+        kind = "co_teacher_solo"
+        reason = request.reason or f"人工確認：由原任 {co_teacher_names} 繼續上課"
+        audit_detail = {"co_teacher_ids": co_teacher_ids, "occurrence_id": request.occurrence_id}
+    else:
+        candidates = _manual_cover_candidates(db, absence, target, occurrences)
+        replacement = next((row for row in candidates if row["id"] == request.replacement_teacher_id), None)
+        if not replacement:
+            raise HTTPException(409, "所選老師已不可代課，請重新選擇")
+        leg.update({
+            "replacement_teacher_id": replacement["id"],
+            "replacement_teacher_name": replacement["name"],
+        })
+        kind = "emergency_cover"
+        reason = request.reason or f"人工安排：{replacement['name']} 代課"
+        audit_detail = {"replacement_teacher_id": replacement["id"], "occurrence_id": request.occurrence_id}
+    adjustment = _save_candidate(
+        db,
+        {"kind": kind, "legs": [leg], "reason": reason},
+        absence.id,
+        current_user.username,
+        reason,
+    )
+    db.flush()
+    revision = bump_schedule_revision(db)
+    remaining = analyze_absences(db, active_absences)
+    pending_case_ids = {item["absence_case_id"] for item in remaining["tasks"]}
+    for active_absence in active_absences:
+        active_absence.status = "open" if active_absence.id in pending_case_ids else "resolved"
+    _audit(db, "manual_cover_confirm", "schedule_adjustment", adjustment.id, current_user.username,
+           audit_detail)
+    db.commit()
+    return {**_serialize_adjustment(db, adjustment), "revision": revision}
+
+
 @router.post("/api/adjustments/confirm")
 def confirm_adjustment(
     request: ConfirmRequest,
@@ -1155,6 +1438,7 @@ def list_records(
             "teacher_name": names.get(absence.professor_id),
             "periods": json.loads(absence.periods_json or "[]"),
             "status": absence.status,
+            "needs_review": any(row.needs_review for row in by_absence.get(absence.id, [])),
             "created_by": absence.created_by,
             "adjustments": [_serialize_adjustment(db, row) for row in by_absence.get(absence.id, [])],
             "_sort_id": absence.id,
@@ -1174,6 +1458,7 @@ def list_records(
             "teacher_name": None,
             "periods": sorted({leg["from_period"] for leg in serialized["legs"]}),
             "status": adjustment.status,
+            "needs_review": bool(adjustment.needs_review),
             "created_by": adjustment.created_by,
             "adjustments": [serialized],
             "_sort_id": adjustment.id,
@@ -1199,7 +1484,7 @@ def list_records(
     if kind:
         allowed_kinds = {
             "swap": {"direct_swap", "three_cycle"},
-            "cover": {"emergency_cover"},
+            "cover": {"emergency_cover", "co_teacher_solo"},
             "manual": {"manual_swap", "manual_three_cycle"},
         }[kind]
         items = [item for item in items
@@ -1412,13 +1697,12 @@ def get_effective_timetable(
 
 
 @router.get("/api/calendar/closures")
-def get_closures(course_id: Optional[int] = None, db: Session = Depends(get_db)):
+def get_closures(year: Optional[int] = None, db: Session = Depends(get_db)):
     query = db.query(SchoolClosure)
-    if course_id is not None:
-        course = db.get(Curs, course_id)
-        if not course or not course.data_fi:
-            raise HTTPException(404, "找不到具完整日期範圍的學年")
-        query = query.filter(SchoolClosure.data >= course.data_inici, SchoolClosure.data <= course.data_fi)
+    if year is not None:
+        if not 1900 <= year <= 2100:
+            raise HTTPException(400, "年份必須介乎 1900 至 2100")
+        query = query.filter(SchoolClosure.data >= date(year, 1, 1), SchoolClosure.data <= date(year, 12, 31))
     return [{"date": row.data.isoformat(), "note": row.note} for row in query.order_by(SchoolClosure.data).all()]
 
 
@@ -1428,23 +1712,20 @@ def replace_closures(
     db: Session = Depends(get_db),
     current_user=Depends(require_admin),
 ):
-    course = db.get(Curs, request.course_id) if request.course_id is not None else None
-    if request.course_id is not None and (not course or not course.data_fi):
-        raise HTTPException(404, "找不到具完整日期範圍的學年")
-    if course:
-        if any(not course.data_inici <= item.data <= course.data_fi for item in request.closures):
-            raise HTTPException(400, "假期日期必須位於所選學年範圍內")
-        db.query(SchoolClosure).filter(
-            SchoolClosure.data >= course.data_inici,
-            SchoolClosure.data <= course.data_fi,
-        ).delete(synchronize_session=False)
-    else:
-        db.query(SchoolClosure).delete()
+    if not 1900 <= request.year <= 2100:
+        raise HTTPException(400, "年份必須介乎 1900 至 2100")
+    if any(item.data.year != request.year for item in request.closures):
+        raise HTTPException(400, "假期日期必須位於所選年份內")
+    start, end = date(request.year, 1, 1), date(request.year, 12, 31)
+    db.query(SchoolClosure).filter(
+        SchoolClosure.data >= start,
+        SchoolClosure.data <= end,
+    ).delete(synchronize_session=False)
     unique = {item.data: item for item in request.closures}
     for item in unique.values():
         db.add(SchoolClosure(data=item.data, note=item.note, created_by=current_user.username))
     revision = bump_schedule_revision(db)
     _audit(db, "replace", "school_closures", None, current_user.username,
-           {"course_id": request.course_id, "dates": [value.isoformat() for value in sorted(unique)]})
+           {"year": request.year, "dates": [value.isoformat() for value in sorted(unique)]})
     db.commit()
     return {"success": True, "revision": revision}

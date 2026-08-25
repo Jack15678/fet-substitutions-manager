@@ -5,10 +5,6 @@
       <p>{{ $t('settings.description') }}</p>
     </header>
 
-    <section class="panel course-panel">
-      <CursosTab @cursos-canviats="emit('cursos-canviats')" />
-    </section>
-
     <section class="panel">
       <HolidaySettings />
     </section>
@@ -39,10 +35,7 @@
 import { onMounted, ref } from 'vue'
 import axios from 'axios'
 import Button from 'primevue/button'
-import CursosTab from '../components/config/CursosTab.vue'
 import HolidaySettings from '../components/config/HolidaySettings.vue'
-
-const emit = defineEmits(['cursos-canviats'])
 
 const periods = ref([])
 const maxCycleLessons = ref(3)
@@ -75,7 +68,6 @@ onMounted(async () => {
 .page-heading h2 { font-size: clamp(1.65rem, 3vw, 2.15rem); letter-spacing: -.035em; }
 .page-heading p, .panel p { margin-top: .3rem; color: var(--text-color-secondary); }
 .panel { width: 100%; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
-.course-panel :deep(.tab-content) { min-height: 0; padding: 0; }
 form { display: grid; gap: .45rem; margin-top: 1rem; }
 .period-row { display: grid; grid-template-columns: 82px 1fr auto 1fr; align-items: center; gap: .55rem; }
 .period-row b { font-size: .82rem; }

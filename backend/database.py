@@ -125,6 +125,20 @@ def _ensure_timetable_lesson_columns(engine):
         pass
 
 
+def _ensure_schedule_adjustment_columns(engine):
+    """Add review metadata introduced after confirmed adjustments were released."""
+    try:
+        with engine.begin() as conn:
+            columns = conn.exec_driver_sql("PRAGMA table_info(schedule_adjustments);").fetchall()
+            names = {column[1] for column in columns}
+            if columns and "needs_review" not in names:
+                conn.exec_driver_sql(
+                    "ALTER TABLE schedule_adjustments ADD COLUMN needs_review BOOLEAN NOT NULL DEFAULT 0"
+                )
+    except Exception:
+        pass
+
+
 @lru_cache(maxsize=None)
 def get_engine_for_institucio(institucio: str):
     data_dir = get_data_dir_for_institucio(institucio)
@@ -135,6 +149,7 @@ def get_engine_for_institucio(institucio: str):
     _ensure_substitucions_aula_column(engine)
     _ensure_timetable_version_columns(engine)
     _ensure_timetable_lesson_columns(engine)
+    _ensure_schedule_adjustment_columns(engine)
     return engine
 
 

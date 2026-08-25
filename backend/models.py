@@ -552,6 +552,7 @@ class ScheduleAdjustment(Base):
     kind = Column(String, nullable=False)  # direct_swap / three_cycle / emergency_cover
     status = Column(String, default='confirmed', nullable=False)
     locked = Column(Boolean, default=True, nullable=False)
+    needs_review = Column(Boolean, default=False, nullable=False)
     reason = Column(Text)
     created_by = Column(String)
     confirmed_by = Column(String)

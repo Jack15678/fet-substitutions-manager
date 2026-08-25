@@ -34,7 +34,7 @@
               <td>{{ record.teacher_name || $t('records.manual') }}</td>
               <td>{{ periodsLabel(record) }}</td>
               <td>{{ arrangementSummary(record) }}</td>
-              <td><span :class="['status', record.status]">{{ statusLabel(record.status) }}</span></td>
+              <td><span :class="['status', record.needs_review ? 'needs-review' : record.status]">{{ record.needs_review ? $t('records.needsReview') : statusLabel(record.status) }}</span></td>
               <td class="row-action"><Button :label="$t('records.view')" text size="small" @click="openDetail(record)" /></td>
             </tr>
           </tbody>
@@ -58,7 +58,7 @@
 
       <template v-if="selectedRecord">
         <section class="detail-section">
-          <div class="detail-title"><h4>{{ $t('records.absenceDetails') }}</h4><span :class="['status', selectedRecord.status]">{{ statusLabel(selectedRecord.status) }}</span></div>
+          <div class="detail-title"><h4>{{ $t('records.absenceDetails') }}</h4><span :class="['status', selectedRecord.needs_review ? 'needs-review' : selectedRecord.status]">{{ selectedRecord.needs_review ? $t('records.needsReview') : statusLabel(selectedRecord.status) }}</span></div>
           <dl class="detail-grid">
             <div><dt>{{ $t('records.columns.date') }}</dt><dd>{{ formatDate(selectedRecord.date) }}</dd></div>
             <div><dt>{{ $t('records.columns.teacher') }}</dt><dd>{{ selectedRecord.teacher_name || $t('records.manual') }}</dd></div>
@@ -82,7 +82,7 @@
           <article v-for="adjustment in selectedRecord.adjustments" v-else :key="adjustment.id" class="adjustment">
             <div class="adjustment-heading">
               <div><strong>{{ kindLabel(adjustment.kind) }}</strong><small>#{{ adjustment.id }}</small></div>
-              <span :class="['status', adjustment.status]">{{ statusLabel(adjustment.status) }}</span>
+              <span :class="['status', adjustment.needs_review ? 'needs-review' : adjustment.status]">{{ adjustment.needs_review ? $t('records.needsReview') : statusLabel(adjustment.status) }}</span>
             </div>
             <p v-if="adjustment.reason" class="muted">{{ $t('records.reason', { reason: adjustment.reason }) }}</p>
             <div v-for="(leg, index) in adjustment.legs" :key="index" class="leg">
@@ -216,6 +216,7 @@ onMounted(loadRecords)
 .status { display: inline-flex; align-items: center; padding: .24rem .52rem; border-radius: 999px; background: #eef1f4; color: #596476; font-size: .74rem; white-space: nowrap; }
 .status.resolved, .status.confirmed { background: #e4f5e9; color: #216a42; }
 .status.open { background: #fff4d6; color: #84590e; }
+.status.needs-review { background: #fff0d5; color: #8a4f08; }
 .empty-state { display: grid; min-height: 170px; place-items: center; border-radius: 8px; background: var(--surface-soft); color: var(--text-color-secondary); }
 .pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; color: var(--text-color-secondary); font-size: .82rem; }
 .detail-heading h3, .detail-heading p, .detail-section h4, .record-edit h4 { margin: 0; }
