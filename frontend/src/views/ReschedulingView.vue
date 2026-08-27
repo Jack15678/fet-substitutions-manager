@@ -6,8 +6,8 @@
       </div>
       <div class="page-actions">
         <span class="revision">{{ $t('rescheduling.revision', { revision: timetable.revision ?? '-' }) }}</span>
-        <Button v-if="isAdmin" :label="$t('rescheduling.manualArrangement')" severity="secondary" outlined @click="openManualPanel()" />
-        <Button :label="$t('rescheduling.addAbsence')" @click="openAbsencePanel" />
+        <Button v-if="can('manual_arrangement.manage')" :label="$t('rescheduling.manualArrangement')" severity="secondary" outlined @click="openManualPanel()" />
+        <Button v-if="can('absence.create')" :label="$t('rescheduling.addAbsence')" @click="openAbsencePanel" />
       </div>
     </header>
 
@@ -16,7 +16,7 @@
         <div><h3>{{ $t('rescheduling.steps.recommendations') }}</h3></div>
         <div v-if="analysis" class="analysis-actions">
           <small>{{ $t('rescheduling.counts', { resolved: analysis.resolved_count, unresolved: analysis.unresolved_count }) }}</small>
-          <Button v-if="currentAbsenceIds.length" :label="$t('rescheduling.cancelAbsence')" severity="danger" text size="small" @click="cancelAbsence" />
+          <Button v-if="can('absence.create') && currentAbsenceIds.length" :label="$t('rescheduling.cancelAbsence')" severity="danger" text size="small" @click="cancelAbsence" />
         </div>
       </div>
       <div v-if="batchAnalyses.length > 1" class="analysis-dates" role="tablist" :aria-label="$t('rescheduling.analysisDates')">
@@ -33,7 +33,7 @@
       </div>
       <div v-if="!analysis" class="empty-state">
         <p>{{ $t('rescheduling.analysisEmpty') }}</p>
-        <Button :label="$t('rescheduling.addAbsence')" outlined @click="openAbsencePanel" />
+        <Button v-if="can('absence.create')" :label="$t('rescheduling.addAbsence')" outlined @click="openAbsencePanel" />
       </div>
       <div v-else-if="!analysis.tasks.length" class="notice success">{{ $t('rescheduling.noTasks') }}</div>
       <article v-for="task in analysis?.tasks || []" :key="task.task_key" class="task-card">
@@ -58,17 +58,17 @@
           </div>
           <div class="candidate-actions">
             <Button :label="$t('rescheduling.verifyTimetables')" severity="secondary" outlined :loading="verificationLoading" @click="verifyTask(task)" />
-            <Button :label="$t('rescheduling.confirmArrangement')" severity="success" :loading="busy === task.task_key" @click="confirmTask(task)" />
+            <Button v-if="can('adjustment.confirm')" :label="$t('rescheduling.confirmArrangement')" severity="success" :loading="busy === task.task_key" @click="confirmTask(task)" />
           </div>
         </template>
         <div v-else class="unresolved-actions">
           <p class="unresolved-copy">{{ $t('rescheduling.noCandidate') }}</p>
-          <Button v-if="isAdmin" :label="$t('rescheduling.arrangeThisLesson')" severity="secondary" outlined @click="openManualPanel(task.task_key)" />
+          <Button v-if="can('manual_arrangement.manage')" :label="$t('rescheduling.arrangeThisLesson')" severity="secondary" outlined @click="openManualPanel(task.task_key)" />
         </div>
       </article>
     </section>
 
-    <section v-if="manualPanelVisible" class="manual-workspace">
+    <section v-if="can('manual_arrangement.manage') && manualPanelVisible" class="manual-workspace">
       <header class="manual-heading">
         <div>
           <Button icon="pi pi-arrow-left" :aria-label="$t('common.back')" text rounded @click="manualPanelVisible = false" />
@@ -175,7 +175,7 @@
       </template>
     </section>
 
-    <form v-if="absencePanelVisible" class="absence-editor" @submit.prevent="createAndAnalyze">
+    <form v-if="can('absence.create') && absencePanelVisible" class="absence-editor" @submit.prevent="createAndAnalyze">
       <aside class="absence-master">
         <header>
           <h3>{{ $t('rescheduling.currentAbsences') }}</h3>
@@ -413,7 +413,7 @@ import axios from 'axios'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 
-const props = defineProps({ dataGlobal: Date, isAdmin: Boolean })
+const props = defineProps({ dataGlobal: Date, isAdmin: Boolean, can: { type: Function, required: true } })
 const { t, locale } = useI18n()
 const joinItems = (items) => items.join(locale.value === 'en' ? ', ' : '、')
 const iso = (value) => {
@@ -464,7 +464,10 @@ const leaveBusy = ref(false)
 const editingLeaveId = ref(null)
 const leave = reactive({ professor_id: null, leave_type: 'sick', start_date: '', end_date: '' })
 
-const workflowPanelVisible = computed(() => absencePanelVisible.value || manualPanelVisible.value)
+const workflowPanelVisible = computed(() => (
+  (absencePanelVisible.value && props.can('absence.create'))
+  || (manualPanelVisible.value && props.can('manual_arrangement.manage'))
+))
 const selectedManualTask = computed(() => manualTasks.value.find(task => task.task_key === selectedManualTaskKey.value))
 const selectedManualCandidate = computed(() => selectedManualTask.value?.candidates.find(candidate => candidate.id === selectedManualTeacherId.value))
 const coTeacherNames = (task) => joinItems((task?.co_teachers || []).map(teacher => teacher.name))

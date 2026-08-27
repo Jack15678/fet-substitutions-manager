@@ -65,10 +65,10 @@
             <div><dt>{{ $t('records.columns.periods') }}</dt><dd>{{ periodsLabel(selectedRecord) }}</dd></div>
             <div><dt>{{ $t('records.createdByLabel') }}</dt><dd>{{ selectedRecord.created_by || '—' }}</dd></div>
           </dl>
-          <Button v-if="selectedRecord.record_type === 'absence' && selectedRecord.status === 'open'" :label="$t('records.resume')" @click="resumeSelected" />
+          <Button v-if="can('absence.create') && selectedRecord.record_type === 'absence' && selectedRecord.status === 'open'" :label="$t('records.resume')" @click="resumeSelected" />
         </section>
 
-        <form v-if="editingAbsenceId === selectedRecord.entity_id" class="record-edit" @submit.prevent="saveAbsence(selectedRecord)">
+        <form v-if="can('records.manage') && editingAbsenceId === selectedRecord.entity_id" class="record-edit" @submit.prevent="saveAbsence(selectedRecord)">
           <h4>{{ $t('records.editAbsence') }}</h4>
           <label>{{ $t('leave.teacher') }}<select v-model.number="absenceEdit.professor_id" required><option v-for="teacher in absenceTeachers" :key="teacher.id" :value="teacher.id">{{ teacher.name }}</option></select></label>
           <label>{{ $t('rescheduling.date') }}<input v-model="absenceEdit.data" type="date" required /></label>
@@ -89,11 +89,11 @@
               <span><strong>{{ leg.class_code }} · {{ leg.subject }}</strong><small>{{ joinItems(leg.teacher_names) }}</small></span>
               <b>{{ leg.from_date }} {{ $t('records.period', { period: leg.from_period }) }} → {{ leg.to_date }} {{ $t('records.period', { period: leg.to_period }) }}</b>
             </div>
-            <div v-if="isAdmin" class="adjustment-actions"><Button :label="$t('records.editReason')" text size="small" @click="editAdjustmentReason(adjustment)" /><Button :label="$t('common.delete')" text size="small" severity="danger" @click="removeAdjustment(adjustment)" /></div>
+            <div v-if="can('records.manage')" class="adjustment-actions"><Button :label="$t('records.editReason')" text size="small" @click="editAdjustmentReason(adjustment)" /><Button :label="$t('common.delete')" text size="small" severity="danger" @click="removeAdjustment(adjustment)" /></div>
           </article>
         </section>
 
-        <div v-if="isAdmin && selectedRecord.record_type === 'absence' && editingAbsenceId !== selectedRecord.entity_id" class="admin-actions">
+        <div v-if="can('records.manage') && selectedRecord.record_type === 'absence' && editingAbsenceId !== selectedRecord.entity_id" class="admin-actions">
           <Button :label="$t('common.edit')" outlined @click="editAbsence(selectedRecord)" />
           <Button :label="$t('common.delete')" severity="danger" text @click="removeAbsence(selectedRecord)" />
         </div>
@@ -109,7 +109,7 @@ import axios from 'axios'
 import Button from 'primevue/button'
 import Sidebar from 'primevue/sidebar'
 
-const props = defineProps({ isAdmin: Boolean })
+defineProps({ can: { type: Function, required: true } })
 const emit = defineEmits(['resume-absence'])
 const { t, locale } = useI18n()
 const filters = reactive({ q: '', date_from: '', date_to: '', status: '', kind: '' })

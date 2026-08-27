@@ -5,7 +5,7 @@
     @update:visible="handleVisibleChange"
     :header="$t('config.title')"
     :modal="true"
-    :style="{ width: '900px', maxHeight: '90vh' }"
+    :style="{ width: 'min(96vw, 1120px)', maxHeight: '90vh' }"
     :closable="true"
   >
     <div class="config-container">
@@ -29,7 +29,7 @@
               <span>&nbsp;</span>
             </span>
           </template>
-          <UsuarisTab :current-role="currentRole" :current-institucio="currentInstitucio" />
+          <UsuarisTab :visible="visible" :current-role="currentRole" :current-institucio="currentInstitucio" />
         </TabPanel>
 
       </TabView>

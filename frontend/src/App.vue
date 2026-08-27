@@ -117,7 +117,7 @@
               <option value="zh-HK">繁中</option>
               <option value="en">EN</option>
             </select>
-            <Button icon="pi pi-bars" class="p-button-rounded p-button-text p-button-plain" v-tooltip.bottom="$t('app.nav.menu')" @click="mostrarMenuMobil = true" />
+            <Button icon="pi pi-bars" :aria-label="$t('app.nav.menu')" class="p-button-rounded p-button-text p-button-plain" v-tooltip.bottom="$t('app.nav.menu')" @click="mostrarMenuMobil = true" />
           </div>
         </div>
       </header>
@@ -128,19 +128,19 @@
           <span>{{ $t('brand.schoolShort') }}</span>
         </div>
         <nav class="sidebar-nav" :aria-label="$t('app.nav.menu')">
-          <button class="sidebar-link" :class="{ active: paginaActiva === 'workbench' }" :aria-current="paginaActiva === 'workbench' ? 'page' : undefined" @click="paginaActiva = 'workbench'">
+          <button v-if="can('workbench.view')" class="sidebar-link" :class="{ active: paginaActiva === 'workbench' }" :aria-current="paginaActiva === 'workbench' ? 'page' : undefined" @click="paginaActiva = 'workbench'">
             <span>{{ $t('app.pages.workbench') }}</span>
           </button>
-          <button class="sidebar-link" :class="{ active: paginaActiva === 'records' }" :aria-current="paginaActiva === 'records' ? 'page' : undefined" @click="paginaActiva = 'records'">
+          <button v-if="can('records.view')" class="sidebar-link" :class="{ active: paginaActiva === 'records' }" :aria-current="paginaActiva === 'records' ? 'page' : undefined" @click="paginaActiva = 'records'">
             <span>{{ $t('app.pages.records') }}</span>
           </button>
-          <button v-if="isAdmin" class="sidebar-link" :class="{ active: paginaActiva === 'statistics' }" :aria-current="paginaActiva === 'statistics' ? 'page' : undefined" @click="paginaActiva = 'statistics'">
+          <button v-if="can('statistics.view') || can('exports.download')" class="sidebar-link" :class="{ active: paginaActiva === 'statistics' }" :aria-current="paginaActiva === 'statistics' ? 'page' : undefined" @click="paginaActiva = 'statistics'">
             <span>{{ $t('app.pages.statistics') }}</span>
           </button>
           <button v-if="isAdmin" class="sidebar-link" :class="{ active: paginaActiva === 'settings' }" :aria-current="paginaActiva === 'settings' ? 'page' : undefined" @click="paginaActiva = 'settings'">
             <span>{{ $t('app.pages.settings') }}</span>
           </button>
-          <button v-if="isAdmin" class="sidebar-link" :class="{ active: paginaActiva === 'import' }" :aria-current="paginaActiva === 'import' ? 'page' : undefined" @click="paginaActiva = 'import'">
+          <button v-if="can('timetable.upload') || can('timetable.manage')" class="sidebar-link" :class="{ active: paginaActiva === 'import' }" :aria-current="paginaActiva === 'import' ? 'page' : undefined" @click="paginaActiva = 'import'">
             <span>{{ $t('app.pages.import') }}</span>
           </button>
         </nav>
@@ -167,16 +167,22 @@
         </div>
 
         <main class="main-content">
+          <section v-if="!availablePages.length" class="permission-empty" role="status">
+            <h2>{{ $t('app.permissions.noneAssignedTitle') }}</h2>
+            <p>{{ $t('app.permissions.noneAssignedHint') }}</p>
+          </section>
           <ReschedulingView
+            v-if="can('workbench.view')"
             v-show="paginaActiva === 'workbench'"
             ref="reschedulingView"
             :dataGlobal="dataSeleccionada"
             :isAdmin="isAdmin"
+            :can="can"
           />
-          <RecordsView v-if="paginaActiva === 'records'" :isAdmin="isAdmin" @resume-absence="resumeAbsence" />
-          <StatisticsView v-if="isAdmin && paginaActiva === 'statistics'" :dataGlobal="dataSeleccionada" />
+          <RecordsView v-if="can('records.view') && paginaActiva === 'records'" :can="can" @resume-absence="resumeAbsence" />
+          <StatisticsView v-if="availablePages.includes('statistics') && paginaActiva === 'statistics'" :dataGlobal="dataSeleccionada" :can="can" />
           <SettingsView v-if="isAdmin && paginaActiva === 'settings'" />
-          <TimetableImportView v-if="isAdmin" v-show="paginaActiva === 'import'" />
+          <TimetableImportView v-if="can('timetable.upload') || can('timetable.manage')" v-show="paginaActiva === 'import'" :can="can" />
         </main>
 
         <footer class="footer">
@@ -204,11 +210,11 @@
         class="mobile-menu-dialog"
       >
         <div class="mobile-menu">
-          <Button class="p-button-text" :label="$t('app.pages.workbench')" @click="paginaActiva = 'workbench'; mostrarMenuMobil = false" />
-          <Button class="p-button-text" :label="$t('app.pages.records')" @click="paginaActiva = 'records'; mostrarMenuMobil = false" />
-          <Button v-if="isAdmin" class="p-button-text" :label="$t('app.pages.statistics')" @click="paginaActiva = 'statistics'; mostrarMenuMobil = false" />
+          <Button v-if="can('workbench.view')" class="p-button-text" :label="$t('app.pages.workbench')" @click="paginaActiva = 'workbench'; mostrarMenuMobil = false" />
+          <Button v-if="can('records.view')" class="p-button-text" :label="$t('app.pages.records')" @click="paginaActiva = 'records'; mostrarMenuMobil = false" />
+          <Button v-if="can('statistics.view') || can('exports.download')" class="p-button-text" :label="$t('app.pages.statistics')" @click="paginaActiva = 'statistics'; mostrarMenuMobil = false" />
           <Button v-if="isAdmin" class="p-button-text" :label="$t('app.pages.settings')" @click="paginaActiva = 'settings'; mostrarMenuMobil = false" />
-          <Button v-if="isAdmin" class="p-button-text" :label="$t('app.pages.import')" @click="paginaActiva = 'import'; mostrarMenuMobil = false" />
+          <Button v-if="can('timetable.upload') || can('timetable.manage')" class="p-button-text" :label="$t('app.pages.import')" @click="paginaActiva = 'import'; mostrarMenuMobil = false" />
           <hr />
           <Button
             v-if="isAdmin"
@@ -233,7 +239,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Toast from 'primevue/toast'
@@ -251,6 +257,7 @@ import TimetableImportView from './views/TimetableImportView.vue'
 import ConfiguracioDialog from './components/ConfiguracioDialog.vue'
 import ProfileDialog from './components/ProfileDialog.vue'
 import { setLocale } from './i18n'
+import { can as hasPermission } from './permissions'
 
 const { t, locale } = useI18n()
 const toast = useToast()
@@ -297,7 +304,19 @@ const isMobile = ref(false)
 let mediaQuery = null
 const userProfile = ref(null)
 const isAdmin = computed(() => ['admin', 'super_admin'].includes(userProfile.value?.role || ''))
+const can = (permission) => hasPermission(userProfile.value, permission)
+const availablePages = computed(() => [
+  can('workbench.view') && 'workbench',
+  can('records.view') && 'records',
+  (can('statistics.view') || can('exports.download')) && 'statistics',
+  isAdmin.value && 'settings',
+  (can('timetable.upload') || can('timetable.manage')) && 'import',
+].filter(Boolean))
 const esDemo = computed(() => userProfile.value?.institucio === 'demo')
+
+watch(availablePages, (pages) => {
+  if (!pages.includes(paginaActiva.value)) paginaActiva.value = pages[0] || null
+}, { immediate: true })
 
 const actualitzarModeMobil = () => {
   if (!mediaQuery) return
@@ -322,12 +341,7 @@ const todayWeekdayLabel = computed(() => new Intl.DateTimeFormat(locale.value ==
 }).format(dataSeleccionada))
 
 const carregarPerfil = async () => {
-  try {
-    const response = await axios.get('/api/users/profile')
-    userProfile.value = response.data
-  } catch (error) {
-    console.error('Error carregant perfil:', error)
-  }
+  userProfile.value = (await axios.get('/api/users/profile')).data
 }
 
 onMounted(async () => {
@@ -378,14 +392,14 @@ const ferLogin = async () => {
   loginError.value = ''
   loginLoading.value = true
   try {
-    const response = await axios.post('/api/login', {
+    await axios.post('/api/login', {
       username: loginUser.value,
       password: loginPass.value
     })
-    aplicarToken()
     const redirectUrl = new URLSearchParams(window.location.search).get('redirect')
     if (redirectUrl) { window.location.href = redirectUrl; return; }
     await carregarPerfil()
+    aplicarToken()
   } catch (error) {
     const status = error.response?.status
     if (status === 429) {
@@ -431,6 +445,7 @@ const obrirPerfil = () => {
 }
 
 const resumeAbsence = (record) => {
+  if (!can('absence.create')) return
   paginaActiva.value = 'workbench'
   reschedulingView.value?.resumeAbsence(record)
 }
@@ -1037,6 +1052,18 @@ input.p-inputtext.p-inputtext-sm {
   padding: 1rem;
   font-size: 0.9rem;
 }
+
+.permission-empty {
+  min-height: 50vh;
+  display: grid;
+  place-content: center;
+  gap: .5rem;
+  color: var(--text-color-secondary);
+  text-align: center;
+}
+
+.permission-empty h2 { margin: 0; color: var(--text-color-primary); }
+.permission-empty p { margin: 0; }
 
 .feedback-dialog-body { display: flex; align-items: flex-start; gap: .75rem; }
 .feedback-dialog-body i { color: #9b3b30; font-size: 1.45rem; }

@@ -20,7 +20,11 @@
       "prevDay": "前一日", "nextDay": "下一日", "selectDate": "選擇日期", "today": "今天", "returnToday": "返回今天", "menu": "選單", "settings": "系統設定",
       "profile": "個人資料", "logout": "登出", "course": "所選日期的學年", "courseNone": "不屬於任何學年", "language": "介面語言"
     },
-    "pages": { "workbench": "調課工作台", "records": "調課記錄", "statistics": "統計", "settings": "配置", "import": "課表匯入" }
+    "pages": { "workbench": "調課工作台", "records": "調課記錄", "statistics": "統計", "settings": "配置", "import": "課表匯入" },
+    "permissions": {
+      "noneAssignedTitle": "尚未獲分配功能",
+      "noneAssignedHint": "請聯絡管理員分配所需功能；你仍可使用個人資料及登出。"
+    }
   },
   "profile": {
     "title": "個人資料", "username": "用戶名稱", "currentPassword": "現時密碼", "newPassword": "新密碼",
@@ -40,13 +44,35 @@
       "deleteConfirm": "刪除學年「{nom}」？這不會刪除調課資料。"
     },
     "users": {
-      "title": "用戶管理", "add": "新增用戶", "addTitle": "新增用戶", "editTitle": "編輯用戶", "username": "用戶名稱",
-      "password": "密碼", "passwordOptional": "留空以保留現有密碼", "role": "權限", "institucio": "學校", "active": "啟用",
-      "activeYes": "是", "activeNo": "否", "saved": "用戶已儲存", "loadError": "無法載入用戶", "saveError": "無法儲存用戶",
+      "title": "用戶管理", "add": "新增用戶", "addTitle": "新增用戶", "editTitle": "編輯用戶", "account": "帳戶資料", "newAccount": "新帳戶", "username": "用戶名稱",
+      "password": "密碼", "passwordOptional": "留空以保留現有密碼", "role": "角色", "institucio": "學校", "active": "啟用",
+      "activeYes": "是", "activeNo": "否", "inactive": "已停用", "saved": "用戶已儲存", "loadError": "無法載入用戶", "saveError": "無法儲存用戶",
       "deleteError": "無法停用用戶", "deleted": "用戶已刪除", "deactivated": "用戶已停用", "deactivateTitle": "停用用戶",
       "deactivateConfirm": "停用用戶 {username}？", "deactivateAction": "停用", "deleteTitle": "刪除用戶",
-      "deleteConfirm": "刪除用戶 {username}？此操作無法復原。", "sort": "按名稱排序", "filterInstitution": "按學校篩選",
-      "superAdminLocked": "不可編輯超級管理員"
+      "deleteConfirm": "刪除用戶 {username}？此操作無法復原。", "sort": "按名稱排序", "filterInstitution": "按學校篩選", "search": "搜尋用戶", "searchPlaceholder": "搜尋名稱、角色或學校", "userList": "用戶清單", "count": "共 {count} 位用戶", "empty": "沒有符合條件的用戶", "selectUser": "選擇左側用戶以查看帳戶及權限。",
+      "superAdminLocked": "不可編輯超級管理員",
+      "roles": { "super_admin": "超級管理員", "admin": "管理員", "user": "普通用戶" },
+      "permissions": {
+        "title": "功能權限",
+        "hint": "只適用於普通用戶；系統會自動維持所需的上層頁面權限。",
+        "allTitle": "擁有全部權限",
+        "allHint": "管理員及超級管理員不受個別功能開關限制。",
+        "riskHint": "高風險權限可修改或匯出學校資料，只應按工作需要授予。",
+        "highRisk": "高風險",
+        "groups": { "workbench": "調課工作台", "records": "記錄、統計及匯出", "timetable": "課表匯入" },
+        "items": {
+          "workbench_view": { "label": "查看調課工作台", "description": "查看教師、缺席個案、有效課表及停課日資料。" },
+          "absence_create": { "label": "新增缺席", "description": "新增及分析缺席，並更新自己建立且尚未鎖定的個案。" },
+          "adjustment_confirm": { "label": "確認系統建議", "description": "確認系統建議的調課或代課安排。" },
+          "manual_arrangement_manage": { "label": "人工安排", "description": "建立人工代課或確認由共同教師繼續上課。" },
+          "records_view": { "label": "查看調課記錄", "description": "查看缺席個案、調課及代課記錄詳情。" },
+          "records_manage": { "label": "管理調課記錄", "description": "修改、撤銷或刪除同校的缺席及安排記錄。" },
+          "statistics_view": { "label": "查看統計", "description": "查看所選日期範圍內的調課及代課統計。" },
+          "exports_download": { "label": "下載每日表格", "description": "下載每日 Excel、PDF 或 ZIP 調課／代課表。" },
+          "timetable_upload": { "label": "上傳及預覽課表", "description": "上傳課表、檢視差異及保存核對決定。" },
+          "timetable_manage": { "label": "啟用及管理課表", "description": "啟用、取消、修改日期或刪除課表版本。" }
+        }
+      }
     },
     "dataManagement": {
       "title": "按日期範圍清理資料", "description": "永久刪除指定日期範圍內的舊資料。請先分析影響，再確認執行。",
@@ -71,7 +97,7 @@
     "search": "搜尋", "searchPlaceholder": "老師、班別或科目", "dateFrom": "開始日期", "dateTo": "結束日期", "status": "狀態", "type": "類型", "apply": "查詢", "reset": "重設",
     "filterStatuses": { "open": "待處理", "completed": "已安排" }, "filterKinds": { "swap": "互調", "cover": "代課", "manual": "人工調課" },
     "columns": { "date": "日期", "teacher": "缺席老師", "periods": "缺席節次", "arrangements": "安排摘要", "status": "狀態" },
-    "resultCount": "共 {count} 項", "resultHint": "按「查看」開啟完整資料及管理操作。", "view": "查看", "empty": "沒有符合條件的調課記錄。",
+    "resultCount": "共 {count} 項", "resultHint": "按「查看」開啟完整資料；如有權限，亦可使用管理操作。", "view": "查看", "empty": "沒有符合條件的調課記錄。",
     "absenceDetails": "缺席資料", "arrangementDetails": "調課／代課安排", "createdByLabel": "建立者", "editAbsence": "修改缺席", "arrangementCount": "{count} 個安排", "noAdjustmentShort": "尚未安排",
     "today": "香港今日：{date}", "scopes": { "future": "未來", "today": "今日", "past": "過往" },
     "manual": "人工互調", "period": "第 {period} 節", "createdBy": "建立者：{user}", "noAdjustment": "尚未確認任何調課安排。",

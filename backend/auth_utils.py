@@ -23,6 +23,7 @@ from config.auth import (
 )
 from config.settings import config
 from database import get_auth_db_session, get_auth_db
+from permissions import user_has_any_permission, user_has_permission
 from repositories import UserRepository
 
 # Argon2 per evitar problemes amb bcrypt a Python 3.13.
@@ -196,6 +197,24 @@ def get_current_user(
 
 def require_user(current_user=Depends(get_current_user)):
     return current_user
+
+
+def require_permission(permission: str):
+    def dependency(current_user=Depends(get_current_user)):
+        if not user_has_permission(current_user, permission):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="權限不足")
+        return current_user
+
+    return dependency
+
+
+def require_any_permission(*permissions: str):
+    def dependency(current_user=Depends(get_current_user)):
+        if not user_has_any_permission(current_user, permissions):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="權限不足")
+        return current_user
+
+    return dependency
 
 
 def require_admin(current_user=Depends(get_current_user)):

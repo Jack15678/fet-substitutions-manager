@@ -1,250 +1,203 @@
 <template>
   <div class="tab-content">
-    <div class="toolbar" style="margin-bottom: 0.75rem;">
-      <label>{{ $t('config.users.title') }}</label>
-      <div class="user-tools">
-        <Dropdown
-          v-if="props.currentRole === 'super_admin'"
-          v-model="userInstitutionFilter"
-          :options="userInstitutionOptions"
-          optionLabel="label"
-          optionValue="value"
-          :placeholder="$t('config.users.filterInstitution')"
-          class="p-inputtext-sm"
+    <div class="users-layout" :class="{ 'mobile-editing': mobileEditing }">
+      <aside ref="masterListRef" class="user-master" :aria-label="$t('config.users.userList')">
+        <div class="master-heading">
+          <div>
+            <h2>{{ $t('config.users.title') }}</h2>
+            <small>{{ $t('config.users.count', { count: usersFiltered.length }) }}</small>
+          </div>
+          <Button
+            icon="pi pi-plus"
+            class="p-button-sm"
+            :label="$t('config.users.add')"
+            @click="obrirNouUsuari"
+          />
+        </div>
+
+        <div class="list-tools">
+          <label class="sr-only" for="user-search">{{ $t('config.users.search') }}</label>
+          <span class="search-field">
+            <i class="pi pi-search" aria-hidden="true"></i>
+            <InputText
+              id="user-search"
+              v-model="userSearch"
+              :placeholder="$t('config.users.searchPlaceholder')"
+            />
+          </span>
+          <Dropdown
+            v-if="props.currentRole === 'super_admin'"
+            v-model="userInstitutionFilter"
+            :options="userInstitutionOptions"
+            optionLabel="label"
+            optionValue="value"
+            :placeholder="$t('config.users.filterInstitution')"
+            class="w-full"
+          />
+          <Button
+            :icon="userSortAsc ? 'pi pi-sort-alpha-down' : 'pi pi-sort-alpha-up'"
+            class="p-button-sm p-button-text sort-button"
+            :label="$t('config.users.sort')"
+            @click="toggleUserSort"
+          />
+        </div>
+
+        <div v-if="usersLoading" class="list-message">{{ $t('common.loading') }}</div>
+        <div v-else-if="!usersFiltered.length" class="list-message">{{ $t('config.users.empty') }}</div>
+        <div v-else class="user-list" role="list">
+          <button
+            v-for="user in usersFiltered"
+            :key="user.id"
+            type="button"
+            class="user-list-item"
+            :class="{ selected: selectedUserId === user.id }"
+            :data-user-id="user.id"
+            :aria-current="selectedUserId === user.id ? 'true' : undefined"
+            @click="selectUser(user)"
+          >
+            <span class="user-avatar" aria-hidden="true">{{ (user.username || '?').charAt(0).toUpperCase() }}</span>
+            <span class="user-summary">
+              <strong>{{ user.username }}</strong>
+              <small>
+                {{ roleLabel(user.role) }}
+                <template v-if="props.currentRole === 'super_admin'">
+                  · {{ user.institucio_display_name || user.institucio }}
+                </template>
+              </small>
+            </span>
+            <i v-if="!user.active" class="pi pi-ban inactive-icon" :title="$t('config.users.inactive')"></i>
+            <i class="pi pi-chevron-right chevron" aria-hidden="true"></i>
+          </button>
+        </div>
+      </aside>
+
+      <main class="user-detail">
+        <UserPermissionsPanel
+          v-if="selectedUser"
+          ref="permissionsPanelRef"
+          :user="selectedUser"
+          :institutions="institucionsOptions"
+          :current-role="props.currentRole"
+          :saving="userSaving"
+          @save="desarUsuariSeleccionat"
+          @back="tornarAUsuaris"
+          @deactivate="desactivarUsuari"
+          @delete="eliminarUsuari"
         />
-        <Button
-          :icon="userSortAsc ? 'pi pi-sort-alpha-down' : 'pi pi-sort-alpha-up'"
-          class="p-button-sm p-button-text"
-          v-tooltip.top="$t('config.users.sort')"
-          @click="toggleUserSort"
-        />
-        <Button
-          icon="pi pi-plus"
-          class="p-button-sm"
-          :label="$t('config.users.add')"
-          iconPos="left"
-          @click="obrirNouUsuari"
-        />
-      </div>
+        <div v-else class="empty-detail">
+          <i class="pi pi-users" aria-hidden="true"></i>
+          <p>{{ $t('config.users.selectUser') }}</p>
+        </div>
+      </main>
     </div>
 
-    <DataTable
-      :value="usersFiltered"
-      dataKey="id"
-      :loading="usersLoading"
-      class="p-datatable-sm"
-    >
-      <Column field="username" :header="$t('config.users.username')" />
-      <Column field="role" :header="$t('config.users.role')" style="min-width: 7.5rem" />
-      <Column v-if="props.currentRole === 'super_admin'" :header="$t('config.users.institucio')">
-        <template #body="{ data }">
-          {{ data.institucio_display_name || data.institucio }}
-        </template>
-      </Column>
-      <Column :header="$t('config.users.active')" bodyClass="text-center">
-        <template #body="{ data }">
-          {{ data.active ? $t('config.users.activeYes') : $t('config.users.activeNo') }}
-        </template>
-      </Column>
-      <Column :header="$t('common.actions')" bodyClass="text-center">
-        <template #body="{ data }">
-          <div class="table-actions">
-            <Button
-              icon="pi pi-pencil"
-              class="p-button-text p-button-sm"
-              :disabled="data.role === 'super_admin'"
-              v-tooltip.top="data.role === 'super_admin' ? $t('config.users.superAdminLocked') : $t('common.edit')"
-              @click="editarUsuari(data)"
-            />
-            <Button
-              icon="pi pi-ban"
-              class="p-button-text p-button-sm p-button-danger"
-              :disabled="data.role === 'super_admin'"
-              v-tooltip.top="data.role === 'super_admin' ? $t('config.users.superAdminLocked') : $t('config.users.deactivateTitle')"
-              @click="desactivarUsuari(data)"
-            />
-            <Button
-              v-if="isSuperAdmin"
-              icon="pi pi-trash"
-              class="p-button-text p-button-sm p-button-danger"
-              :disabled="data.role === 'super_admin'"
-              v-tooltip.top="data.role === 'super_admin' ? $t('config.users.superAdminLocked') : $t('config.users.deleteTitle')"
-              @click="eliminarUsuari(data)"
-            />
-          </div>
-        </template>
-      </Column>
-    </DataTable>
-
-    <!-- Diàleg crear/editar usuari -->
     <Dialog
       v-model:visible="mostrarDialogUsuari"
       :modal="true"
-      :style="{ width: '480px' }"
-      :contentStyle="{ padding: '1rem 1.25rem' }"
+      :style="{ width: 'min(96vw, 760px)' }"
+      :header="$t('config.users.addTitle')"
       class="user-dialog"
-      :key="userDialogKey"
+      @hide="newUser = null"
     >
-      <template #header>
-        <span class="dialog-header">
-          <i
-            :class="usuariEditant ? 'pi pi-user-edit' : 'pi pi-user-plus'"
-            aria-hidden="true"
-          ></i>
-          <span>{{ usuariEditant ? $t('config.users.editTitle') : $t('config.users.addTitle') }}</span>
-        </span>
-      </template>
-      <div class="p-fluid">
-        <div class="field">
-          <label>{{ $t('config.users.username') }}</label>
-          <InputText v-model="usuariForm.username" autocomplete="new-username" name="new-username" />
-        </div>
-        <div class="field">
-          <label>{{ $t('config.users.password') }}</label>
-          <Password
-            v-model="usuariForm.password"
-            :feedback="false"
-            toggleMask
-            :placeholder="usuariEditant ? $t('config.users.passwordOptional') : ''"
-            class="w-full password-with-eye"
-            :inputProps="{ autocomplete: 'new-password', name: 'new-password' }"
-          />
-        </div>
-        <div class="field">
-          <label>{{ $t('config.users.role') }}</label>
-          <Dropdown
-            v-model="usuariForm.role"
-            :options="roleOptions"
-            optionLabel="label"
-            optionValue="value"
-            class="w-full user-role-dropdown"
-          />
-        </div>
-        <div v-if="props.currentRole === 'super_admin'" class="field">
-          <label>{{ $t('config.users.institucio') }}</label>
-          <Dropdown
-            v-model="usuariForm.institucio"
-            :options="institucionsOptions"
-            class="w-full"
-          />
-        </div>
-        <div class="field checkbox-field">
-          <Checkbox v-model="usuariForm.active" binary />
-          <span>{{ $t('config.users.active') }}</span>
-        </div>
-      </div>
-
-      <template #footer>
-        <Button :label="$t('common.cancel')" class="p-button-text" @click="tancarDialogUsuari" />
-        <Button
-          :label="$t('common.save')"
-          class="p-button-success"
-          :disabled="!usuariForm.username || (!usuariEditant && !usuariForm.password)"
-          @click="desarUsuari"
-        />
-      </template>
+      <UserPermissionsPanel
+        v-if="newUser"
+        :user="newUser"
+        :institutions="institucionsOptions"
+        :current-role="props.currentRole"
+        :saving="userSaving"
+        is-new
+        @save="crearUsuari"
+        @cancel="mostrarDialogUsuari = false"
+      />
     </Dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
-import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
+import { useToast } from 'primevue/usetoast'
+import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import Dropdown from 'primevue/dropdown'
 import InputText from 'primevue/inputtext'
-import Password from 'primevue/password'
-import Button from 'primevue/button'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
-import Checkbox from 'primevue/checkbox'
-
-const toast = useToast()
-const { t, locale } = useI18n()
-const confirm = useConfirm()
+import UserPermissionsPanel from './UserPermissionsPanel.vue'
 
 const props = defineProps({
-  currentRole: {
-    type: String,
-    default: null
-  },
-  currentInstitucio: {
-    type: String,
-    default: null
-  }
+  visible: { type: Boolean, default: true },
+  currentRole: { type: String, default: null },
+  currentInstitucio: { type: String, default: null }
 })
 
+const { t, locale } = useI18n()
+const confirm = useConfirm()
+const toast = useToast()
 const institucions = ref([])
 const users = ref([])
+const userSearch = ref('')
 const userInstitutionFilter = ref('')
 const userSortAsc = ref(true)
 const usersLoading = ref(false)
+const userSaving = ref(false)
+const selectedUserId = ref(null)
+const mobileEditing = ref(false)
 const mostrarDialogUsuari = ref(false)
-const usuariEditant = ref(null)
-const userDialogKey = ref(0)
-const usuariForm = ref({
-  id: null,
-  username: '',
-  password: '',
-  role: 'user',
-  institucio: '',
-  active: true
-})
+const newUser = ref(null)
+const masterListRef = ref(null)
+const permissionsPanelRef = ref(null)
 
-const isSuperAdmin = computed(() => props.currentRole === 'super_admin')
 const institucionsOptions = computed(() => (
   institucions.value
-    .filter((inst) => inst.active !== false)
-    .map((inst) => ({
-      label: inst.display_name || inst.slug,
-      value: inst.slug
+    .filter((institution) => institution.active !== false)
+    .map((institution) => ({
+      label: institution.display_name || institution.slug,
+      value: institution.slug
     }))
 ))
+
 const userInstitutionOptions = computed(() => ([
   { label: t('common.all'), value: '' },
   ...institucionsOptions.value
 ]))
+
 const usersFiltered = computed(() => {
-  const baseList = users.value
-  const filteredList = (props.currentRole === 'super_admin' && userInstitutionFilter.value)
-    ? baseList.filter((user) => user.institucio === userInstitutionFilter.value)
-    : baseList
-  return filteredList.sort((a, b) => {
-  const cmp = (a.username || '').localeCompare(
-    b.username || '',
-    locale.value || 'ca',
-    { sensitivity: 'base' }
-  )
-    return userSortAsc.value ? cmp : -cmp
-  })
+  const query = userSearch.value.trim().toLocaleLowerCase(locale.value || 'en')
+  return users.value
+    .filter((user) => !userInstitutionFilter.value || user.institucio === userInstitutionFilter.value)
+    .filter((user) => {
+      if (!query) return true
+      return [user.username, user.role, user.institucio_display_name, user.institucio]
+        .some((value) => String(value || '').toLocaleLowerCase(locale.value || 'en').includes(query))
+    })
+    .sort((a, b) => {
+      const comparison = (a.username || '').localeCompare(
+        b.username || '',
+        locale.value || 'en',
+        { sensitivity: 'base' }
+      )
+      return userSortAsc.value ? comparison : -comparison
+    })
 })
-const roleOptions = computed(() => {
-  if (props.currentRole === 'super_admin') {
-    return [
-      { label: 'super_admin', value: 'super_admin' },
-      { label: 'admin', value: 'admin' },
-      { label: 'user', value: 'user' }
-    ]
-  }
-  return [
-    { label: 'admin', value: 'admin' },
-    { label: 'user', value: 'user' }
-  ]
-})
+
+const selectedUser = computed(() => users.value.find((user) => user.id === selectedUserId.value) || null)
+const roleLabel = (role) => t(`config.users.roles.${role}`)
 
 const carregarInstitucions = async () => {
-  const resp = await axios.get('/api/settings/institucions')
-  institucions.value = resp.data.institucions || []
+  const response = await axios.get('/api/settings/institucions')
+  institucions.value = response.data.institucions || []
 }
 
-const carregarUsuaris = async () => {
+const carregarUsuaris = async (preferredUserId = selectedUserId.value) => {
   usersLoading.value = true
   try {
     const response = await axios.get('/api/users')
     users.value = response.data || []
+    selectedUserId.value = users.value.some((user) => user.id === preferredUserId)
+      ? preferredUserId
+      : users.value[0]?.id ?? null
+    if (!selectedUserId.value) mobileEditing.value = false
   } catch (error) {
     console.error('Error carregant usuaris:', error)
     toast.add({
@@ -262,90 +215,48 @@ const toggleUserSort = () => {
   userSortAsc.value = !userSortAsc.value
 }
 
-const resetUsuariForm = () => {
-  const fallbackInstitucio = institucionsOptions.value[0]?.value || ''
-  usuariForm.value = {
-    id: null,
-    username: '',
-    password: '',
-    role: 'user',
-    institucio: props.currentInstitucio || fallbackInstitucio,
-    active: true
-  }
+const selectUser = async (user) => {
+  selectedUserId.value = user.id
+  mobileEditing.value = true
+  await nextTick()
+  permissionsPanelRef.value?.focus()
+}
+
+const tornarAUsuaris = async () => {
+  mobileEditing.value = false
+  await nextTick()
+  masterListRef.value?.querySelector(`[data-user-id="${selectedUserId.value}"]`)?.focus()
 }
 
 const obrirNouUsuari = () => {
-  resetUsuariForm()
-  usuariEditant.value = null
-  userDialogKey.value += 1
-  mostrarDialogUsuari.value = true
-}
-
-const editarUsuari = (user) => {
-  if (user.role === 'super_admin') {
-    toast.add({
-      severity: 'warn',
-      summary: t('common.warning'),
-      detail: t('config.users.superAdminLocked'),
-      life: 3000
-    })
-    return
-  }
-  usuariEditant.value = user
-  usuariForm.value = {
-    id: user.id,
-    username: user.username,
-    password: '',
-    role: user.role,
-    institucio: user.institucio,
-    active: user.active
+  newUser.value = {
+    username: '',
+    role: 'user',
+    institucio: props.currentInstitucio || institucionsOptions.value[0]?.value || '',
+    active: true
   }
   mostrarDialogUsuari.value = true
 }
 
-const tancarDialogUsuari = () => {
-  mostrarDialogUsuari.value = false
-  resetUsuariForm()
+const payloadFor = (form, creating) => {
+  const payload = {
+    username: form.username,
+    role: form.role,
+    permissions: form.permissions
+  }
+  if (!creating) payload.active = form.active
+  if (props.currentRole === 'super_admin') payload.institucio = form.institucio
+  if (form.password) payload.password = form.password
+  return payload
 }
 
-const desarUsuari = async () => {
+const desarUsuariSeleccionat = async (form) => {
+  if (!selectedUser.value) return
+  userSaving.value = true
   try {
-    const institucioValue = typeof usuariForm.value.institucio === 'object'
-      ? usuariForm.value.institucio?.value
-      : usuariForm.value.institucio
-    if (usuariEditant.value) {
-      const payload = {
-        username: usuariForm.value.username,
-        role: usuariForm.value.role,
-        active: usuariForm.value.active
-      }
-      if (props.currentRole === 'super_admin') {
-        payload.institucio = institucioValue
-      }
-      if (usuariForm.value.password) {
-        payload.password = usuariForm.value.password
-      }
-      await axios.put(`/api/users/${usuariForm.value.id}`, payload)
-    } else {
-      const payload = {
-        username: usuariForm.value.username,
-        password: usuariForm.value.password,
-        role: usuariForm.value.role
-      }
-      if (props.currentRole === 'super_admin') {
-        payload.institucio = institucioValue
-      }
-      await axios.post('/api/users', payload)
-    }
-    toast.add({
-      severity: 'success',
-      summary: t('common.saved'),
-      detail: t('config.users.saved'),
-      life: 2500
-    })
-    mostrarDialogUsuari.value = false
-    await carregarUsuaris()
-    resetUsuariForm()
+    const response = await axios.put(`/api/users/${selectedUser.value.id}`, payloadFor(form, false))
+    toast.add({ severity: 'success', summary: t('common.saved'), detail: t('config.users.saved'), life: 2500 })
+    await carregarUsuaris(response.data.id)
   } catch (error) {
     console.error('Error desant usuari:', error)
     toast.add({
@@ -354,6 +265,31 @@ const desarUsuari = async () => {
       detail: error.response?.data?.detail || t('config.users.saveError'),
       life: 3000
     })
+  } finally {
+    userSaving.value = false
+  }
+}
+
+const crearUsuari = async (form) => {
+  userSaving.value = true
+  try {
+    const response = await axios.post('/api/users', payloadFor(form, true))
+    toast.add({ severity: 'success', summary: t('common.saved'), detail: t('config.users.saved'), life: 2500 })
+    mostrarDialogUsuari.value = false
+    await carregarUsuaris(response.data.id)
+    mobileEditing.value = true
+    await nextTick()
+    permissionsPanelRef.value?.focus()
+  } catch (error) {
+    console.error('Error creant usuari:', error)
+    toast.add({
+      severity: 'error',
+      summary: t('common.error'),
+      detail: error.response?.data?.detail || t('config.users.saveError'),
+      life: 3000
+    })
+  } finally {
+    userSaving.value = false
   }
 }
 
@@ -368,13 +304,8 @@ const desactivarUsuari = (user) => {
     accept: async () => {
       try {
         await axios.delete(`/api/users/${user.id}`)
-        toast.add({
-          severity: 'success',
-          summary: t('common.deleted'),
-          detail: t('config.users.deactivated'),
-          life: 2500
-        })
-        await carregarUsuaris()
+        toast.add({ severity: 'success', summary: t('common.saved'), detail: t('config.users.deactivated'), life: 2500 })
+        await carregarUsuaris(user.id)
       } catch (error) {
         console.error('Error desactivant usuari:', error)
         toast.add({
@@ -399,13 +330,8 @@ const eliminarUsuari = (user) => {
     accept: async () => {
       try {
         await axios.delete(`/api/users/${user.id}/hard`)
-        toast.add({
-          severity: 'success',
-          summary: t('common.deleted'),
-          detail: t('config.users.deleted'),
-          life: 2500
-        })
-        await carregarUsuaris()
+        toast.add({ severity: 'success', summary: t('common.deleted'), detail: t('config.users.deleted'), life: 2500 })
+        await carregarUsuaris(null)
       } catch (error) {
         console.error('Error eliminant usuari:', error)
         toast.add({
@@ -419,6 +345,10 @@ const eliminarUsuari = (user) => {
   })
 }
 
+watch(() => props.visible, (visible) => {
+  if (!visible) mobileEditing.value = false
+})
+
 onMounted(() => {
   carregarInstitucions()
   carregarUsuaris()
@@ -428,91 +358,232 @@ onMounted(() => {
 <style scoped>
 .tab-content {
   padding: 0.5rem 0;
-  min-height: 400px;
 }
 
-.toolbar {
+.users-layout {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.75fr) minmax(480px, 1.75fr);
+  min-height: 520px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.user-master {
+  min-width: 0;
+  padding: 1rem;
+  border-right: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.master-heading {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  align-items: center;
+  gap: 0.75rem;
   margin-bottom: 1rem;
-  padding: 0.75rem;
-  background: #f9fafb;
-  border-radius: 6px;
 }
 
-.user-tools {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
+.master-heading h2 {
+  margin: 0;
+  color: #1e293b;
+  font-size: 1.05rem;
 }
 
-.table-actions {
-  display: inline-flex;
-  gap: 0.25rem;
-  align-items: center;
-  justify-content: center;
+.master-heading small {
+  color: #64748b;
 }
 
-.dialog-header {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 600;
+.list-tools {
+  display: grid;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
 }
 
-.field {
-  margin-bottom: 1.5rem;
-}
-
-.field label {
+.search-field {
+  position: relative;
   display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: #374151;
-  font-size: 0.95rem;
 }
 
-.checkbox-field {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+.search-field i {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 0.75rem;
+  transform: translateY(-50%);
+  color: #94a3b8;
+}
+
+.search-field :deep(.p-inputtext) {
+  width: 100%;
+  padding-left: 2.25rem;
 }
 
 .w-full {
   width: 100%;
 }
 
-.user-role-dropdown {
-  width: 100%;
+.sort-button {
+  justify-content: flex-start;
+  min-height: 2.5rem;
 }
 
-:deep(.password-with-eye) {
-  width: 100%;
+.user-list {
+  display: grid;
+  gap: 0.4rem;
+  max-height: 460px;
+  overflow: auto;
 }
 
-:deep(.password-with-eye .p-password),
-:deep(.password-with-eye.p-icon-field) {
-  position: relative;
+.user-list-item {
+  display: flex;
+  align-items: center;
   width: 100%;
-}
-
-:deep(.password-with-eye .p-password-input),
-:deep(.password-with-eye.p-icon-field-right > .p-inputtext) {
-  width: 100%;
-  height: 2.25rem;
-  line-height: 2.25rem;
-  padding-right: 2.75rem;
-}
-
-:deep(.password-with-eye .p-input-icon),
-:deep(.password-with-eye .p-password-show-icon),
-:deep(.password-with-eye .p-password-hide-icon) {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  right: 0.75rem;
-  line-height: 1;
+  min-height: 3.75rem;
+  gap: 0.65rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
   cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.user-list-item:hover {
+  background: #fff;
+}
+
+.user-list-item:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 1px;
+}
+
+.user-list-item.selected {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.user-avatar {
+  display: inline-flex;
+  flex: 0 0 2.25rem;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.user-summary {
+  min-width: 0;
+  flex: 1;
+}
+
+.user-summary strong,
+.user-summary small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-summary strong {
+  color: #1e293b;
+  font-size: 0.92rem;
+}
+
+.user-summary small {
+  margin-top: 0.15rem;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.inactive-icon {
+  color: #dc2626;
+}
+
+.chevron {
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+
+.list-message,
+.empty-detail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 10rem;
+  color: #64748b;
+  text-align: center;
+}
+
+.empty-detail {
+  flex-direction: column;
+  min-height: 100%;
+  gap: 0.5rem;
+}
+
+.empty-detail i {
+  font-size: 2rem;
+}
+
+.user-detail {
+  min-width: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:deep(.user-dialog .p-dialog-content) {
+  padding-top: 0;
+}
+
+@media (max-width: 720px) {
+  .users-layout {
+    display: block;
+    min-height: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .user-master {
+    padding: 0;
+    border: 0;
+    background: #fff;
+  }
+
+  .user-detail {
+    display: none;
+  }
+
+  .users-layout.mobile-editing .user-master {
+    display: none;
+  }
+
+  .users-layout.mobile-editing .user-detail {
+    display: block;
+  }
+
+  .user-list {
+    max-height: none;
+  }
+
+  .user-list-item {
+    min-height: 4.25rem;
+  }
 }
 </style>

@@ -14,7 +14,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import NullPool
 
-from models import Base, User
+from models import Base, User, UserPermissionAudit
 
 BASE_DIR = Path(__file__).resolve().parent
 # DATA_DIR apunta a la carpeta data/ a l'arrel del projecte (dos nivells amunt)
@@ -43,7 +43,19 @@ AuthSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=AUTH_ENG
 
 def create_auth_tables():
     """Crea només taules d'autenticació"""
-    Base.metadata.create_all(bind=AUTH_ENGINE, tables=[User.__table__])
+    Base.metadata.create_all(
+        bind=AUTH_ENGINE,
+        tables=[User.__table__, UserPermissionAudit.__table__],
+    )
+    _ensure_user_permissions_column(AUTH_ENGINE)
+
+
+def _ensure_user_permissions_column(engine):
+    """Add nullable permissions JSON without changing legacy user behaviour."""
+    with engine.begin() as conn:
+        columns = conn.exec_driver_sql("PRAGMA table_info(users);").fetchall()
+        if columns and "permissions" not in {column[1] for column in columns}:
+            conn.exec_driver_sql("ALTER TABLE users ADD COLUMN permissions TEXT")
 
 
 def get_data_dir_for_institucio(institucio: str) -> Path:
@@ -76,7 +88,8 @@ def get_export_dir_for_institucio(institucio: str) -> Path:
 
 
 def _data_tables():
-    return [table for name, table in Base.metadata.tables.items() if name != "users"]
+    auth_tables = {"users", "user_permission_audits"}
+    return [table for name, table in Base.metadata.tables.items() if name not in auth_tables]
 
 
 def create_data_tables(engine):

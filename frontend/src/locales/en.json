@@ -50,6 +50,10 @@
     "settings": "Configuration",
     "import": "Timetable import"
   },
+  "permissions": {
+    "noneAssignedTitle": "No features assigned yet",
+    "noneAssignedHint": "Ask an administrator to assign the features you need. Your profile and sign-out remain available."
+  },
   "tabs": {
       "substitucions": "Substitutions",
       "grups": "No-class groups",
@@ -319,6 +323,8 @@
       "add": "New user",
       "addTitle": "Add user",
       "editTitle": "Edit user",
+      "account": "Account details",
+      "newAccount": "New account",
       "username": "Username",
       "password": "Password",
       "passwordOptional": "Leave blank to keep current",
@@ -327,6 +333,7 @@
       "active": "Active",
       "activeYes": "Yes",
       "activeNo": "No",
+      "inactive": "Inactive",
       "saved": "User saved",
       "loadError": "Could not load users",
       "saveError": "Could not save user",
@@ -340,7 +347,35 @@
       "deleteConfirm": "Delete user {username}? This action cannot be undone.",
       "sort": "Sort by name",
       "filterInstitution": "Filter by institution",
-      "superAdminLocked": "Super admin cannot be edited"
+      "search": "Search users",
+      "searchPlaceholder": "Search name, role or institution",
+      "userList": "User list",
+      "count": "{count} users",
+      "empty": "No matching users",
+      "selectUser": "Select a user on the left to view their account and permissions.",
+      "superAdminLocked": "Super admin cannot be edited",
+      "roles": { "super_admin": "Super admin", "admin": "Administrator", "user": "Standard user" },
+      "permissions": {
+        "title": "Feature permissions",
+        "hint": "Applies to standard users only. Required parent-page access is kept in sync automatically.",
+        "allTitle": "Has all permissions",
+        "allHint": "Administrators and super admins are not restricted by individual feature switches.",
+        "riskHint": "High-risk permissions can change or export school data. Grant them only when required.",
+        "highRisk": "High risk",
+        "groups": { "workbench": "Rescheduling workbench", "records": "Records, statistics and exports", "timetable": "Timetable import" },
+        "items": {
+          "workbench_view": { "label": "View rescheduling workbench", "description": "View teachers, absence cases, the active timetable and closure dates." },
+          "absence_create": { "label": "Create absences", "description": "Create and analyse absences, and update your own unlocked cases." },
+          "adjustment_confirm": { "label": "Confirm system suggestions", "description": "Confirm rescheduling or cover arrangements suggested by the system." },
+          "manual_arrangement_manage": { "label": "Manage manual arrangements", "description": "Create manual covers or confirm that a co-teacher continues the lesson." },
+          "records_view": { "label": "View rescheduling records", "description": "View absence case, rescheduling and cover record details." },
+          "records_manage": { "label": "Manage rescheduling records", "description": "Edit, revert or delete same-school absences and arrangements." },
+          "statistics_view": { "label": "View statistics", "description": "View rescheduling and cover statistics for a selected date range." },
+          "exports_download": { "label": "Download daily forms", "description": "Download daily Excel, PDF or ZIP rescheduling and cover forms." },
+          "timetable_upload": { "label": "Upload and preview timetables", "description": "Upload timetables, review differences and save review decisions." },
+          "timetable_manage": { "label": "Activate and manage timetables", "description": "Activate, cancel, change dates or delete timetable versions." }
+        }
+      }
     },
     "confirm": {
       "deleteXmlTitle": "Delete XML version",
@@ -1709,7 +1744,7 @@
     "search": "Search", "searchPlaceholder": "Teacher, class or subject", "dateFrom": "From", "dateTo": "To", "status": "Status", "type": "Type", "apply": "Search", "reset": "Reset",
     "filterStatuses": { "open": "Pending", "completed": "Arranged" }, "filterKinds": { "swap": "Swap", "cover": "Cover", "manual": "Manual adjustment" },
     "columns": { "date": "Date", "teacher": "Absent teacher", "periods": "Absent periods", "arrangements": "Arrangement summary", "status": "Status" },
-    "resultCount": "{count} records", "resultHint": "Select View for full details and administrative actions.", "view": "View", "empty": "No rescheduling records match these filters.",
+    "resultCount": "{count} records", "resultHint": "Select View for full details and, when permitted, management actions.", "view": "View", "empty": "No rescheduling records match these filters.",
     "absenceDetails": "Absence details", "arrangementDetails": "Swap / cover arrangements", "createdByLabel": "Created by", "editAbsence": "Edit absence", "arrangementCount": "{count} arrangements", "noAdjustmentShort": "Not arranged",
     "today": "Today in Hong Kong: {date}",
     "scopes": { "future": "Future", "today": "Today", "past": "Past" },

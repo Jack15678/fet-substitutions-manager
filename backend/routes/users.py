@@ -4,12 +4,13 @@ Gestió d'usuaris i perfil
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictStr
 from sqlalchemy.orm import Session
 
 from auth_utils import require_admin, require_super_admin, require_user, hash_password, verify_password, create_access_token, set_auth_cookie
 from database import get_auth_db, get_engine_for_institucio
 from repositories import UserRepository, ConfiguracioRepository
+from permissions import get_user_permissions, serialize_permissions, validate_permissions
 from config.settings import config
 from sqlalchemy.orm import sessionmaker
 
@@ -21,6 +22,7 @@ class UserCreate(BaseModel):
     password: str
     institucio: Optional[str] = None
     role: str = "user"
+    permissions: Optional[List[StrictStr]] = None
 
 
 class UserUpdate(BaseModel):
@@ -29,6 +31,7 @@ class UserUpdate(BaseModel):
     active: Optional[bool] = None
     institucio: Optional[str] = None
     password: Optional[str] = None
+    permissions: Optional[List[StrictStr]] = None
 
 
 class UserResponse(BaseModel):
@@ -38,6 +41,7 @@ class UserResponse(BaseModel):
     institucio_display_name: Optional[str] = None
     role: str
     active: bool
+    permissions: List[str]
 
 
 class PasswordUpdate(BaseModel):
@@ -47,6 +51,27 @@ class PasswordUpdate(BaseModel):
 
 class SwitchInstitucioRequest(BaseModel):
     institucio: str
+
+
+def _validated_permissions(permissions):
+    if permissions is None:
+        return None
+    try:
+        return validate_permissions(permissions)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _user_response(user, display_name: str) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        institucio=user.institucio,
+        institucio_display_name=display_name,
+        role=user.role,
+        active=user.active,
+        permissions=get_user_permissions(user),
+    )
 
 
 @router.get("", response_model=List[UserResponse])
@@ -76,14 +101,7 @@ def list_users(
 
     inst_map = display_map({u.institucio for u in users})
     return [
-        UserResponse(
-            id=u.id,
-            username=u.username,
-            institucio=u.institucio,
-            institucio_display_name=inst_map.get(u.institucio, u.institucio),
-            role=u.role,
-            active=u.active
-        )
+        _user_response(u, inst_map.get(u.institucio, u.institucio))
         for u in users
     ]
 
@@ -97,6 +115,7 @@ def create_user(
     role = payload.role or "user"
     if role not in ("super_admin", "admin", "user"):
         raise HTTPException(status_code=400, detail="用戶角色無效")
+    permissions = _validated_permissions(payload.permissions)
 
     institucio = payload.institucio or current_user.institucio
     disponibles = config.get_institucions_disponibles()
@@ -118,7 +137,8 @@ def create_user(
         password_hash=hash_password(payload.password),
         institucio=institucio,
         role=role,
-        active=True
+        active=True,
+        permissions=permissions,
     )
     engine = get_engine_for_institucio(institucio)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -127,14 +147,7 @@ def create_user(
         display_name = ConfiguracioRepository.get(data_db, "institucio_display_name") or institucio
     finally:
         data_db.close()
-    return UserResponse(
-        id=user.id,
-        username=user.username,
-        institucio=user.institucio,
-        institucio_display_name=display_name,
-        role=user.role,
-        active=user.active
-    )
+    return _user_response(user, display_name)
 
 
 @router.put("/{user_id}", response_model=UserResponse)
@@ -161,6 +174,7 @@ def update_user(
 
     if payload.role and payload.role not in ("super_admin", "admin", "user"):
         raise HTTPException(status_code=400, detail="用戶角色無效")
+    permissions = _validated_permissions(payload.permissions)
 
     updates = {}
     if payload.username is not None:
@@ -176,8 +190,15 @@ def update_user(
         updates["institucio"] = payload.institucio
     if payload.password:
         updates["password_hash"] = hash_password(payload.password)
+    if permissions is not None:
+        updates["permissions"] = serialize_permissions(permissions)
 
-    user = UserRepository.update(db, user, **updates)
+    user = UserRepository.update(
+        db,
+        user,
+        actor_username=current_user.username,
+        **updates,
+    )
     engine = get_engine_for_institucio(user.institucio)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     data_db = SessionLocal()
@@ -185,14 +206,7 @@ def update_user(
         display_name = ConfiguracioRepository.get(data_db, "institucio_display_name") or user.institucio
     finally:
         data_db.close()
-    return UserResponse(
-        id=user.id,
-        username=user.username,
-        institucio=user.institucio,
-        institucio_display_name=display_name,
-        role=user.role,
-        active=user.active
-    )
+    return _user_response(user, display_name)
 
 
 @router.delete("/{user_id}")
@@ -242,7 +256,8 @@ def get_profile(current_user=Depends(require_user)):
         "role": current_user.role,
         "institucio": current_user.institucio,
         "institucio_display_name": display_name,
-        "idioma": idioma
+        "idioma": idioma,
+        "permissions": get_user_permissions(current_user),
     }
 
 

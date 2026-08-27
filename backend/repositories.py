@@ -8,6 +8,7 @@ from sqlalchemy import and_, or_, func
 from typing import List, Optional, Dict, Any
 from datetime import date, datetime
 from pathlib import Path
+import json
 import sys
 
 
@@ -22,16 +23,18 @@ try:
     from .models import (
         Nivell, Assignatura, Grup, Aula, AbreviaturaGrup,
         Vigilancia, Substitucio,
-        GrupAlliberat, Configuracio, XMLVersion, Curs, User
+        GrupAlliberat, Configuracio, XMLVersion, Curs, User, UserPermissionAudit
     )
+    from .permissions import get_user_permissions, serialize_permissions
 except ImportError:
     # When running as script, add current dir to path to find local models
     sys.path.insert(0, str(Path(__file__).parent))
     from models import (
         Nivell, Assignatura, Grup, Aula, AbreviaturaGrup,
         Vigilancia, Substitucio,
-        GrupAlliberat, Configuracio, XMLVersion, Curs, User
+        GrupAlliberat, Configuracio, XMLVersion, Curs, User, UserPermissionAudit
     )
+    from permissions import get_user_permissions, serialize_permissions
 
 
 class VigilanciaRepository:
@@ -1643,14 +1646,16 @@ class UserRepository:
         password_hash: str,
         institucio: str,
         role: str = "user",
-        active: bool = True
+        active: bool = True,
+        permissions: Optional[List[str]] = None,
     ) -> User:
         user = User(
             username=username,
             password_hash=password_hash,
             institucio=institucio,
             role=role,
-            active=active
+            active=active,
+            permissions=serialize_permissions(permissions) if permissions is not None else None,
         )
         db.add(user)
         db.commit()
@@ -1658,9 +1663,30 @@ class UserRepository:
         return user
 
     @staticmethod
-    def update(db: Session, user: User, **fields) -> User:
+    def update(
+        db: Session,
+        user: User,
+        *,
+        actor_username: Optional[str] = None,
+        **fields,
+    ) -> User:
+        audit_permissions = actor_username is not None and (
+            "permissions" in fields or "role" in fields
+        )
+        permissions_before = get_user_permissions(user) if audit_permissions else None
         for key, value in fields.items():
             setattr(user, key, value)
+        if audit_permissions:
+            permissions_after = get_user_permissions(user)
+            if "permissions" in fields or permissions_before != permissions_after:
+                db.add(UserPermissionAudit(
+                    institucio=user.institucio,
+                    actor_username=actor_username,
+                    target_user_id=user.id,
+                    target_username=user.username,
+                    permissions_before=json.dumps(permissions_before, ensure_ascii=False),
+                    permissions_after=json.dumps(permissions_after, ensure_ascii=False),
+                ))
         db.commit()
         db.refresh(user)
         return user

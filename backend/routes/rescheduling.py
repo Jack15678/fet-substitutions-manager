@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
-from auth_utils import get_current_user, require_admin
+from auth_utils import require_admin, require_any_permission, require_permission
 from dependencies import get_db
 from models import (
     AbsenceCase,
@@ -54,6 +54,7 @@ from rescheduling_service import (
     version_for_date,
 )
 from time_utils import hong_kong_now, hong_kong_today, utc_iso, utc_now
+from permissions import user_has_permission
 
 
 router = APIRouter(tags=["調課推薦"])
@@ -304,7 +305,12 @@ def _mark_special_adjustments_for_review(db: Session, version: TimetableVersion,
 
 
 @router.get("/api/timetables")
-def list_timetable_versions(db: Session = Depends(get_db)):
+def list_timetable_versions(
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_any_permission(
+        "workbench.view", "timetable.upload", "timetable.manage"
+    )),
+):
     versions = (db.query(TimetableVersion)
                 .order_by(TimetableVersion.effective_from.desc(), TimetableVersion.id.desc()).all())
     current = version_for_date(db, hong_kong_today())
@@ -339,7 +345,7 @@ def update_timetable_version(
     version_id: int,
     request: UpdateTimetableRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("timetable.manage")),
 ):
     version = db.get(TimetableVersion, version_id)
     if not version:
@@ -388,7 +394,7 @@ def update_timetable_version(
 def delete_timetable_version(
     version_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("timetable.manage")),
 ):
     version = db.get(TimetableVersion, version_id)
     if not version:
@@ -413,7 +419,7 @@ async def preview_import(
     class_workbook: UploadFile = File(...),
     teacher_workbook: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("timetable.upload")),
 ):
     if not class_workbook.filename.lower().endswith(".xls"):
         raise HTTPException(400, "班別時間表必須是 .xls")
@@ -447,7 +453,7 @@ def activate_import(
     preview_id: str,
     request: ActivateTimetableRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("timetable.manage")),
 ):
     preview = db.get(TimetableImportPreview, preview_id)
     if not preview:
@@ -533,7 +539,7 @@ def activate_import(
 def discard_import_preview(
     preview_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("timetable.upload")),
 ):
     preview = db.get(TimetableImportPreview, preview_id)
     if not preview:
@@ -549,7 +555,7 @@ def save_import_resolutions(
     preview_id: str,
     request: SaveImportResolutionsRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("timetable.upload")),
 ):
     preview = db.get(TimetableImportPreview, preview_id)
     if not preview:
@@ -576,7 +582,13 @@ def save_import_resolutions(
 
 
 @router.get("/api/timetables/current")
-def current_timetable(data: Optional[date] = None, db: Session = Depends(get_db)):
+def current_timetable(
+    data: Optional[date] = None,
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_any_permission(
+        "workbench.view", "timetable.upload", "timetable.manage"
+    )),
+):
     query_date = data or hong_kong_today()
     version = version_for_date(db, query_date)
     if not version:
@@ -595,7 +607,11 @@ def current_timetable(data: Optional[date] = None, db: Session = Depends(get_db)
 
 
 @router.get("/api/rescheduling/teachers")
-def list_teachers(data: Optional[date] = None, db: Session = Depends(get_db)):
+def list_teachers(
+    data: Optional[date] = None,
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_any_permission("workbench.view", "records.manage")),
+):
     version = version_for_date(db, data or hong_kong_today())
     if not version:
         if data is not None:
@@ -612,7 +628,7 @@ def teacher_statistics(
     start_date: date,
     end_date: date,
     db: Session = Depends(get_db),
-    _current_user=Depends(require_admin),
+    _current_user=Depends(require_permission("statistics.view")),
 ):
     if start_date > end_date:
         raise HTTPException(400, "結束日期不可早於開始日期")
@@ -726,7 +742,7 @@ def update_rescheduling_config(
 def export_daily_xlsx(
     data: date,
     db: Session = Depends(get_db),
-    _current_user=Depends(require_admin),
+    _current_user=Depends(require_permission("exports.download")),
 ):
     entries = daily_export_data(db, data)
     if not entries:
@@ -743,7 +759,7 @@ def export_daily_xlsx(
 def export_daily_pdf(
     data: date,
     db: Session = Depends(get_db),
-    _current_user=Depends(require_admin),
+    _current_user=Depends(require_permission("exports.download")),
 ):
     entries = daily_export_data(db, data)
     if not entries:
@@ -818,11 +834,29 @@ def _delete_adjustment_rows(db: Session, adjustment: ScheduleAdjustment) -> None
     db.delete(adjustment)
 
 
+def _can_manage_records(current_user) -> bool:
+    # Direct service-level callers predate route dependencies and omit role;
+    # authenticated ORM users always have it.
+    if not hasattr(current_user, "role"):
+        return current_user.username == "admin"
+    return (
+        user_has_permission(current_user, "records.view")
+        and user_has_permission(current_user, "records.manage")
+    )
+
+
+def _ensure_absence_editable(current_user, absence: AbsenceCase) -> bool:
+    can_manage_records = _can_manage_records(current_user)
+    if not can_manage_records and absence.created_by != current_user.username:
+        raise HTTPException(403, "只可修改或撤回自己建立的缺席紀錄")
+    return can_manage_records
+
+
 @router.post("/api/absence-cases")
 def create_absence(
     request: AbsenceCreateRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_permission("absence.create")),
 ):
     professor, periods = _validate_absence_request(db, request)
     if professor.id not in _professors_with_lessons(db, request.data, periods):
@@ -848,7 +882,7 @@ def create_absence(
 def create_absences_batch(
     request: AbsenceBatchCreateRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_permission("absence.create")),
 ):
     keys = [(item.professor_id, item.data) for item in request.items]
     if len(set(keys)) != len(keys):
@@ -856,17 +890,20 @@ def create_absences_batch(
 
     validated = []
     for item in request.items:
+        existing = (db.query(AbsenceCase)
+                    .filter_by(professor_id=item.professor_id, data=item.data)
+                    .filter(AbsenceCase.status != "cancelled").first())
+        if existing:
+            requested_periods = sorted(set(item.periods))
+            can_manage_records = _ensure_absence_editable(current_user, existing)
+            confirmed = (db.query(ScheduleAdjustment)
+                         .filter_by(absence_case_id=existing.id, status="confirmed").count())
+            periods_changed = json.loads(existing.periods_json or "[]") != requested_periods
+            if confirmed and (periods_changed or not can_manage_records):
+                raise HTTPException(409, "已有確認的調課，請先撤銷後再修改缺席節次")
         professor, periods = _validate_absence_request(db, item, allow_existing=True)
         if professor.id not in _professors_with_lessons(db, item.data, periods):
             raise HTTPException(400, f"{professor.nom} 在 {item.data.isoformat()} 所選節次沒有需要處理的課堂")
-        existing = (db.query(AbsenceCase)
-                    .filter_by(professor_id=professor.id, data=item.data)
-                    .filter(AbsenceCase.status != "cancelled").first())
-        if existing and json.loads(existing.periods_json or "[]") != periods:
-            confirmed = (db.query(ScheduleAdjustment)
-                         .filter_by(absence_case_id=existing.id, status="confirmed").count())
-            if confirmed:
-                raise HTTPException(409, "已有確認的調課，請先撤銷後再修改缺席節次")
         validated.append((item, professor, periods, existing))
 
     selected_cases: list[AbsenceCase] = []
@@ -916,12 +953,14 @@ def create_absences_batch(
 def cancel_absences_batch(
     request: AbsenceBatchCancelRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_any_permission("absence.create", "records.manage")),
 ):
     absence_ids = list(dict.fromkeys(request.absence_case_ids))
     absences = [db.get(AbsenceCase, absence_id) for absence_id in absence_ids]
     if any(absence is None or absence.status == "cancelled" for absence in absences):
         raise HTTPException(404, "找不到有效的缺席紀錄")
+    for absence in absences:
+        _ensure_absence_editable(current_user, absence)
     locked = (db.query(ScheduleAdjustment)
               .filter(ScheduleAdjustment.absence_case_id.in_(absence_ids),
                       ScheduleAdjustment.status == "confirmed").count())
@@ -940,11 +979,16 @@ def update_absence(
     absence_id: int,
     request: AbsenceCreateRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_any_permission("absence.create", "records.manage")),
 ):
     absence = db.get(AbsenceCase, absence_id)
     if not absence:
         raise HTTPException(404, "找不到缺席紀錄")
+    can_manage_records = _ensure_absence_editable(current_user, absence)
+    if not can_manage_records and db.query(ScheduleAdjustment).filter_by(
+        absence_case_id=absence.id, status="confirmed"
+    ).count():
+        raise HTTPException(409, "已有鎖定的調課，請先撤銷調課")
     professor, periods = _validate_absence_request(db, request, absence.id)
     adjustments = db.query(ScheduleAdjustment).filter_by(absence_case_id=absence.id).all()
     removed_ids = [row.id for row in adjustments]
@@ -966,7 +1010,8 @@ def update_absence(
 def purge_absence(
     absence_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("records.manage")),
+    _records_user=Depends(require_permission("records.view")),
 ):
     absence = db.get(AbsenceCase, absence_id)
     if not absence:
@@ -985,7 +1030,11 @@ def purge_absence(
 
 
 @router.get("/api/absence-cases")
-def list_absences(data: Optional[date] = None, db: Session = Depends(get_db)):
+def list_absences(
+    data: Optional[date] = None,
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_permission("workbench.view")),
+):
     query = db.query(AbsenceCase)
     if data:
         query = query.filter_by(data=data)
@@ -999,10 +1048,19 @@ def list_absences(data: Optional[date] = None, db: Session = Depends(get_db)):
 
 
 @router.post("/api/absence-cases/{absence_id}/analyze")
-def analyze(absence_id: int, db: Session = Depends(get_db)):
+def analyze(
+    absence_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("absence.create")),
+):
     absence = db.get(AbsenceCase, absence_id)
     if not absence or absence.status == "cancelled":
         raise HTTPException(404, "找不到有效的缺席紀錄")
+    can_manage_records = _ensure_absence_editable(current_user, absence)
+    if not can_manage_records and db.query(ScheduleAdjustment).filter_by(
+        absence_case_id=absence.id, status="confirmed"
+    ).count():
+        raise HTTPException(409, "已有鎖定的調課，請先撤銷調課")
     return analyze_absences(db, _active_absences_for_date(db, absence.data))
 
 
@@ -1010,11 +1068,12 @@ def analyze(absence_id: int, db: Session = Depends(get_db)):
 def cancel_absence(
     absence_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_any_permission("absence.create", "records.manage")),
 ):
     absence = db.get(AbsenceCase, absence_id)
     if not absence or absence.status == "cancelled":
         raise HTTPException(404, "找不到有效的缺席紀錄")
+    _ensure_absence_editable(current_user, absence)
     locked = (db.query(ScheduleAdjustment).filter_by(absence_case_id=absence.id, status="confirmed").count())
     if locked:
         raise HTTPException(409, "請先撤銷這次缺席下已確認的調課")
@@ -1195,7 +1254,8 @@ def _manual_arrangements(db: Session) -> dict:
 @router.get("/api/manual-arrangements")
 def list_manual_arrangements(
     db: Session = Depends(get_db),
-    _current_user=Depends(require_admin),
+    _current_user=Depends(require_permission("manual_arrangement.manage")),
+    _workbench_user=Depends(require_permission("workbench.view")),
 ):
     return _manual_arrangements(db)
 
@@ -1204,7 +1264,8 @@ def list_manual_arrangements(
 def confirm_manual_cover(
     request: ManualCoverRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("manual_arrangement.manage")),
+    _workbench_user=Depends(require_permission("workbench.view")),
 ):
     if request.co_teacher_only == (request.replacement_teacher_id is not None):
         raise HTTPException(400, "請選擇原任老師單獨上課或一位代課老師")
@@ -1288,7 +1349,7 @@ def confirm_manual_cover(
 def confirm_adjustment(
     request: ConfirmRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_permission("adjustment.confirm")),
 ):
     if request.expected_revision != get_schedule_revision(db):
         raise HTTPException(409, "課表已被其他人修改，請重新分析")
@@ -1317,7 +1378,8 @@ def confirm_adjustment(
 def manual_adjustment(
     request: ManualAdjustmentRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("manual_arrangement.manage")),
+    _workbench_user=Depends(require_permission("workbench.view")),
 ):
     if request.expected_revision != get_schedule_revision(db):
         raise HTTPException(409, "課表已被其他人修改，請重新載入")
@@ -1355,7 +1417,11 @@ def manual_adjustment(
 
 
 @router.get("/api/adjustments")
-def list_adjustments(limit: int = 50, db: Session = Depends(get_db)):
+def list_adjustments(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_permission("records.view")),
+):
     rows = db.query(ScheduleAdjustment).order_by(ScheduleAdjustment.id.desc()).limit(min(limit, 200)).all()
     return [_serialize_adjustment(db, row) for row in rows]
 
@@ -1365,7 +1431,8 @@ def update_adjustment(
     adjustment_id: int,
     request: UpdateAdjustmentRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("records.manage")),
+    _records_user=Depends(require_permission("records.view")),
 ):
     adjustment = db.get(ScheduleAdjustment, adjustment_id)
     if not adjustment:
@@ -1381,7 +1448,8 @@ def update_adjustment(
 def delete_adjustment(
     adjustment_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("records.manage")),
+    _records_user=Depends(require_permission("records.view")),
 ):
     adjustment = db.get(ScheduleAdjustment, adjustment_id)
     if not adjustment:
@@ -1410,6 +1478,7 @@ def list_records(
     status: str | None = None,
     kind: str | None = None,
     db: Session = Depends(get_db),
+    _current_user=Depends(require_permission("records.view")),
 ):
     if date_from and date_to and date_from > date_to:
         raise HTTPException(400, "開始日期不可遲於結束日期")
@@ -1610,7 +1679,8 @@ def delete_teacher_leave(
 def revert_adjustment(
     adjustment_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_permission("records.manage")),
+    _records_user=Depends(require_permission("records.view")),
 ):
     adjustment = db.get(ScheduleAdjustment, adjustment_id)
     if not adjustment:
@@ -1637,6 +1707,7 @@ def get_effective_timetable(
     professor_id: Optional[int] = None,
     class_code: Optional[str] = None,
     db: Session = Depends(get_db),
+    _current_user=Depends(require_permission("workbench.view")),
 ):
     professor_names = {row.id: row.nom for row in db.query(Professor).all()}
     rows = effective_occurrences(db, data, data)
@@ -1697,7 +1768,11 @@ def get_effective_timetable(
 
 
 @router.get("/api/calendar/closures")
-def get_closures(year: Optional[int] = None, db: Session = Depends(get_db)):
+def get_closures(
+    year: Optional[int] = None,
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_permission("workbench.view")),
+):
     query = db.query(SchoolClosure)
     if year is not None:
         if not 1900 <= year <= 2100:

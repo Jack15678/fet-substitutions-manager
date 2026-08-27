@@ -4,7 +4,7 @@
       <div><h2>{{ $t('statistics.title') }}</h2><p>{{ $t('statistics.description') }}</p></div>
     </header>
 
-    <section class="panel">
+    <section v-if="can('statistics.view')" class="panel">
       <div class="panel-title">
         <div><h3>{{ $t('statistics.matrixTitle') }}</h3><p>{{ $t('statistics.matrixHint') }}</p></div>
         <form class="range-form" @submit.prevent="loadStatistics">
@@ -28,7 +28,7 @@
       </div>
     </section>
 
-    <section class="panel export-panel">
+    <section v-if="can('exports.download')" class="panel export-panel">
       <div><h3>{{ $t('statistics.exportTitle') }}</h3><p>{{ $t('statistics.exportHint') }}</p></div>
       <label>{{ $t('statistics.exportDate') }}<input v-model="exportDate" type="date" /></label>
       <div class="actions">
@@ -40,12 +40,12 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Button from 'primevue/button'
 
-const props = defineProps({ dataGlobal: Date })
+const props = defineProps({ dataGlobal: Date, can: { type: Function, required: true } })
 const { locale, t } = useI18n()
 const iso = (value) => {
   const date = value || new Date()
@@ -97,7 +97,9 @@ const download = async (format) => {
   } finally { busy.value = '' }
 }
 
-onMounted(loadStatistics)
+watch(() => props.can('statistics.view'), (granted) => {
+  if (granted) loadStatistics()
+}, { immediate: true })
 </script>
 
 <style scoped>

@@ -343,8 +343,22 @@ class User(Base):
     institucio = Column(String, nullable=False)
     role = Column(String, default="user")
     active = Column(Boolean, default=True)
+    permissions = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserPermissionAudit(Base):
+    __tablename__ = 'user_permission_audits'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    institucio = Column(String, nullable=False)
+    actor_username = Column(String, nullable=False)
+    target_user_id = Column(Integer, nullable=False)
+    target_username = Column(String, nullable=False)
+    permissions_before = Column(Text, nullable=False)
+    permissions_after = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 class ExamRestriccio(Base):

@@ -10,7 +10,7 @@
 
     <section class="panel">
       <h3>{{ $t('importCenter.baseTitle') }}</h3>
-      <div class="import-grid">
+      <div v-if="can('timetable.upload')" class="import-grid">
         <label>{{ $t('importCenter.classFile') }}<input :key="`class-${uploadInputKey}`" type="file" accept=".xls" @change="classFile = $event.target.files[0]" /></label>
         <label>{{ $t('importCenter.teacherFile') }}<input :key="`teacher-${uploadInputKey}`" type="file" accept=".xlsx" @change="teacherFile = $event.target.files[0]" /></label>
         <label>{{ $t('importCenter.effectiveFrom') }}<input v-model="effectiveFrom" type="date" /></label>
@@ -30,8 +30,8 @@
           <thead><tr><th>{{ $t('importCenter.startDate') }}</th><th>{{ $t('importCenter.endDate') }}</th><th>{{ $t('importCenter.files') }}</th><th>{{ $t('importCenter.scale') }}</th><th>{{ $t('importCenter.linkedRecords') }}</th><th>{{ $t('importCenter.status') }}</th><th>{{ $t('importCenter.actions') }}</th></tr></thead>
           <tbody>
             <tr v-for="version in versions" :key="version.id">
-              <td><input v-model="version.draft_effective_from" type="date" /></td>
-              <td><input v-model="version.draft_effective_to" type="date" /></td>
+              <td><input v-model="version.draft_effective_from" type="date" :disabled="!can('timetable.manage')" /></td>
+              <td><input v-model="version.draft_effective_to" type="date" :disabled="!can('timetable.manage')" /></td>
               <td><div class="file-list"><span>{{ version.class_filename }}</span><span>{{ version.teacher_filename }}</span></div></td>
               <td>
                 {{ $t('importCenter.scaleValue', { lessons: version.lessons, teachers: version.teachers }) }}
@@ -39,14 +39,14 @@
                   <summary>{{ $t('importCenter.specialCount', { count: version.draft_special_subjects.length }) }}</summary>
                   <div>
                     <label v-for="subject in version.subjects" :key="subject" :class="{ selected: version.draft_special_subjects.includes(subject) }">
-                      <input v-model="version.draft_special_subjects" type="checkbox" :value="subject" />{{ subject }}
+                      <input v-model="version.draft_special_subjects" type="checkbox" :value="subject" :disabled="!can('timetable.manage')" />{{ subject }}
                     </label>
                   </div>
                 </details>
               </td>
               <td>{{ $t('importCenter.recordValue', { absences: version.absence_records, adjustments: version.adjustment_records }) }}</td>
               <td><span :class="['status', version.locked ? 'locked' : 'available']">{{ version.locked ? $t('importCenter.locked') : $t('importCenter.available') }}</span><span v-if="version.is_current" class="status current">{{ $t('importCenter.current') }}</span></td>
-              <td><div class="version-actions"><Button :label="$t('common.save')" size="small" :loading="busy === `version-${version.id}`" :disabled="!version.draft_effective_from || !version.draft_effective_to || !versionChanged(version)" @click="saveVersion(version)" /><Button :label="$t('common.delete')" size="small" severity="danger" outlined :disabled="version.locked" @click="removeVersion(version)" /></div></td>
+              <td><div v-if="can('timetable.manage')" class="version-actions"><Button :label="$t('common.save')" size="small" :loading="busy === `version-${version.id}`" :disabled="!version.draft_effective_from || !version.draft_effective_to || !versionChanged(version)" @click="saveVersion(version)" /><Button :label="$t('common.delete')" size="small" severity="danger" outlined :disabled="version.locked" @click="removeVersion(version)" /></div></td>
             </tr>
             <tr v-if="!versions.length"><td colspan="7" class="empty-row">{{ $t('importCenter.noVersions') }}</td></tr>
           </tbody>
@@ -66,8 +66,8 @@
         <div class="result-heading">
           <div><h3>{{ $t('importCenter.resultTitle') }}</h3><p class="muted">{{ $t('importCenter.resultHint') }}</p></div>
           <div class="result-actions">
-            <Button :label="$t('importCenter.cancelUpload')" severity="danger" text :loading="busy === 'discard'" @click="discardPreview" />
-            <Button :label="$t('importCenter.activate')" icon="pi pi-check" severity="success" :loading="busy === 'activate'" :disabled="hasErrors || hasUnresolvedReviews || !effectiveFrom || !effectiveTo" @click="activateImport" />
+            <Button v-if="can('timetable.upload')" :label="$t('importCenter.cancelUpload')" severity="danger" text :loading="busy === 'discard'" @click="discardPreview" />
+            <Button v-if="can('timetable.manage')" :label="$t('importCenter.activate')" icon="pi pi-check" severity="success" :loading="busy === 'activate'" :disabled="hasErrors || hasUnresolvedReviews || !effectiveFrom || !effectiveTo" @click="activateImport" />
           </div>
         </div>
         <fieldset class="special-subjects">
@@ -75,7 +75,7 @@
           <p class="muted">{{ $t('importCenter.specialSubjectsHint') }}</p>
           <div>
             <label v-for="subject in preview.subjects" :key="subject" :class="{ selected: specialSubjects.includes(subject) }">
-              <input v-model="specialSubjects" type="checkbox" :value="subject" />{{ subject }}
+              <input v-model="specialSubjects" type="checkbox" :value="subject" :disabled="!can('timetable.manage')" />{{ subject }}
             </label>
           </div>
         </fieldset>
@@ -84,7 +84,7 @@
         </ul>
         <p v-if="hasErrors" class="notice danger">{{ $t('importCenter.errorsBlock') }}</p>
         <p v-else-if="hasUnresolvedReviews" class="notice warning">{{ $t('importCenter.reviewsProgress', { confirmed: confirmedReviewCount, total: reviewIds.length, remaining: unresolvedReviewCount }) }}</p>
-        <div v-if="reviewIds.length" class="bulk-actions">
+        <div v-if="can('timetable.upload') && reviewIds.length" class="bulk-actions">
           <label><input type="checkbox" :checked="allReviewsSelected" @change="toggleAllReviews" />{{ $t('importCenter.selectAllReviews') }}</label>
           <span>{{ $t('importCenter.selectedReviews', { count: selectedReviewIds.length }) }}</span>
           <Button :label="$t('importCenter.clearSelection')" text size="small" :disabled="!selectedReviewIds.length" @click="selectedReviewIds = []" />
@@ -97,7 +97,7 @@
             <thead><tr><th>{{ $t('importCenter.selectReview') }}</th><th>{{ $t('importCenter.severity') }}</th><th>{{ $t('importCenter.weekdayPeriod') }}</th><th>{{ $t('rescheduling.class') }}</th><th>{{ $t('rescheduling.subject') }}</th><th>{{ $t('rescheduling.teacherColumn') }}</th><th>{{ $t('importCenter.classWorkbook') }}</th><th>{{ $t('importCenter.teacherWorkbook') }}</th><th>{{ $t('importCenter.decision') }}</th></tr></thead>
             <tbody>
               <tr v-for="(issue, index) in preview.issues" :key="issue.resolution_id || index">
-                <td><input v-if="issue.severity === 'review'" v-model="selectedReviewIds" type="checkbox" :value="resolutionId(issue)" /></td>
+                <td><input v-if="can('timetable.upload') && issue.severity === 'review'" v-model="selectedReviewIds" type="checkbox" :value="resolutionId(issue)" /></td>
                 <td><span :class="['status', issue.severity]">{{ issue.severity === 'error' ? $t('common.error') : $t('importCenter.review') }}</span></td>
                 <td>{{ weekdayLabel(issue.weekday) }} {{ $t('records.period', { period: issue.period }) }}</td>
                 <td>{{ issue.class_code }}</td><td>{{ issue.subject }}</td><td>{{ issue.teacher || '-' }}</td>
@@ -105,10 +105,11 @@
                 <td>
                   <div v-if="issue.severity === 'review'" class="resolution-cell">
                     <div class="resolution-choice">
-                      <label :class="{ selected: resolutions[resolutionId(issue)] === 'class' }"><input v-model="resolutions[resolutionId(issue)]" type="radio" :name="resolutionId(issue)" value="class" />{{ $t(issue.code === 'teacher_extra_assignment' ? 'importCenter.ignoreExtraTeacher' : 'importCenter.useClassWorkbook') }}</label>
-                      <label :class="{ selected: resolutions[resolutionId(issue)] === 'teacher' }"><input v-model="resolutions[resolutionId(issue)]" type="radio" :name="resolutionId(issue)" value="teacher" />{{ $t(issue.code === 'teacher_extra_assignment' ? 'importCenter.addCoTeacher' : 'importCenter.useTeacherWorkbook') }}</label>
+                      <label :class="{ selected: resolutions[resolutionId(issue)] === 'class' }"><input v-model="resolutions[resolutionId(issue)]" type="radio" :name="resolutionId(issue)" value="class" :disabled="!can('timetable.upload')" />{{ $t(issue.code === 'teacher_extra_assignment' ? 'importCenter.ignoreExtraTeacher' : 'importCenter.useClassWorkbook') }}</label>
+                      <label :class="{ selected: resolutions[resolutionId(issue)] === 'teacher' }"><input v-model="resolutions[resolutionId(issue)]" type="radio" :name="resolutionId(issue)" value="teacher" :disabled="!can('timetable.upload')" />{{ $t(issue.code === 'teacher_extra_assignment' ? 'importCenter.addCoTeacher' : 'importCenter.useTeacherWorkbook') }}</label>
                     </div>
                     <Button
+                      v-if="can('timetable.upload')"
                       :label="$t(isResolutionConfirmed(issue) ? 'importCenter.confirmedDecision' : 'importCenter.confirmThisDecision')"
                       icon="pi pi-check"
                       size="small"
@@ -140,6 +141,7 @@ import axios from 'axios'
 import Button from 'primevue/button'
 
 const { t } = useI18n()
+defineProps({ can: { type: Function, required: true } })
 
 const timetable = ref({ active: false })
 const versions = ref([])
