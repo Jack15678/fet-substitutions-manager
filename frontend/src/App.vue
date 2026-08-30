@@ -208,12 +208,14 @@
 
       <!-- Diàlegs -->
       <ConfiguracioDialog
+        v-if="mostrarConfiguracio"
         v-model:visible="mostrarConfiguracio"
         :currentRole="userProfile?.role"
         :currentInstitucio="userProfile?.institucio"
         :dataGlobal="dataSeleccionada"
       />
       <ProfileDialog
+        v-if="mostrarPerfil"
         v-model:visible="mostrarPerfil"
         :username="userProfile?.username"
       />
@@ -261,7 +263,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch, defineAsyncComponent } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Toast from 'primevue/toast'
@@ -271,17 +273,18 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
 import Dialog from 'primevue/dialog'
-import ReschedulingView from './views/ReschedulingView.vue'
-import RecordsView from './views/RecordsView.vue'
-import StatisticsView from './views/StatisticsView.vue'
-import SettingsView from './views/SettingsView.vue'
-import TimetableImportView from './views/TimetableImportView.vue'
-import ConfiguracioDialog from './components/ConfiguracioDialog.vue'
-import ProfileDialog from './components/ProfileDialog.vue'
 import DisplayPreferences from './components/DisplayPreferences.vue'
 import DailyExportActions from './components/DailyExportActions.vue'
 import { setLocale } from './i18n'
 import { can as hasPermission } from './permissions'
+
+const ReschedulingView = defineAsyncComponent(() => import('./views/ReschedulingView.vue'))
+const RecordsView = defineAsyncComponent(() => import('./views/RecordsView.vue'))
+const StatisticsView = defineAsyncComponent(() => import('./views/StatisticsView.vue'))
+const SettingsView = defineAsyncComponent(() => import('./views/SettingsView.vue'))
+const TimetableImportView = defineAsyncComponent(() => import('./views/TimetableImportView.vue'))
+const ConfiguracioDialog = defineAsyncComponent(() => import('./components/ConfiguracioDialog.vue'))
+const ProfileDialog = defineAsyncComponent(() => import('./components/ProfileDialog.vue'))
 
 const { t, locale } = useI18n()
 const toast = useToast()

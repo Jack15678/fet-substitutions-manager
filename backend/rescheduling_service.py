@@ -878,15 +878,30 @@ def get_max_cycle_lessons(db: Session) -> int:
         return 3
 
 
+def _occupancy_index(occurrences: list[dict]) -> tuple[dict[str, dict], dict[tuple, set[str]], dict[tuple, set[str]]]:
+    by_id = {occurrence["occurrence_id"]: occurrence for occurrence in occurrences}
+    teachers: dict[tuple, set[str]] = {}
+    classes: dict[tuple, set[str]] = {}
+    for occurrence in occurrences:
+        occurrence_id = occurrence["occurrence_id"]
+        slot = occurrence["date"], int(occurrence["period"])
+        classes.setdefault((occurrence["class_code"], *slot), set()).add(occurrence_id)
+        for teacher in occurrence["teachers"]:
+            teachers.setdefault((int(teacher), *slot), set()).add(occurrence_id)
+    return by_id, teachers, classes
+
+
 def validate_move_legs(legs: list[dict], occurrences: list[dict], absences: set,
-                       closures: set[date] | None = None, max_legs: int = 3) -> tuple[bool, str]:
+                       closures: set[date] | None = None, max_legs: int = 3,
+                       occupancy: tuple[dict[str, dict], dict[tuple, set[str]], dict[tuple, set[str]]] | None = None,
+                       ) -> tuple[bool, str]:
     if not 2 <= len(legs) <= max_legs:
         return False, f"調課必須包含 2 至 {max_legs} 堂課"
     classes = {leg["class_code"] for leg in legs}
     if len(classes) != 1:
         return False, "連鎖調課只可在同一班別內進行"
     source_ids = {leg["occurrence_id"] for leg in legs}
-    source_map = {occ["occurrence_id"]: occ for occ in occurrences}
+    source_map, occupied_teachers, occupied_classes = occupancy or _occupancy_index(occurrences)
     if len(source_ids) != len(legs) or any(source_id not in source_map for source_id in source_ids):
         return False, "課堂來源已改變，請重新分析"
     if any(source_map[source_id]["locked"] for source_id in source_ids):
@@ -910,17 +925,12 @@ def validate_move_legs(legs: list[dict], occurrences: list[dict], absences: set,
             teacher_destinations.add(key)
             if key in absences:
                 return False, "教師在目的節次缺席"
-            for occ in occurrences:
-                if occ["occurrence_id"] in source_ids:
-                    continue
-                if occ["date"] == destination_date and occ["period"] == destination_period and int(teacher) in occ["teachers"]:
-                    return False, "教師在目的節次已有課"
-        for occ in occurrences:
-            if occ["occurrence_id"] in source_ids:
-                continue
-            if (occ["class_code"] == leg["class_code"] and occ["date"] == destination_date
-                    and occ["period"] == destination_period):
-                return False, "班別在目的節次已有課"
+            occupants = occupied_teachers.get(key)
+            if occupants and not occupants.issubset(source_ids):
+                return False, "教師在目的節次已有課"
+        occupants = occupied_classes.get(class_key)
+        if occupants and not occupants.issubset(source_ids):
+            return False, "班別在目的節次已有課"
     return True, ""
 
 
@@ -960,11 +970,15 @@ def _resources(candidate: dict) -> set[tuple]:
 def choose_global(option_groups: list[list[dict]]) -> dict[int, dict]:
     """Maximize solved lessons, then finish sooner and move fewer lessons."""
     order = sorted(range(len(option_groups)), key=lambda index: (len(option_groups[index]) or 999, index))
+    resources = {
+        id(candidate): _resources(candidate)
+        for options in option_groups for candidate in options
+    }
     used: set[tuple] = set()
     best: dict[int, dict] = {}
     for index in order:
         for candidate in option_groups[index]:
-            candidate_resources = _resources(candidate)
+            candidate_resources = resources[id(candidate)]
             if candidate_resources.isdisjoint(used):
                 best[index] = candidate
                 used |= candidate_resources
@@ -985,28 +999,34 @@ def choose_global(option_groups: list[list[dict]]) -> dict[int, dict]:
     # ponytail: bounded exact search; raise the ceiling or use CP-SAT only if real batches outgrow it.
     max_visits = 50_000
 
-    def visit(position: int, used: set[tuple], chosen: dict[int, dict]):
+    def visit(position: int, used: set[tuple], chosen: dict[int, dict], chosen_score: tuple[int, ...]):
         nonlocal best_score, best, visits
         if visits >= max_visits:
             return
         visits += 1
-        if len(chosen) + len(order) - position < best_score[0]:
+        if chosen_score[0] + len(order) - position < best_score[0]:
             return
         if position == len(order):
-            chosen_score = score(chosen)
             if chosen_score > best_score:
                 best_score, best = chosen_score, dict(chosen)
             return
         index = order[position]
         for candidate in option_groups[index]:
-            candidate_resources = _resources(candidate)
+            candidate_resources = resources[id(candidate)]
             if candidate_resources.isdisjoint(used):
                 chosen[index] = candidate
-                visit(position + 1, used | candidate_resources, chosen)
+                visit(position + 1, used | candidate_resources, chosen, (
+                    chosen_score[0] + 1,
+                    chosen_score[1] - candidate.get("special_cross_day_moves", 0),
+                    chosen_score[2] - candidate.get("breaks_consecutive_lessons", 0),
+                    chosen_score[3] - candidate.get("new_consecutive_classes", 0),
+                    chosen_score[4] - candidate["day_distance"],
+                    chosen_score[5] - candidate["moved_lessons"],
+                ))
                 chosen.pop(index, None)
-        visit(position + 1, used, chosen)
+        visit(position + 1, used, chosen, chosen_score)
 
-    visit(0, set(), {})
+    visit(0, set(), {}, (0, 0, 0, 0, 0, 0))
     return best
 
 
@@ -1024,6 +1044,7 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
         occurrence["occurrence_id"]: (occurrence["date"], int(occurrence["period"]))
         for occurrence in occurrences
     }
+    occupancy = _occupancy_index(occurrences)
     consecutive_pairs = _core_consecutive_pairs(occurrences)
     absences = absence_keys(db, start, dates[-1])
     closures = {row.data for row in db.query(SchoolClosure).all()}
@@ -1082,7 +1103,7 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
                     _leg(target, other["date"], other["period"]),
                     _leg(other, target["date"], target["period"]),
                 ]
-                ok, _ = validate_move_legs(legs, occurrences, absences, closures)
+                ok, _ = validate_move_legs(legs, occurrences, absences, closures, occupancy=occupancy)
                 if ok:
                     label = "同日直接互調" if day == start else f"與 {day.isoformat()} 直接互調"
                     candidate = _candidate("direct_swap", target, legs, start, label)
@@ -1108,7 +1129,7 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
                         for source, destination in zip(cycle, cycle[1:] + cycle[:1])
                     ]
                     ok, _ = validate_move_legs(
-                        legs, occurrences, absences, closures, max_cycle_lessons
+                        legs, occurrences, absences, closures, max_cycle_lessons, occupancy
                     )
                     if ok:
                         label = (f"同班 {cycle_length} 堂連鎖互調" if day == start else
