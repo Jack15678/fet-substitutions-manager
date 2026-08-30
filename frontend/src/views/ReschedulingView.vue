@@ -45,7 +45,7 @@
           <label>{{ $t('rescheduling.candidates') }}
             <select v-model="selectedCandidates[task.task_key]">
               <option v-for="candidate in task.alternatives" :key="candidate.id" :value="candidate.id">
-                {{ kindLabel(candidate.kind) }} · {{ candidate.reason }}{{ candidate.special_cross_day_moves ? ` · ${$t('rescheduling.specialCourseLater')}` : '' }}
+                {{ optionLabel(candidate) }}{{ candidate.special_cross_day_moves ? ` · ${$t('rescheduling.specialCourseLater')}` : '' }}
               </option>
             </select>
           </label>
@@ -58,6 +58,7 @@
           </div>
           <div class="candidate-actions">
             <Button :label="$t('rescheduling.verifyTimetables')" severity="secondary" outlined :loading="verificationLoading" @click="verifyTask(task)" />
+            <Button v-if="can('manual_arrangement.manage')" :label="$t('rescheduling.useManualInstead')" severity="secondary" outlined @click="openManualPanel(task.task_key)" />
             <Button v-if="can('adjustment.confirm')" :label="$t('rescheduling.confirmArrangement')" severity="success" :loading="busy === task.task_key" @click="confirmTask(task)" />
           </div>
         </template>
@@ -98,6 +99,7 @@
               <span>{{ dateLabel(task.target.date) }} · {{ $t('records.period', { period: task.target.period }) }}</span>
               <strong>{{ task.target.class_code }} · {{ task.target.subject }}</strong>
               <small>{{ task.absent_teacher_name }}</small>
+              <span :class="['status', task.status]">{{ task.status === 'recommended' ? $t('rescheduling.recommendable') : $t('rescheduling.unresolved') }}</span>
             </button>
           </div>
         </section>
@@ -228,6 +230,26 @@
             <label>{{ $t('rescheduling.absenceDate') }}
               <input v-model="activeAbsenceEntry.data" type="date" required @change="loadAbsenceEntryContext(activeAbsenceEntry)" />
             </label>
+            <label>
+              <span>{{ $t('rescheduling.absenceReason') }} <span class="required-marker" aria-hidden="true">*</span></span>
+              <select
+                :id="`absence-reason-${activeAbsenceEntry.id}`"
+                v-model="activeAbsenceEntry.reason_type"
+                :class="{ 'field-invalid': reasonErrorEntryId === activeAbsenceEntry.id }"
+                :aria-invalid="reasonErrorEntryId === activeAbsenceEntry.id"
+                :aria-describedby="reasonErrorEntryId === activeAbsenceEntry.id ? `absence-reason-error-${activeAbsenceEntry.id}` : undefined"
+                required
+                @change="clearReasonError(activeAbsenceEntry)"
+                @invalid.prevent="showReasonError(activeAbsenceEntry, $event.target)"
+              >
+                <option value="">{{ $t('rescheduling.selectAbsenceReason') }}</option>
+                <option v-for="reason in absenceReasonTypes" :key="reason" :value="reason">{{ $t(`rescheduling.absenceReasons.${reason}`) }}</option>
+              </select>
+              <small v-if="reasonErrorEntryId === activeAbsenceEntry.id" :id="`absence-reason-error-${activeAbsenceEntry.id}`" class="field-error" role="alert">{{ $t('rescheduling.absenceReasonRequired') }}</small>
+            </label>
+            <label v-if="activeAbsenceEntry.reason_type === 'other'">{{ $t('rescheduling.absenceReasons.other') }}
+              <input v-model="activeAbsenceEntry.reason_detail" type="text" maxlength="200" :placeholder="$t('rescheduling.otherReasonPlaceholder')" />
+            </label>
           </div>
           <p v-if="!activeAbsenceEntry.loading && activeAbsenceEntry.data && !activeAbsenceEntry.active" class="entry-error">{{ $t('rescheduling.invalidDate') }}</p>
           <div class="period-field">
@@ -246,16 +268,16 @@
         <p v-if="absenceError" class="absence-form-error" role="alert">{{ absenceError }}</p>
         <footer class="absence-form-actions">
           <Button :label="$t('common.cancel')" outlined type="button" @click="absencePanelVisible = false" />
-          <Button type="submit" :label="$t('rescheduling.createAndAnalyze')" class="progress-fill-button" :class="{ 'is-progressing': busy === 'analyze' }" :loading="busy === 'analyze'" :disabled="!canAnalyze" />
+          <Button type="submit" :label="$t('rescheduling.createAndAnalyze')" class="progress-fill-button" :class="{ 'is-progressing': busy === 'analyze' }" :loading="busy === 'analyze'" :disabled="!canAttemptAnalyze" />
         </footer>
       </section>
     </form>
 
-    <Dialog v-model:visible="verificationVisible" modal :header="$t('rescheduling.verifyTitle')" :style="{ width: 'min(96vw, 1120px)' }">
+    <Dialog v-model:visible="verificationVisible" modal :header="$t('rescheduling.verifyTitle')" :style="{ width: 'min(96vw, 1120px)' }" class="verification-dialog">
       <div v-if="verificationLoading" class="verification-loading">{{ $t('common.loading') }}</div>
       <div v-else class="verification-content">
         <p>{{ $t('rescheduling.verifyHint') }}</p>
-        <section v-for="teacher in verificationTimetables" :key="teacher.id" class="verification-teacher">
+        <section v-for="(teacher, teacherIndex) in verificationTimetables" :key="teacher.id" :class="['verification-teacher', `teacher-color-${teacherIndex + 1}`]">
           <h4>{{ teacher.name }}</h4>
           <div class="verification-wrap">
             <table class="verification-timetable">
@@ -264,11 +286,16 @@
                 <tr v-for="day in teacher.days" :key="day.date">
                   <th>{{ dateLabel(day.date) }}</th>
                   <td v-for="slot in day.slots" :key="slot.period">
-                    <div v-for="lesson in slot.lessons" :key="lesson.key" :class="['verification-lesson', { adjusted: lesson.adjusted }]">
-                      <small v-if="lesson.adjusted">{{ $t('rescheduling.adjusted') }}</small>
-                      <strong>{{ lesson.class_code }}</strong><span>{{ lesson.subject }}</span>
+                    <div v-if="slot.changed" class="verification-change">
+                      <div><small>{{ $t('rescheduling.originalArrangement') }}</small><span>{{ arrangementLabel(slot.before) }}</span></div>
+                      <div><small>{{ $t('rescheduling.newArrangement') }}</small><span>{{ arrangementLabel(slot.after) }}</span></div>
                     </div>
-                    <span v-if="!slot.lessons.length" class="slot-empty">—</span>
+                    <template v-else>
+                      <div v-for="lesson in slot.after" :key="lesson.key" class="verification-lesson">
+                        <strong>{{ lesson.class_code }}</strong><span>{{ lesson.subject }}</span>
+                      </div>
+                    </template>
+                    <span v-if="!slot.changed && !slot.after.length" class="slot-empty">—</span>
                   </td>
                 </tr>
               </tbody>
@@ -407,11 +434,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
+import { candidateOptionLabel } from './rescheduling/candidateLabel.js'
 
 const props = defineProps({ dataGlobal: Date, isAdmin: Boolean, can: { type: Function, required: true } })
 const { t, locale } = useI18n()
@@ -426,11 +454,14 @@ const busy = ref('')
 const dateContextLoading = ref(false)
 const timetable = ref({ active: false })
 let absenceEntryId = 0
+const absenceReasonTypes = ['sick', 'personal', 'official', 'training', 'other']
 const newAbsenceEntry = () => ({
   id: ++absenceEntryId,
   professor_id: null,
   data: iso(props.dataGlobal),
   periods: [],
+  reason_type: '',
+  reason_detail: '',
   teachers: [],
   active: false,
   loading: false,
@@ -445,6 +476,7 @@ const selectedManualTaskKey = ref('')
 const selectedManualTeacherId = ref(null)
 const absenceEntries = ref([])
 const activeAbsenceEntryId = ref(null)
+const reasonErrorEntryId = ref(null)
 const absenceError = ref('')
 const currentAbsenceIds = ref([])
 const analysis = ref(null)
@@ -479,9 +511,10 @@ const adjustmentTeacherNames = (source, leg) => {
   }
   return leg.teacher_names
 }
-const canAnalyze = computed(() => absenceEntries.value.length > 0 && absenceEntries.value.every(entry => (
+const canAttemptAnalyze = computed(() => absenceEntries.value.length > 0 && absenceEntries.value.every(entry => (
   !entry.loading && entry.active && entry.professor_id && entry.data && entry.periods.length
 )))
+const canAnalyze = computed(() => canAttemptAnalyze.value && absenceEntries.value.every(entry => absenceReasonTypes.includes(entry.reason_type)))
 const activeAbsenceEntry = computed(() => absenceEntries.value.find(entry => entry.id === activeAbsenceEntryId.value))
 const affectedGroups = computed(() => (effective.value.adjustments || []).map(adjustment => ({
   id: adjustment.id,
@@ -562,6 +595,7 @@ const loadAbsenceEntryContext = async (entry) => {
 const openAbsencePanel = () => {
   manualPanelVisible.value = false
   absenceError.value = ''
+  reasonErrorEntryId.value = null
   absenceEntries.value = [newAbsenceEntry()]
   activeAbsenceEntryId.value = absenceEntries.value[0].id
   absencePanelVisible.value = true
@@ -643,6 +677,7 @@ const addAbsenceEntry = () => {
 
 const removeAbsenceEntry = (id) => {
   absenceEntries.value = absenceEntries.value.filter(entry => entry.id !== id)
+  if (reasonErrorEntryId.value === id) reasonErrorEntryId.value = null
   if (!absenceEntries.value.some(entry => entry.id === activeAbsenceEntryId.value)) {
     activeAbsenceEntryId.value = absenceEntries.value[0]?.id || null
   }
@@ -655,6 +690,22 @@ const entryTeacherName = (entry) => entry.teachers.find(teacher => teacher.id ==
 const entryPeriodSummary = (entry) => entry.periods.length
   ? joinItems([...entry.periods].sort((a, b) => a - b).map(period => t('records.period', { period })))
   : t('rescheduling.noPeriodsSelected')
+const clearReasonError = (entry) => {
+  if (reasonErrorEntryId.value === entry.id && absenceReasonTypes.includes(entry.reason_type)) reasonErrorEntryId.value = null
+}
+const showReasonError = (entry, field) => {
+  reasonErrorEntryId.value = entry.id
+  field?.focus()
+}
+const focusMissingReason = async () => {
+  const entry = absenceEntries.value.find(item => !absenceReasonTypes.includes(item.reason_type))
+  if (!entry) return false
+  activeAbsenceEntryId.value = entry.id
+  reasonErrorEntryId.value = entry.id
+  await nextTick()
+  document.getElementById(`absence-reason-${entry.id}`)?.focus()
+  return true
+}
 
 const applyDefaults = () => {
   for (const key of Object.keys(selectedCandidates)) delete selectedCandidates[key]
@@ -664,6 +715,7 @@ const applyDefaults = () => {
 }
 
 const createAndAnalyze = async () => {
+  if (await focusMissingReason() || !canAnalyze.value) return
   busy.value = 'analyze'
   absenceError.value = ''
   try {
@@ -672,6 +724,8 @@ const createAndAnalyze = async () => {
         professor_id: entry.professor_id,
         data: entry.data,
         periods: entry.periods.map(Number),
+        reason_type: entry.reason_type,
+        reason_detail: entry.reason_type === 'other' ? entry.reason_detail.trim() || null : null,
       })),
     }, { _silent: true })).data
     currentAbsenceIds.value = created.batch_absence_case_ids
@@ -707,6 +761,19 @@ const selectedForTask = (task) => task.alternatives.filter(item => item.id === s
 const dateLabel = (value) => new Intl.DateTimeFormat(locale.value === 'en' ? 'en-HK' : 'zh-HK', {
   month: 'numeric', day: 'numeric', weekday: 'short'
 }).format(new Date(`${value}T12:00:00`))
+const optionDateLabel = (value) => {
+  const day = new Date(`${value}T12:00:00`)
+  return locale.value === 'en'
+    ? new Intl.DateTimeFormat('en-HK', { month: 'numeric', day: 'numeric', weekday: 'short' }).format(day)
+    : `${day.getMonth() + 1}/${day.getDate()}（${'日一二三四五六'[day.getDay()]}）`
+}
+const optionLabel = (candidate) => candidateOptionLabel(candidate, {
+  date: optionDateLabel, period: periodLabel, join: joinItems, kind: kindLabel,
+})
+const arrangementLabel = (lessons) => lessons.length
+  ? joinItems([...new Set(lessons.map(lesson => `${lesson.class_code} ${lesson.subject}`))])
+  : t('rescheduling.freePeriod')
+const legTeacherIds = (leg) => (leg.teachers || leg.teacher_ids || []).map(Number)
 const verifyTask = async (task) => {
   const candidate = selectedForTask(task)[0]
   if (!candidate) return
@@ -721,8 +788,8 @@ const verifyTask = async (task) => {
     const lessonsByDate = Object.fromEntries(responses)
     const teacherNames = new Map()
     for (const leg of candidate.legs) {
-      leg.teachers.forEach((id, index) => teacherNames.set(Number(id), leg.teacher_names[index] || String(id)))
-      if (leg.replacement_teacher_id) teacherNames.set(Number(leg.replacement_teacher_id), leg.replacement_teacher_name)
+      legTeacherIds(leg).forEach((id, index) => teacherNames.set(id, leg.teacher_names[index] || String(id)))
+      if (leg.replacement_teacher_id) teacherNames.set(Number(leg.replacement_teacher_id), leg.replacement_teacher_name || String(leg.replacement_teacher_id))
     }
     verificationTimetables.value = [...teacherNames.entries()].map(([teacherId, name]) => ({
       id: teacherId,
@@ -731,16 +798,22 @@ const verifyTask = async (task) => {
         date: day,
         slots: Array.from({ length: 9 }, (_, index) => {
           const period = index + 1
-          const unchanged = lessonsByDate[day]
-            .filter(lesson => lesson.period === period && lesson.teacher_ids.includes(teacherId))
-            .filter(lesson => !candidate.legs.some(leg => leg.from_date === day && leg.occurrence_id === lesson.occurrence_id
-              && (candidate.kind === 'emergency_cover' ? Number(leg.replaced_teacher_id) === teacherId : leg.teachers.map(Number).includes(teacherId))))
-            .map(lesson => ({ ...lesson, key: lesson.occurrence_id, adjusted: false }))
-          const adjusted = candidate.legs
-            .filter(leg => leg.to_date === day && Number(leg.to_period) === period
-              && (candidate.kind === 'emergency_cover' ? Number(leg.replacement_teacher_id) === teacherId : leg.teachers.map(Number).includes(teacherId)))
-            .map((leg, legIndex) => ({ ...leg, key: `${candidate.id}-${legIndex}-${teacherId}`, adjusted: true }))
-          return { period, lessons: [...adjusted, ...unchanged] }
+          const before = lessonsByDate[day]
+            .filter(lesson => Number(lesson.period) === period && lesson.teacher_ids.map(Number).includes(teacherId))
+            .map(lesson => ({ ...lesson, key: lesson.occurrence_id }))
+          const removals = candidate.legs.filter(leg => leg.from_date === day && Number(leg.from_period) === period
+            && (candidate.kind === 'emergency_cover'
+              ? Number(leg.replaced_teacher_id) === teacherId
+              : legTeacherIds(leg).includes(teacherId)))
+          const additions = candidate.legs.filter(leg => leg.to_date === day && Number(leg.to_period) === period
+            && (candidate.kind === 'emergency_cover'
+              ? Number(leg.replacement_teacher_id) === teacherId
+              : legTeacherIds(leg).includes(teacherId)))
+          const removedOccurrenceIds = new Set(removals.map(leg => leg.occurrence_id))
+          const after = before
+            .filter(lesson => !removedOccurrenceIds.has(lesson.occurrence_id))
+            .concat(additions.map((leg, legIndex) => ({ ...leg, key: `${candidate.id}-${legIndex}-${teacherId}` })))
+          return { period, before, after, changed: Boolean(removals.length || additions.length) }
         })
       }))
     }))
@@ -844,12 +917,12 @@ onMounted(async () => {
 .page-heading h2 { margin: 0 0 .3rem; color: var(--primary-color-dark); font-size: clamp(1.55rem, 3vw, 1.95rem); line-height: 1.2; letter-spacing: -.025em; }
 .page-heading p { max-width: 65ch; color: var(--text-color-secondary); }
 .page-actions { display: flex; align-items: center; gap: 1rem; }
-.revision { color: var(--text-color-secondary); font-size: .8rem; white-space: nowrap; }
+.revision { color: var(--text-color-secondary); font-size: var(--font-supporting); white-space: nowrap; }
 .manual-workspace { display: grid; gap: 1rem; min-width: 0; }
 .manual-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: .8rem; border-bottom: 1px solid var(--border-color); }
 .manual-heading > div { display: flex; align-items: center; gap: .55rem; }
 .manual-heading h2 { margin: .05rem 0 0; color: var(--primary-color-dark); font-size: clamp(1.45rem, 3vw, 1.85rem); letter-spacing: -.025em; }
-.manual-heading span, .candidate-area-heading span, .summary-step span { color: #58708b; font-size: .7rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.manual-heading span, .candidate-area-heading span, .summary-step span { color: #58708b; font-size: var(--font-supporting); font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
 .manual-heading small { color: var(--text-color-secondary); }
 .manual-state { display: grid; min-height: 230px; place-items: center; gap: .6rem; padding: 2rem; border: 1px solid var(--border-color); background: #fff; color: var(--text-color-secondary); text-align: center; }
 .manual-state.success { background: #f4fbf6; color: #216a42; }
@@ -857,22 +930,23 @@ onMounted(async () => {
 .manual-state.compact { min-height: 150px; }
 .manual-queue { min-width: 0; padding: 1rem; border: 1px solid var(--border-color); background: #fff; }
 .manual-queue > header { display: flex; align-items: baseline; gap: .65rem; margin-bottom: .75rem; }
-.manual-queue > header span { color: var(--text-color-secondary); font-size: .75rem; }
+.manual-queue > header span { color: var(--text-color-secondary); font-size: var(--font-supporting); }
 .manual-queue-scroll { display: flex; gap: .6rem; overflow-x: auto; padding-bottom: .2rem; }
 .manual-queue-card { display: flex; flex: 0 0 215px; flex-direction: column; gap: .25rem; padding: .8rem .85rem; border: 1px solid var(--border-color); border-left: 3px solid #9aa9b9; border-radius: 3px; background: #fff; color: var(--text-color-primary); text-align: left; cursor: pointer; }
 .manual-queue-card:hover { border-color: #8aa0b8; background: #f9fbfc; }
 .manual-queue-card.active { border-color: #315f8f; border-left-color: #315f8f; background: #f0f5fa; box-shadow: 0 0 0 1px #315f8f; }
-.manual-queue-card span, .manual-queue-card small { color: var(--text-color-secondary); font-size: .72rem; }
+.manual-queue-card span, .manual-queue-card small { color: var(--text-color-secondary); font-size: var(--font-supporting); }
 .manual-queue-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.manual-queue-card .status { align-self: flex-start; margin-top: .2rem; }
 .manual-layout { display: grid; grid-template-columns: minmax(0, 1fr) 295px; gap: 1rem; align-items: start; }
 .candidate-area { min-width: 0; padding: 1rem; border: 1px solid var(--border-color); background: #fff; }
 .candidate-area-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: .9rem; }
-.candidate-area-heading h3, .summary-step h3 { margin: .12rem 0 0; color: var(--primary-color-dark); font-size: 1rem; }
-.candidate-area-heading small { max-width: 44ch; color: var(--text-color-secondary); font-size: .72rem; text-align: right; }
+.candidate-area-heading h3, .summary-step h3 { margin: .12rem 0 0; color: var(--primary-color-dark); font-size: var(--font-critical); }
+.candidate-area-heading small { max-width: 44ch; color: var(--text-color-secondary); font-size: var(--font-supporting); text-align: right; }
 .co-teacher-option { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .85rem; padding: .8rem .85rem; border: 1px solid #a9c8b4; border-left: 3px solid #2f7d55; border-radius: 4px; background: #f2faf5; }
 .co-teacher-option > div { display: flex; flex-direction: column; gap: .18rem; }
-.co-teacher-option strong { color: #216a42; font-size: .86rem; }
-.co-teacher-option span { color: var(--text-color-secondary); font-size: .72rem; }
+.co-teacher-option strong { color: #216a42; font-size: var(--font-data); }
+.co-teacher-option span { color: var(--text-color-secondary); font-size: var(--font-supporting); }
 .co-teacher-option .p-button { flex: 0 0 auto; }
 .teacher-card-grid { display: grid; grid-auto-columns: minmax(250px, 1fr); grid-auto-flow: column; gap: .75rem; overflow-x: auto; padding: 2px 2px .55rem; }
 .teacher-card { min-width: 0; padding: 0; overflow: hidden; border: 1px solid var(--border-color); border-radius: 4px; background: #fff; color: var(--text-color-primary); text-align: left; cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
@@ -880,19 +954,19 @@ onMounted(async () => {
 .teacher-card.selected { border-color: #315f8f; box-shadow: 0 0 0 2px rgba(49, 95, 143, .16); }
 .teacher-card-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .8rem .85rem .55rem; }
 .teacher-card-heading > div { display: flex; min-width: 0; flex-direction: column; gap: .1rem; }
-.teacher-card-heading strong { overflow: hidden; color: var(--primary-color-dark); font-size: .95rem; text-overflow: ellipsis; white-space: nowrap; }
-.teacher-card-heading span { color: var(--text-color-secondary); font-size: .68rem; }
+.teacher-card-heading strong { overflow: hidden; color: var(--primary-color-dark); font-size: var(--font-critical); text-overflow: ellipsis; white-space: nowrap; }
+.teacher-card-heading span { color: var(--text-color-secondary); font-size: var(--font-supporting); }
 .teacher-card-heading i { width: .85rem; height: .85rem; flex: 0 0 auto; border: 2px solid #a6b2bf; border-radius: 50%; }
 .teacher-card.selected .teacher-card-heading i { border: 3px solid #fff; background: #315f8f; box-shadow: 0 0 0 1px #315f8f; }
 .candidate-badges { display: flex; flex-wrap: wrap; gap: .3rem; padding: 0 .85rem .65rem; }
-.candidate-badges span { padding: .18rem .4rem; border-radius: 2px; background: #eef2f5; color: #536274; font-size: .62rem; font-weight: 700; }
+.candidate-badges span { padding: .18rem .4rem; border-radius: 2px; background: #eef2f5; color: #536274; font-size: var(--font-supporting); font-weight: 700; }
 .candidate-badges .same-subject { background: #e6f4ea; color: #216a42; }
 .teacher-schedule { display: grid; border-top: 1px solid var(--border-color); }
-.teacher-slot { display: grid; grid-template-columns: 1.8rem minmax(0, 1fr); min-height: 35px; align-items: stretch; border-bottom: 1px solid #edf0f3; background: #fff; }
+.teacher-slot { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr); min-height: 2.75rem; align-items: stretch; border-bottom: 1px solid #edf0f3; background: #fff; }
 .teacher-slot:last-child { border-bottom: 0; }
-.teacher-slot > b { display: grid; place-items: center; border-right: 1px solid #edf0f3; background: #f7f9fa; color: #6d7886; font-size: .68rem; font-variant-numeric: tabular-nums; }
-.teacher-slot > span { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .35rem; padding: .35rem .45rem; color: #8b96a3; font-size: .68rem; }
-.teacher-slot small { overflow: hidden; color: inherit; font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
+.teacher-slot > b { display: grid; place-items: center; border-right: 1px solid #edf0f3; background: #f7f9fa; color: #596779; font-size: var(--font-supporting); font-variant-numeric: tabular-nums; }
+.teacher-slot > span { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .35rem; padding: .35rem .45rem; color: var(--text-color-secondary); font-size: var(--font-ui); }
+.teacher-slot small { overflow: hidden; color: inherit; font-size: var(--font-supporting); text-overflow: ellipsis; white-space: nowrap; }
 .teacher-slot.busy > span { color: #536274; }
 .teacher-slot.adjacent { background: #fffaf0; }
 .teacher-slot.adjacent > b { background: #fff4da; color: #805c12; }
@@ -902,54 +976,57 @@ onMounted(async () => {
 .manual-summary { position: sticky; top: 1rem; display: grid; gap: 1rem; padding: 1rem; border: 1px solid #315f8f; border-top: 3px solid #315f8f; background: #fff; }
 .manual-summary dl { display: grid; gap: 0; margin: 0; }
 .manual-summary dl div { display: grid; gap: .16rem; padding: .65rem 0; border-bottom: 1px solid #edf0f3; }
-.manual-summary dt { color: var(--text-color-secondary); font-size: .7rem; }
-.manual-summary dd { margin: 0; color: var(--primary-color-dark); font-size: .84rem; font-weight: 700; }
+.manual-summary dt { color: var(--text-color-secondary); font-size: var(--font-supporting); }
+.manual-summary dd { margin: 0; color: var(--primary-color-dark); font-size: var(--font-data); font-weight: 700; }
 .manual-summary dd.pending { color: #8b96a3; font-weight: 500; }
-.manual-summary p { margin: 0; color: var(--text-color-secondary); font-size: .72rem; line-height: 1.5; }
+.manual-summary p { margin: 0; color: var(--text-color-secondary); font-size: var(--font-supporting); line-height: 1.5; }
 .manual-summary .p-button { width: 100%; }
 .panel { min-width: 0; background: var(--card-background); border: 1px solid var(--border-color); border-radius: 4px; padding: 1.2rem; }
 .panel-title { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .panel-title > div { display: flex; align-items: center; gap: .65rem; }
-.panel-title h3 { margin: 0; font-size: 1rem; }
+.panel-title h3 { margin: 0; font-size: var(--font-data); }
 .panel-title small { color: var(--text-color-secondary); }
 .title-copy { display: flex; flex-direction: column; gap: .12rem; }
 .analysis-actions { display: flex; align-items: center !important; gap: .45rem; }
 .analysis-dates { display: flex; gap: 0; margin: -0.25rem 0 1rem; border-bottom: 1px solid var(--border-color); overflow-x: auto; }
-.analysis-dates button { padding: .55rem .8rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-color-secondary); cursor: pointer; font: inherit; font-size: .8rem; font-weight: 650; white-space: nowrap; }
+.analysis-dates button { padding: .55rem .8rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-color-secondary); cursor: pointer; font: inherit; font-size: var(--font-ui); font-weight: 650; white-space: nowrap; }
 .analysis-dates button:hover { color: var(--primary-color-dark); }
 .analysis-dates button.active { border-bottom-color: var(--primary-color); color: var(--primary-color-dark); }
 .analysis-dates button:focus-visible { box-shadow: var(--focus-ring); }
 .analysis-dates button:disabled { cursor: wait; opacity: .6; }
-.absence-editor { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: calc(100dvh - 10rem); overflow: hidden; border: 1px solid var(--border-color); background: #fff; }
+.absence-editor { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: calc(100dvh - 10rem); overflow: hidden; border: 1px solid var(--border-color); background: #fff; }
 .absence-master { display: flex; min-width: 0; flex-direction: column; border-right: 1px solid var(--border-color); background: #f5f7f9; }
 .absence-master > header { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; padding: 1.4rem 1.2rem 1rem; border-bottom: 1px solid var(--border-color); }
-.absence-master h3 { margin: 0; color: var(--primary-color-dark); font-size: 1rem; }
-.absence-master > header small, .absence-master-actions span { color: var(--text-color-secondary); font-size: .75rem; }
+.absence-master h3 { margin: 0; color: var(--primary-color-dark); font-size: var(--font-data); }
+.absence-master > header small, .absence-master-actions span { color: var(--text-color-secondary); font-size: var(--font-supporting); }
 .absence-master-list { display: grid; }
 .absence-master-item { display: flex; min-width: 0; flex-direction: column; gap: .28rem; padding: 1rem 1.15rem; border: 0; border-left: 3px solid transparent; border-bottom: 1px solid var(--border-color); background: transparent; color: var(--text-color-primary); text-align: left; cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
 .absence-master-item:hover { background: #edf2f6; }
 .absence-master-item.active { border-left-color: var(--primary-color-dark); background: #fff; }
 .absence-master-item:focus-visible { position: relative; z-index: 1; box-shadow: inset var(--focus-ring); outline: none; }
-.absence-master-item strong { overflow: hidden; color: var(--primary-color-dark); font-size: .92rem; text-overflow: ellipsis; white-space: nowrap; }
-.absence-master-item span { color: #42566a; font-size: .8rem; font-variant-numeric: tabular-nums; }
-.absence-master-item small { overflow: hidden; color: var(--text-color-secondary); font-size: .73rem; text-overflow: ellipsis; white-space: nowrap; }
+.absence-master-item strong { color: var(--primary-color-dark); font-size: var(--font-critical); overflow-wrap: anywhere; }
+.absence-master-item span { color: #42566a; font-size: var(--font-data); font-variant-numeric: tabular-nums; }
+.absence-master-item small { color: var(--text-color-secondary); font-size: var(--font-supporting); overflow-wrap: anywhere; }
 .absence-master-actions { display: grid; gap: .75rem; margin-top: auto; padding: 1.1rem; text-align: center; }
 .absence-detail { display: flex; min-width: 0; flex-direction: column; background: #fff; }
 .absence-detail-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; padding: 1.6rem 2rem 1.35rem; border-bottom: 1px solid var(--border-color); }
 .absence-detail-heading h3 { margin: 0; color: var(--primary-color-dark); font-size: clamp(1.45rem, 2.4vw, 1.85rem); letter-spacing: -.025em; }
-.absence-detail-heading p { max-width: 58ch; margin: .35rem 0 0; color: var(--text-color-secondary); font-size: .84rem; }
+.absence-detail-heading p { max-width: 58ch; margin: .35rem 0 0; color: var(--text-color-secondary); font-size: var(--font-supporting); }
 .absence-detail-body { display: grid; gap: 2rem; width: 100%; max-width: 960px; padding: 2rem; }
 .absence-entry-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: .75rem; }
-.absence-detail label { display: flex; flex-direction: column; gap: .4rem; color: #344054; font-size: .84rem; font-weight: 650; }
-.entry-error, .absence-form-error { margin: .55rem 0 0; color: #9b3b30; font-size: .8rem; }
+.absence-detail label { display: flex; flex-direction: column; gap: .4rem; color: #344054; font-size: var(--font-ui); font-weight: 650; }
+.required-marker, .field-error { color: #9b3b30; }
+.field-error { font-size: var(--font-ui); font-weight: 500; }
+.absence-detail select.field-invalid { border-color: #b5473c; box-shadow: 0 0 0 2px rgba(181, 71, 60, .12); }
+.entry-error, .absence-form-error { margin: .55rem 0 0; color: #9b3b30; font-size: var(--font-ui); }
 .absence-form-error { padding: 0 2rem; }
 .absence-form-actions { display: flex; justify-content: flex-end; gap: .65rem; margin-top: auto; padding: 1rem 2rem; border-top: 1px solid var(--border-color); background: #fbfcfd; }
-select, input[type=date], input[type=file], textarea { width: 100%; min-height: 2.55rem; border: 1px solid #c8d2dd; border-radius: 4px; padding: .6rem .7rem; background: #fff; color: var(--text-color-primary); }
+select, input[type=date], input[type=file], input[type=text], textarea { width: 100%; min-height: 2.55rem; border: 1px solid #c8d2dd; border-radius: 4px; padding: .6rem .7rem; background: #fff; color: var(--text-color-primary); }
 select:hover, input:hover, textarea:hover { border-color: #aeb8c5; }
 select:focus, input:focus, textarea:focus { border-color: var(--primary-color); }
 input[type=checkbox] { accent-color: var(--primary-color); }
 input[type=file] { padding: .45rem; }
-.period-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; font-size: .84rem; font-weight: 650; }
+.period-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; font-size: var(--font-ui); font-weight: 650; }
 .absence-editor .all-day { flex-direction: row; align-items: center; gap: .4rem; font-weight: 600; cursor: pointer; }
 .all-day input { width: auto; min-height: auto; }
 .periods { display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem; margin-top: .65rem; }
@@ -967,40 +1044,47 @@ input[type=file] { padding: .45rem; }
 .task-heading { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .8rem; }
 .task-heading div { display: flex; flex-direction: column; gap: .2rem; }
 .task-heading small { color: var(--text-color-secondary); }
-.status, .source-tag { display: inline-flex; align-items: center; width: fit-content; padding: .24rem .52rem; border-radius: 3px; background: #eef1f4; color: #596476; font-size: .74rem; white-space: nowrap; }
+.status, .source-tag { display: inline-flex; align-items: center; width: fit-content; padding: .24rem .52rem; border-radius: 3px; background: #eef1f4; color: #596476; font-size: var(--font-supporting); white-space: nowrap; }
 .status.recommended, .status.confirmed, .source-tag.changed { background: #e4f5e9; color: #216a42; }
 .status.unresolved { background: #fdecea; color: #9b3b30; }
 .movement-list { margin: .7rem 0; padding: .7rem .8rem; border-radius: 3px; background: var(--surface-soft); }
-.movement-list div { display: flex; justify-content: space-between; gap: 1rem; padding: .3rem 0; font-size: .82rem; }
+.movement-list div { display: flex; justify-content: space-between; gap: 1rem; padding: .3rem 0; font-size: var(--font-data); }
 .movement-list b { color: var(--primary-color-dark); text-align: right; }
 .candidate-actions { display: flex; justify-content: flex-end; gap: .55rem; }
+:global(.verification-dialog .p-dialog-header) { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border-color); }
+:global(.verification-dialog .p-dialog-content) { padding: 1.25rem 1.5rem 1.5rem; }
 .verification-loading { display: grid; min-height: 180px; place-items: center; color: var(--text-color-secondary); }
 .verification-content > p { margin: 0 0 1rem; color: var(--text-color-secondary); }
+.verification-teacher { --teacher-accent: #315f8f; --teacher-border: #aac3de; --teacher-soft: #edf4fb; }
+.verification-teacher.teacher-color-2 { --teacher-accent: #2f7d55; --teacher-border: #a9c8b4; --teacher-soft: #edf8f1; }
+.verification-teacher.teacher-color-3 { --teacher-accent: #a05f16; --teacher-border: #e0bd8d; --teacher-soft: #fff5e8; }
 .verification-teacher + .verification-teacher { margin-top: 1rem; }
-.verification-teacher h4 { margin: 0 0 .45rem; }
-.verification-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 4px; }
-.verification-timetable { min-width: 1000px; table-layout: fixed; font-size: .75rem; }
-.verification-timetable th, .verification-timetable td { width: 100px; height: 66px; padding: .4rem; vertical-align: top; }
-.verification-timetable th:first-child { width: 88px; }
+.verification-teacher h4 { display: inline-flex; margin: 0 0 .45rem; border-left: 4px solid var(--teacher-accent); padding: .35rem .6rem; background: var(--teacher-soft); color: var(--teacher-accent); }
+.verification-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-top: 3px solid var(--teacher-accent); border-radius: 4px; }
+.verification-timetable { min-width: 1320px; table-layout: fixed; font-size: var(--font-supporting); }
+.verification-timetable th, .verification-timetable td { width: 134px; height: 82px; padding: .55rem; vertical-align: top; }
+.verification-timetable th:first-child { width: 112px; }
 .verification-lesson { display: flex; flex-direction: column; gap: .05rem; padding: .3rem; border-radius: 5px; color: #596476; }
 .verification-lesson + .verification-lesson { margin-top: .2rem; }
-.verification-lesson.adjusted { background: #def1e5; color: #216a42; }
-.verification-lesson small { font-size: .62rem; font-weight: 700; }
-.verification-lesson strong { font-size: .72rem; }
-.verification-lesson span { overflow: hidden; font-size: .65rem; text-overflow: ellipsis; white-space: nowrap; }
+.verification-lesson strong { font-size: var(--font-data); }
+.verification-lesson span { font-size: var(--font-ui); line-height: 1.4; overflow-wrap: anywhere; }
+.verification-change { display: grid; gap: .25rem; border: 1px solid var(--teacher-border); border-left: 3px solid var(--teacher-accent); border-radius: 4px; padding: .35rem; background: var(--teacher-soft); }
+.verification-change > div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .3rem; align-items: baseline; }
+.verification-change small { color: var(--teacher-accent); font-size: var(--font-supporting); font-weight: 800; }
+.verification-change span { color: #344054; font-size: var(--font-critical); font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
 .unresolved-copy { margin: 0; color: #9b493d; }
-.candidate-warning { display: block; margin-top: .4rem; color: #8a5b16; font-size: .7rem; }
+.candidate-warning { display: block; margin-top: .4rem; color: #8a5b16; font-size: var(--font-supporting); }
 .unresolved-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .effective-filters { display: flex; align-items: center; gap: 1rem; }
-.effective-panel .inline-date { display: flex; align-items: center; gap: .55rem; color: var(--text-color-secondary); font-size: .82rem; }
+.effective-panel .inline-date { display: flex; align-items: center; gap: .55rem; color: var(--text-color-secondary); font-size: var(--font-ui); }
 .effective-panel .inline-date input { width: auto; }
 .affected-view-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
 .view-switch { display: inline-flex; padding: .2rem; border-radius: 4px; background: var(--surface-soft); }
-.view-switch button { padding: .42rem .7rem; border: 0; border-radius: 3px; background: transparent; color: var(--text-color-secondary); cursor: pointer; font-size: .78rem; font-weight: 650; transition: background .15s ease, color .15s ease; }
+.view-switch button { padding: .42rem .7rem; border: 0; border-radius: 3px; background: transparent; color: var(--text-color-secondary); cursor: pointer; font-size: var(--font-ui); font-weight: 650; transition: background .15s ease, color .15s ease; }
 .view-switch button:hover { color: var(--text-color-primary); }
 .view-switch button.active { background: #fff; color: var(--primary-color-dark); box-shadow: 0 1px 3px rgba(28, 45, 78, .12); }
 .view-switch button:focus-visible { box-shadow: var(--focus-ring); }
-.timetable-legend { display: flex; flex-wrap: wrap; gap: .8rem; color: var(--text-color-secondary); font-size: .72rem; }
+.timetable-legend { display: flex; flex-wrap: wrap; gap: .8rem; color: var(--text-color-secondary); font-size: var(--font-supporting); }
 .timetable-legend span { display: flex; align-items: center; gap: .3rem; }
 .timetable-legend i { width: .65rem; height: .65rem; border-radius: 2px; }
 .timetable-legend .moved-out { background: #fbe5e2; }
@@ -1010,19 +1094,19 @@ input[type=file] { padding: .45rem; }
 .affected-card { min-width: 0; padding: 1rem; border: 1px solid var(--border-color); border-left: 3px solid #6f91b1; border-radius: 4px; background: #fff; }
 .affected-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: .8rem; }
 .affected-card-title { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .7rem; }
-.affected-card header strong { font-size: 1rem; }
-.affected-card-title > span:not(.source-tag) { color: var(--text-color-secondary); font-size: .78rem; }
+.affected-card header strong { font-size: var(--font-data); }
+.affected-card-title > span:not(.source-tag) { color: var(--text-color-secondary); font-size: var(--font-supporting); }
 .cycle-route { display: flex; align-items: center; gap: .3rem; color: #216a42; }
-.cycle-route-step { display: grid; width: 1.45rem; height: 1.45rem; place-items: center; border: 1px solid #70a086; border-radius: 50%; font-size: .7rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+.cycle-route-step { display: grid; width: 1.75rem; height: 1.75rem; place-items: center; border: 1px solid #70a086; border-radius: 50%; font-size: var(--font-supporting); font-weight: 750; font-variant-numeric: tabular-nums; }
 .cycle-route-arrow { color: #70a086; font-size: .85rem; }
 .cycle-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 4px; }
-.cycle-table { min-width: 720px; font-size: .8rem; }
+.cycle-table { min-width: 800px; font-size: var(--font-data); }
 .cycle-table th, .cycle-table td { padding: .65rem .75rem; vertical-align: middle; }
-.cycle-table th { background: #f8faf9; color: #596476; font-size: .72rem; }
+.cycle-table th { background: #f8faf9; color: #596476; font-size: var(--font-supporting); }
 .cycle-table td { color: var(--text-color-primary); }
 .cycle-table tbody tr:hover { background: #fbfdfc; }
 .cycle-table .cycle-order { width: 3rem; text-align: center; }
-.cycle-order span { display: grid; width: 1.65rem; height: 1.65rem; margin: auto; place-items: center; border-radius: 50%; background: #2f7d55; color: #fff; font-size: .72rem; font-weight: 750; }
+.cycle-order span { display: grid; width: 1.75rem; height: 1.75rem; margin: auto; place-items: center; border-radius: 50%; background: #2f7d55; color: #fff; font-size: var(--font-supporting); font-weight: 750; }
 .cycle-table .cycle-table-arrow { width: 2rem; padding-inline: .2rem; color: #70a086; text-align: center; }
 .cycle-table th.cycle-table-arrow { color: transparent; }
 .cycle-table strong { white-space: nowrap; }
@@ -1030,31 +1114,31 @@ input[type=file] { padding: .45rem; }
 .cycle-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cover-link { display: grid; grid-template-columns: minmax(170px, auto) auto minmax(220px, 1fr); align-items: center; gap: .75rem; padding: .8rem; border-radius: 4px; background: #fff8e5; }
 .cover-link > div { display: flex; flex-direction: column; gap: .15rem; }
-.cover-link small, .cover-link div span { color: var(--text-color-secondary); font-size: .72rem; }
+.cover-link small, .cover-link div span { color: var(--text-color-secondary); font-size: var(--font-supporting); }
 .cover-link > span { color: #a57516; font-size: 1.2rem; font-weight: 800; }
-.cover-link b { color: #805c12; font-size: .8rem; }
+.cover-link b { color: #805c12; font-size: var(--font-data); }
 .affected-empty { display: grid; min-height: 110px; place-items: center; border-radius: 3px; background: var(--surface-soft); color: var(--text-color-secondary); text-align: center; }
 .mini-timetable-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 4px; }
-.mini-timetable { min-width: 1040px; table-layout: fixed; font-size: .75rem; }
-.mini-timetable th, .mini-timetable td { width: 108px; padding: .45rem; vertical-align: top; }
+.mini-timetable { min-width: 1360px; table-layout: fixed; font-size: var(--font-supporting); }
+.mini-timetable th, .mini-timetable td { width: 138px; padding: .55rem; vertical-align: top; }
 .mini-timetable thead th { text-align: center; }
-.mini-timetable th:first-child { position: sticky; left: 0; z-index: 1; width: 72px; background: #fff; color: var(--text-color-primary); font-size: .86rem; }
+.mini-timetable th:first-child { position: sticky; left: 0; z-index: 1; width: 92px; background: #fff; color: var(--text-color-primary); font-size: var(--font-data); }
 .mini-timetable thead th:first-child { z-index: 2; background: var(--surface-soft); }
-.mini-timetable td { height: 74px; background: #fff; }
+.mini-timetable td { height: 90px; background: #fff; }
 .mini-timetable td.affected { background: #fbfcfe; }
 .slot-change, .slot-current { display: flex; min-width: 0; flex-direction: column; gap: .05rem; padding: .3rem .38rem; border-radius: 5px; }
 .slot-change + .slot-change { margin-top: .25rem; }
-.slot-change small { font-size: .62rem; font-weight: 650; }
-.slot-change strong, .slot-current strong { overflow: hidden; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
-.slot-change span, .slot-current span { overflow: hidden; color: var(--text-color-secondary); font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
+.slot-change small { font-size: var(--font-supporting); font-weight: 650; }
+.slot-change strong, .slot-current strong { font-size: var(--font-data); overflow-wrap: anywhere; }
+.slot-change span, .slot-current span { color: var(--text-color-secondary); font-size: var(--font-ui); overflow-wrap: anywhere; }
 .slot-change.moved-out { background: #fbe5e2; color: #8e3f37; }
 .slot-change.moved-in { background: #def1e5; color: #216a42; }
 .slot-change.covered { background: #fff0c7; color: #805c12; }
 .slot-current { color: #596476; }
 .slot-empty { display: block; padding-top: .65rem; color: #b5bdc8; text-align: center; }
-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: .86rem; }
+table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: var(--font-data); }
 th, td { padding: .72rem .75rem; border-bottom: 1px solid #edf0f3; text-align: left; }
-th { background: var(--surface-soft); color: var(--text-color-secondary); font-size: .78rem; font-weight: 700; white-space: nowrap; }
+th { background: var(--surface-soft); color: var(--text-color-secondary); font-size: var(--font-ui); font-weight: 700; white-space: nowrap; }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: #fbfcfe; }
 .leave-heading, .leave-list article { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
@@ -1062,10 +1146,10 @@ tbody tr:hover { background: #fbfcfe; }
 .leave-heading h3 { margin: 0 0 .3rem; }
 .leave-heading p, .leave-list span { color: var(--text-color-secondary); }
 .leave-form { display: grid; grid-template-columns: 1.2fr 1fr .8fr .8fr auto; align-items: end; gap: .75rem; margin: 1rem 0; }
-.leave-form label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: .82rem; font-weight: 650; }
+.leave-form label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: var(--font-ui); font-weight: 650; }
 .leave-list article { padding: .75rem 0; border-top: 1px solid #edf0f3; }
 .leave-list article > div:first-child { display: flex; flex-direction: column; gap: .2rem; }
-.leave-list span { font-size: .82rem; }
+.leave-list span { font-size: var(--font-data); }
 .empty-state.compact { min-height: 80px; }
 @media (max-width: 900px) {
   .manual-layout { grid-template-columns: 1fr; }
@@ -1081,6 +1165,7 @@ tbody tr:hover { background: #fbfcfe; }
 }
 
 @media (max-width: 600px) {
+  :global(.verification-dialog .p-dialog-header), :global(.verification-dialog .p-dialog-content) { padding: 1rem; }
   .manual-heading { align-items: flex-start; }
   .manual-heading small { padding-top: .4rem; }
   .manual-queue { padding: .8rem; }
@@ -1102,7 +1187,7 @@ tbody tr:hover { background: #fbfcfe; }
   .absence-form-error { padding-inline: .85rem; }
   .absence-form-actions { position: sticky; bottom: 0; padding: .8rem .85rem; }
   .periods { gap: .4rem; }
-  .periods label { min-height: 3.25rem; padding: .45rem !important; font-size: .78rem; }
+  .periods label { min-height: 3.25rem; padding: .45rem !important; font-size: var(--font-ui); }
   .page-heading { flex-direction: column; gap: .35rem; }
   .page-actions { width: 100%; flex-wrap: wrap; justify-content: space-between; }
   .page-actions .revision { width: 100%; }
@@ -1119,5 +1204,24 @@ tbody tr:hover { background: #fbfcfe; }
   .leave-form { grid-template-columns: 1fr; }
   .absence-entry-grid { grid-template-columns: 1fr; }
   .panel { padding: 1rem; }
+}
+
+:global(html[data-text-size="extra-large"] .recommendations-panel) { padding: .8rem; }
+:global(html[data-text-size="extra-large"] .panel-title) { flex-wrap: wrap; margin-bottom: .65rem; }
+:global(html[data-text-size="extra-large"] .panel-title h3),
+:global(html[data-text-size="extra-large"] .task-heading strong) { font-size: var(--font-critical); }
+:global(html[data-text-size="extra-large"] .task-card) { margin-bottom: .55rem; padding: .8rem; }
+:global(html[data-text-size="extra-large"] .task-heading) { flex-wrap: wrap; margin-bottom: .55rem; }
+:global(html[data-text-size="extra-large"] .task-heading .status) { padding: .35rem .55rem; font-size: var(--font-ui); }
+:global(html[data-text-size="extra-large"] .task-card > label) { display: grid; gap: .3rem; font-size: var(--font-ui); font-weight: 650; }
+:global(html[data-text-size="extra-large"] .movement-list) { margin: .5rem 0; padding: .5rem .65rem; }
+:global(html[data-text-size="extra-large"] .movement-list div) { display: grid; grid-template-columns: minmax(10rem, .8fr) minmax(17rem, 1.2fr); gap: .75rem; padding: .25rem 0; }
+:global(html[data-text-size="extra-large"] .movement-list b) { text-align: left; }
+:global(html[data-text-size="extra-large"] .candidate-actions) { flex-wrap: wrap; gap: .4rem; }
+:global(html[data-text-size="extra-large"] .view-switch button),
+:global(html[data-text-size="extra-large"] .analysis-dates button) { min-height: 3rem; padding: .55rem .85rem; }
+
+@media (max-width: 900px) {
+  :global(html[data-text-size="extra-large"] .movement-list div) { grid-template-columns: 1fr; gap: .1rem; }
 }
 </style>

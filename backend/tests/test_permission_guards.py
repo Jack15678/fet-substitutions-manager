@@ -196,6 +196,7 @@ def test_absence_creator_cannot_edit_others_or_bypass_confirmed_lock(absence_dat
         professor_id=teacher.id,
         data=owned.data,
         periods=[2],
+        reason_type="sick",
     )
     creator = _user("alice", ["workbench.view", "absence.create"])
     other = _user("bob", ["workbench.view", "absence.create"])
@@ -204,6 +205,16 @@ def test_absence_creator_cannot_edit_others_or_bypass_confirmed_lock(absence_dat
     with pytest.raises(rescheduling.HTTPException) as forbidden:
         update_absence(owned.id, request, db, other)
     assert forbidden.value.status_code == 403
+
+    reason_request = AbsenceCreateRequest(
+        professor_id=teacher.id,
+        data=owned.data,
+        periods=[1],
+        reason_type="personal",
+    )
+    assert update_absence(owned.id, reason_request, db, creator)["success"] is True
+    assert db.get(ScheduleAdjustment, adjustment.id) is not None
+    assert owned.status == "resolved"
 
     with pytest.raises(rescheduling.HTTPException) as locked:
         update_absence(owned.id, request, db, creator)
@@ -232,6 +243,7 @@ def test_batch_create_cannot_update_another_creators_case(absence_data):
         professor_id=teacher.id,
         data=owned.data,
         periods=[2],
+        reason_type="sick",
     )])
 
     with pytest.raises(rescheduling.HTTPException) as forbidden:
@@ -258,6 +270,7 @@ def test_absence_creator_cannot_analyze_or_reuse_locked_case(absence_data):
                 professor_id=teacher.id,
                 data=owned.data,
                 periods=[1],
+                reason_type="sick",
             )]),
             db,
             creator,

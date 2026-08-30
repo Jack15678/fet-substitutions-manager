@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import unittest
 from copy import deepcopy
@@ -9,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -22,6 +24,7 @@ from models import (  # noqa: E402
     ProfessorBaixa,
     ScheduleAdjustment,
     ScheduleAdjustmentLeg,
+    ScheduleAudit,
     SchoolClosure,
     TimetableImportPreview,
     TimetableLesson,
@@ -29,12 +32,14 @@ from models import (  # noqa: E402
     TimetableVersion,
 )
 from daily_exports import build_daily_pdf, build_daily_xlsx, daily_export_data, get_period_times, save_period_times, validate_period_times  # noqa: E402
-from openpyxl import load_workbook  # noqa: E402
+from database import _ensure_absence_case_columns  # noqa: E402
+from openpyxl import Workbook as OpenpyxlWorkbook, load_workbook  # noqa: E402
 from repositories import CursRepository  # noqa: E402
 from rescheduling_service import apply_import_resolutions, absence_keys, analyze_absence, build_import_preview, choose_global, effective_occurrences, version_for_date  # noqa: E402
 from routes.rescheduling import (  # noqa: E402
     AbsenceBatchCreateRequest,
     AbsenceCreateRequest,
+    ActivateTimetableRequest,
     ClosureInput,
     ClosureListRequest,
     ManualCoverRequest,
@@ -43,10 +48,13 @@ from routes.rescheduling import (  # noqa: E402
     UpdateAdjustmentRequest,
     SaveImportResolutionsRequest,
     create_absences_batch,
+    activate_import,
     confirm_manual_cover,
     discard_import_preview,
     delete_adjustment,
     delete_timetable_version,
+    export_daily_pdf,
+    export_daily_xlsx,
     get_effective_timetable,
     get_closures,
     list_records,
@@ -71,6 +79,68 @@ class ReschedulingTests(unittest.TestCase):
 
     def tearDown(self):
         self.db.close()
+
+    def test_daily_export_without_records_has_clear_error(self):
+        for export in (export_daily_xlsx, export_daily_pdf):
+            with self.subTest(export=export.__name__), self.assertRaises(HTTPException) as raised:
+                export(date(2026, 8, 30), self.db, SimpleNamespace(username="admin"))
+            self.assertEqual(raised.exception.status_code, 404)
+            self.assertEqual(raised.exception.detail, "所選日期沒有可匯出的調課／代課記錄")
+
+    def test_daily_export_excludes_pending_absences(self):
+        teacher = Professor(nom="待安排老師", actiu=True)
+        self.db.add(teacher)
+        self.db.flush()
+        self.db.add(AbsenceCase(
+            professor_id=teacher.id, data=date(2026, 8, 30), periods_json="[7, 8, 9]", status="open",
+        ))
+        self.db.commit()
+
+        self.assertEqual(daily_export_data(self.db, date(2026, 8, 30)), [])
+        for export in (export_daily_xlsx, export_daily_pdf):
+            with self.subTest(export=export.__name__), self.assertRaises(HTTPException) as raised:
+                export(date(2026, 8, 30), self.db, SimpleNamespace(username="admin"))
+            self.assertEqual(raised.exception.status_code, 404)
+
+    def test_absence_reason_contract_and_legacy_migration(self):
+        with self.assertRaises(ValidationError):
+            AbsenceCreateRequest(professor_id=1, data=date(2026, 8, 10), periods=[1])
+        with self.assertRaises(ValidationError):
+            AbsenceCreateRequest(
+                professor_id=1, data=date(2026, 8, 10), periods=[1],
+                reason_type="other", reason_detail="x" * 201,
+            )
+        other = AbsenceCreateRequest(
+            professor_id=1, data=date(2026, 8, 10), periods=[1],
+            reason_type="other", reason_detail="  可選補充  ",
+        )
+        preset = AbsenceCreateRequest(
+            professor_id=1, data=date(2026, 8, 10), periods=[1],
+            reason_type="sick", reason_detail="不應保存",
+        )
+        blank = AbsenceCreateRequest(
+            professor_id=1, data=date(2026, 8, 10), periods=[1],
+            reason_type="other", reason_detail="   ",
+        )
+        self.assertEqual(other.reason_detail, "可選補充")
+        self.assertIsNone(preset.reason_detail)
+        self.assertIsNone(blank.reason_detail)
+
+        engine = create_engine("sqlite:///:memory:")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE absence_cases (id INTEGER PRIMARY KEY, periods_json TEXT NOT NULL)"
+            )
+            connection.exec_driver_sql("INSERT INTO absence_cases VALUES (1, '[1]')")
+        _ensure_absence_case_columns(engine)
+        with engine.connect() as connection:
+            columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(absence_cases)")}
+            legacy = connection.exec_driver_sql(
+                "SELECT reason_type, reason_detail FROM absence_cases WHERE id = 1"
+            ).one()
+        self.assertTrue({"reason_type", "reason_detail"}.issubset(columns))
+        self.assertEqual(legacy, (None, None))
+        engine.dispose()
 
     def test_academic_years_keep_explicit_summer_gap(self):
         first = CursRepository.create(
@@ -134,9 +204,9 @@ class ReschedulingTests(unittest.TestCase):
         result = create_absences_batch(
             AbsenceBatchCreateRequest(
                 items=[
-                    AbsenceCreateRequest(professor_id=teachers[0].id, data=date(2026, 8, 10), periods=[1]),
-                    AbsenceCreateRequest(professor_id=teachers[1].id, data=date(2026, 8, 10), periods=[2]),
-                    AbsenceCreateRequest(professor_id=teachers[2].id, data=date(2026, 8, 11), periods=[3]),
+                    AbsenceCreateRequest(professor_id=teachers[0].id, data=date(2026, 8, 10), periods=[1], reason_type="sick"),
+                    AbsenceCreateRequest(professor_id=teachers[1].id, data=date(2026, 8, 10), periods=[2], reason_type="other", reason_detail="  家庭安排  "),
+                    AbsenceCreateRequest(professor_id=teachers[2].id, data=date(2026, 8, 11), periods=[3], reason_type="official", reason_detail="ignored"),
                 ],
             ),
             self.db,
@@ -146,6 +216,12 @@ class ReschedulingTests(unittest.TestCase):
         rows = self.db.query(AbsenceCase).order_by(AbsenceCase.id).all()
         self.assertEqual(len(rows), 3)
         self.assertEqual([json.loads(row.periods_json) for row in rows], [[1], [2], [3]])
+        self.assertEqual(
+            [(row.reason_type, row.reason_detail) for row in rows],
+            [("sick", None), ("other", "家庭安排"), ("official", None)],
+        )
+        audit = json.loads(self.db.query(ScheduleAudit).order_by(ScheduleAudit.id).first().detail_json)
+        self.assertEqual(audit["reason_type"], "sick")
         self.assertEqual(result["batch_absence_case_ids"], [row.id for row in rows])
         self.assertEqual([item["date"] for item in result["analyses"]], ["2026-08-10", "2026-08-11"])
 
@@ -153,8 +229,8 @@ class ReschedulingTests(unittest.TestCase):
             create_absences_batch(
                 AbsenceBatchCreateRequest(
                     items=[
-                        AbsenceCreateRequest(professor_id=teachers[0].id, data=date(2026, 8, 10), periods=[1]),
-                        AbsenceCreateRequest(professor_id=999999, data=date(2026, 8, 10), periods=[1]),
+                        AbsenceCreateRequest(professor_id=teachers[0].id, data=date(2026, 8, 10), periods=[1], reason_type="sick"),
+                        AbsenceCreateRequest(professor_id=999999, data=date(2026, 8, 10), periods=[1], reason_type="sick"),
                     ],
                 ),
                 self.db,
@@ -241,6 +317,59 @@ class ReschedulingTests(unittest.TestCase):
         self.assertEqual(result["kind"], "emergency_cover")
         self.assertEqual(result["legs"][0]["replacement_teacher_id"], clear.id)
 
+    def test_recommended_task_can_use_existing_manual_cover_flow(self):
+        absent, swap_teacher, manual_teacher = [
+            Professor(nom=name, actiu=True)
+            for name in ("缺席老師全名", "互調老師全名", "人工老師全名")
+        ]
+        version = TimetableVersion(
+            effective_from=date(2026, 8, 10), effective_to=date(2026, 8, 31),
+            class_filename="classes.xls", teacher_filename="teachers.xlsx", active=True,
+        )
+        self.db.add_all([absent, swap_teacher, manual_teacher, version])
+        self.db.flush()
+        self.db.add_all([
+            TimetableLesson(
+                version_id=version.id, weekday=0, period=1, class_code="1A",
+                subject="中文", teachers_json=json.dumps([absent.id]),
+            ),
+            TimetableLesson(
+                version_id=version.id, weekday=0, period=4, class_code="1A",
+                subject="英文", teachers_json=json.dumps([swap_teacher.id]),
+            ),
+            TimetableLesson(
+                version_id=version.id, weekday=1, period=1, class_code="2A",
+                subject="中文", teachers_json=json.dumps([manual_teacher.id]),
+            ),
+        ])
+        absence = AbsenceCase(
+            professor_id=absent.id, data=date(2026, 8, 10), periods_json="[1]",
+            reason_type="sick", status="open", created_by="admin",
+        )
+        self.db.add(absence)
+        self.db.commit()
+
+        queue = list_manual_arrangements(self.db, SimpleNamespace(username="admin"))
+        task = queue["tasks"][0]
+        self.assertEqual(task["status"], "recommended")
+        self.assertIn(manual_teacher.id, {item["id"] for item in task["candidates"]})
+
+        result = confirm_manual_cover(
+            ManualCoverRequest(
+                absence_case_id=absence.id,
+                occurrence_id=task["target"]["occurrence_id"],
+                replacement_teacher_id=manual_teacher.id,
+                expected_revision=queue["revision"],
+            ),
+            self.db,
+            SimpleNamespace(username="admin"),
+        )
+
+        self.assertEqual(result["kind"], "emergency_cover")
+        self.assertEqual(result["legs"][0]["replacement_teacher_name"], manual_teacher.nom)
+        self.db.refresh(absence)
+        self.assertEqual(absence.status, "resolved")
+
     def test_co_taught_lesson_waits_for_manual_confirmation(self):
         absent, co_teacher = [Professor(nom=name, actiu=True) for name in ("缺席老師", "在場老師")]
         version = TimetableVersion(
@@ -306,7 +435,7 @@ class ReschedulingTests(unittest.TestCase):
 
         result = create_absences_batch(
             AbsenceBatchCreateRequest(
-                items=[AbsenceCreateRequest(professor_id=teacher.id, data=date(2026, 8, 10), periods=[4])],
+                items=[AbsenceCreateRequest(professor_id=teacher.id, data=date(2026, 8, 10), periods=[4], reason_type="training")],
             ),
             self.db,
             SimpleNamespace(username="admin"),
@@ -334,7 +463,7 @@ class ReschedulingTests(unittest.TestCase):
         with self.assertRaises(HTTPException):
             create_absences_batch(
                 AbsenceBatchCreateRequest(
-                    items=[AbsenceCreateRequest(professor_id=teacher.id, data=date(2026, 8, 10), periods=[1])],
+                    items=[AbsenceCreateRequest(professor_id=teacher.id, data=date(2026, 8, 10), periods=[1], reason_type="sick")],
                 ),
                 self.db,
                 SimpleNamespace(username="admin"),
@@ -390,6 +519,97 @@ class ReschedulingTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as blocked_delete:
             delete_timetable_version(old_version.id, self.db, user)
         self.assertEqual(blocked_delete.exception.status_code, 409)
+
+    def test_separate_post_exam_timetables_override_normal_range(self):
+        periods = [
+            ("8:25-9:15", "數學"), ("9:15-10:05", "人文"),
+            ("10:25-11:15", "英文"), ("11:15-12:05", "中文"),
+            ("12:25-13:00", "科學"),
+        ]
+        class_workbook = OpenpyxlWorkbook()
+        class_sheet = class_workbook.active
+        class_sheet.title = "班別試後時間表"
+        classes = [
+            f"{grade}{letter}"
+            for grade, letters in ((1, "ABCD"), (2, "ABCD"), (3, "ABCDE"),
+                                   (4, "ABCD"), (5, "ABCD"), (6, "ABCD"))
+            for letter in letters
+        ]
+        class_sheet.append(["班別", *classes])
+        class_sheet.append(["班主任", *(["丁依敏"] * len(classes))])
+        class_sheet.append(["8:10-8:25", *(["班主任課"] * len(classes))])
+        for time, subject in periods[:2]:
+            class_sheet.append([time, *([subject] * len(classes))])
+            class_sheet.append(["", *(["丁依敏"] * len(classes))])
+        class_sheet.append(["10:05-10:25", "小息"])
+        for time, subject in periods[2:4]:
+            class_sheet.append([time, *([subject] * len(classes))])
+            class_sheet.append(["", *(["丁依敏"] * len(classes))])
+        class_sheet.append(["12:05-12:25", "小息"])
+        class_sheet.append([periods[4][0], *([periods[4][1]] * len(classes))])
+        class_sheet.append(["", *(["丁依敏"] * len(classes))])
+
+        teacher_workbook = OpenpyxlWorkbook()
+        teacher_sheet = teacher_workbook.active
+        teacher_sheet.title = "教師試後時間表"
+        teachers = ["丁依敏", *[f"測試教師{index}" for index in range(2, 52)]]
+        teacher_sheet.append(["教師", *[f"{index}\n{name}" for index, name in enumerate(teachers, 1)]])
+        teacher_sheet.append(["8:10-8:25", *([""] * 51)])
+        for time, subject in periods[:2]:
+            teacher_sheet.append([time, subject, *([""] * 50)])
+            teacher_sheet.append(["", "、".join(classes), *([""] * 50)])
+        teacher_sheet.append(["10:05-10:25", "小息"])
+        for time, subject in periods[2:4]:
+            teacher_sheet.append([time, subject, *([""] * 50)])
+            teacher_sheet.append(["", "、".join(classes), *([""] * 50)])
+        teacher_sheet.append(["12:05-12:25", "小息"])
+        teacher_sheet.append([periods[4][0], periods[4][1], *([""] * 50)])
+        teacher_sheet.append(["", "、".join(classes), *([""] * 50)])
+
+        class_content, teacher_content = BytesIO(), BytesIO()
+        class_workbook.save(class_content)
+        teacher_workbook.save(teacher_content)
+        payload = build_import_preview(
+            class_content.getvalue(), teacher_content.getvalue(), post_exam=True
+        )
+        self.assertEqual(payload["summary"], {
+            "classes": 25, "teachers": 51, "lessons": 625,
+            "teacher_slots": 625, "blocked_lessons": 0, "issues": 0,
+        })
+
+        normal_teacher = Professor(nom="正常老師", actiu=True)
+        normal = TimetableVersion(
+            effective_from=date(2026, 2, 1), effective_to=date(2026, 7, 15),
+            class_filename="normal.xls", teacher_filename="normal.xlsx", active=True,
+        )
+        self.db.add_all([normal_teacher, normal])
+        self.db.flush()
+        self.db.add(TimetableLesson(
+            version_id=normal.id, weekday=0, period=1, class_code="1A",
+            subject="正常課程", teachers_json=json.dumps([normal_teacher.id]),
+        ))
+        self.db.add(TimetableImportPreview(
+            id="post-exam", payload=json.dumps(payload, ensure_ascii=False),
+            class_filename="試後班別表.xlsx", teacher_filename="試後教師表.xlsx", created_by="admin",
+        ))
+        self.db.commit()
+
+        result = activate_import(
+            "post-exam",
+            ActivateTimetableRequest(
+                effective_from=date(2026, 6, 22), effective_to=date(2026, 7, 8),
+            ),
+            self.db,
+            SimpleNamespace(username="admin"),
+        )
+        self.assertEqual(result["lessons"], 625)
+        self.assertEqual(version_for_date(self.db, date(2026, 6, 15)).id, normal.id)
+        self.assertNotEqual(version_for_date(self.db, date(2026, 6, 22)).id, normal.id)
+        self.assertEqual(version_for_date(self.db, date(2026, 7, 13)).id, normal.id)
+        subjects = {row["subject"] for row in effective_occurrences(
+            self.db, date(2026, 6, 22), date(2026, 6, 22)
+        )}
+        self.assertEqual(subjects, {subject for _, subject in periods})
 
     def test_existing_timetable_special_subjects_can_be_updated(self):
         version = TimetableVersion(
@@ -511,13 +731,28 @@ class ReschedulingTests(unittest.TestCase):
         self.db.commit()
         user = SimpleNamespace(username="admin")
 
-        update_absence(
+        reason_updated = update_absence(
             absence.id,
-            AbsenceCreateRequest(professor_id=teacher.id, data=date(2026, 8, 12), periods=[2, 3]),
+            AbsenceCreateRequest(
+                professor_id=teacher.id, data=date(2026, 8, 11), periods=[1],
+                reason_type="other", reason_detail="更正原因",
+            ),
+            self.db, user,
+        )
+        self.assertIsNotNone(self.db.get(ScheduleAdjustment, adjustment.id))
+        self.assertEqual(absence.status, "resolved")
+        self.assertEqual((reason_updated["reason_type"], reason_updated["reason_detail"]), ("other", "更正原因"))
+
+        updated = update_absence(
+            absence.id,
+            AbsenceCreateRequest(professor_id=teacher.id, data=date(2026, 8, 12), periods=[2, 3], reason_type="personal"),
             self.db, user,
         )
         self.assertIsNone(self.db.get(ScheduleAdjustment, adjustment.id))
         self.assertEqual(json.loads(absence.periods_json), [2, 3])
+        self.assertEqual(updated["reason_type"], "personal")
+        record = list_records(scope="all", page=1, page_size=20, db=self.db)["items"][0]
+        self.assertEqual((record["reason_type"], record["reason_detail"]), ("personal", None))
 
         replacement = ScheduleAdjustment(
             absence_case_id=absence.id, kind="direct_swap", status="confirmed", locked=True,
@@ -1063,12 +1298,14 @@ class ReschedulingTests(unittest.TestCase):
         self.assertEqual([item["date"] for item in covers["items"]], ["2026-08-13"])
 
     def test_statistics_daily_exports_and_complete_cycle_payload(self):
-        absent, swap_teacher, cover_teacher = [Professor(nom=name, actiu=True) for name in ("甲老師", "乙老師", "丙老師")]
+        absent, swap_teacher, cycle_teacher, cover_teacher = [
+            Professor(nom=name, actiu=True) for name in ("甲老師", "乙老師", "丁老師", "丙老師")
+        ]
         version = TimetableVersion(
             effective_from=date(2026, 8, 1), effective_to=date(2027, 7, 31),
             class_filename="classes.xls", teacher_filename="teachers.xlsx", active=True,
         )
-        self.db.add_all([absent, swap_teacher, cover_teacher, version])
+        self.db.add_all([absent, swap_teacher, cycle_teacher, cover_teacher, version])
         self.db.flush()
         first = TimetableLesson(
             version_id=version.id, weekday=0, period=1, class_code="1A", subject="中文",
@@ -1078,12 +1315,17 @@ class ReschedulingTests(unittest.TestCase):
             version_id=version.id, weekday=0, period=2, class_code="1A", subject="英文",
             teachers_json=json.dumps([swap_teacher.id]),
         )
-        absence = AbsenceCase(
-            professor_id=absent.id, data=date(2026, 8, 10), periods_json="[1]", status="resolved",
+        third = TimetableLesson(
+            version_id=version.id, weekday=0, period=3, class_code="1A", subject="數學",
+            teachers_json=json.dumps([cycle_teacher.id]),
         )
-        self.db.add_all([first, second, absence])
+        absence = AbsenceCase(
+            professor_id=absent.id, data=date(2026, 8, 10), periods_json="[1]",
+            reason_type="other", reason_detail="家庭安排", status="resolved",
+        )
+        self.db.add_all([first, second, third, absence])
         self.db.flush()
-        swap = ScheduleAdjustment(absence_case_id=absence.id, kind="direct_swap", status="confirmed", locked=True)
+        swap = ScheduleAdjustment(absence_case_id=absence.id, kind="three_cycle", status="confirmed", locked=True)
         cover = ScheduleAdjustment(absence_case_id=absence.id, kind="emergency_cover", status="confirmed", locked=True)
         self.db.add_all([swap, cover])
         self.db.flush()
@@ -1091,12 +1333,17 @@ class ReschedulingTests(unittest.TestCase):
             ScheduleAdjustmentLeg(
                 adjustment_id=swap.id, lesson_id=first.id, class_code="1A", subject="中文",
                 teachers_json=json.dumps([absent.id]), from_date=date(2026, 8, 10), from_period=1,
-                to_date=date(2026, 8, 10), to_period=2,
+                to_date=date(2026, 8, 10), to_period=3,
             ),
             ScheduleAdjustmentLeg(
                 adjustment_id=swap.id, lesson_id=second.id, class_code="1A", subject="英文",
                 teachers_json=json.dumps([swap_teacher.id]), from_date=date(2026, 8, 10), from_period=2,
                 to_date=date(2026, 8, 10), to_period=1,
+            ),
+            ScheduleAdjustmentLeg(
+                adjustment_id=swap.id, lesson_id=third.id, class_code="1A", subject="數學",
+                teachers_json=json.dumps([cycle_teacher.id]), from_date=date(2026, 8, 10), from_period=3,
+                to_date=date(2026, 8, 10), to_period=2,
             ),
             ScheduleAdjustmentLeg(
                 adjustment_id=cover.id, lesson_id=first.id, class_code="1A", subject="中文",
@@ -1111,23 +1358,55 @@ class ReschedulingTests(unittest.TestCase):
             date(2026, 8, 1), date(2027, 7, 31), self.db, SimpleNamespace(username="admin")
         )
         totals = {row["name"]: row["total"] for row in statistics["teachers"]}
-        self.assertEqual(totals, {"丙老師": 1, "乙老師": 1, "甲老師": 0})
+        self.assertEqual(totals, {"丁老師": 1, "丙老師": 1, "乙老師": 1, "甲老師": 0})
 
         effective = get_effective_timetable(date(2026, 8, 10), db=self.db)
         cycle = next(item for item in effective["adjustments"] if item["id"] == swap.id)
-        self.assertEqual(len(cycle["legs"]), 2)
+        self.assertEqual(len(cycle["legs"]), 3)
 
         entries = daily_export_data(self.db, date(2026, 8, 10))
+        self.assertEqual(entries[0]["reason_type"], "other")
+        self.assertEqual(entries[0]["reason_detail"], "家庭安排")
+        self.assertEqual(entries[0]["reason_label"], "其他：家庭安排")
         self.assertEqual(entries[0]["rows"][0]["subject"], "中文")
         self.assertEqual(entries[0]["rows"][0]["substitute_teacher"], "乙老師")
-        self.assertEqual(entries[0]["rows"][0]["remark"], "與 2026-08-10 第 2 節（乙老師）對調")
+        self.assertEqual(entries[0]["rows"][0]["remark"], "08-10-甲老師-上1A中文，08-10-乙老師-上1A英文")
         periods = get_period_times(self.db)
         workbook = load_workbook(BytesIO(build_daily_xlsx(entries, periods)))
         self.assertEqual(workbook.sheetnames, ["甲老師"])
         self.assertEqual(workbook["甲老師"]["A1"].value, "2026 年")
+        self.assertEqual(workbook["甲老師"]["D4"].value, "原因：其他：家庭安排")
         self.assertEqual(workbook["甲老師"]["E7"].value, "乙老師")
-        self.assertEqual(workbook["甲老師"]["G7"].value, "與 2026-08-10 第 2 節（乙老師）對調")
-        self.assertTrue(build_daily_pdf(entries[0], periods).startswith(b"%PDF"))
+        self.assertEqual(workbook["甲老師"]["G7"].value, "08-10-甲老師-上1A中文，08-10-乙老師-上1A英文")
+        pdf_entries = [deepcopy(entries[0]) for _ in range(3)]
+        for index, entry in enumerate(pdf_entries, 1):
+            entry["teacher_id"] = index
+            entry["teacher_name"] = f"第{index}位老師全名"
+        for count, expected_pages in ((1, 1), (2, 1), (3, 2)):
+            pdf = build_daily_pdf(pdf_entries[:count], periods)
+            self.assertTrue(pdf.startswith(b"%PDF"))
+            self.assertEqual(len(re.findall(rb"/Type\s*/Page(?!s)", pdf)), expected_pages)
+        with patch("routes.rescheduling.daily_export_data", return_value=pdf_entries):
+            response = export_daily_pdf(
+                date(2026, 8, 10), self.db, SimpleNamespace(username="admin")
+            )
+        self.assertEqual(response.media_type, "application/pdf")
+        self.assertTrue(response.headers["content-disposition"].endswith('.pdf"'))
+        legs = (
+            self.db.query(ScheduleAdjustmentLeg)
+            .filter_by(adjustment_id=swap.id)
+            .order_by(ScheduleAdjustmentLeg.id)
+            .all()
+        )
+        swap.kind = "direct_swap"
+        legs[0].to_period = 2
+        self.db.delete(legs[2])
+        self.db.commit()
+        direct = daily_export_data(self.db, date(2026, 8, 10))
+        self.assertEqual(
+            direct[0]["rows"][0]["remark"],
+            "08-10-甲老師-上1A中文，08-10-乙老師-上1A英文",
+        )
         changed_periods = [{**item, "start": "08:20"} if item["period"] == 1 else item for item in periods]
         save_period_times(self.db, changed_periods)
         self.assertEqual(get_period_times(self.db)[0]["start"], "08:20")

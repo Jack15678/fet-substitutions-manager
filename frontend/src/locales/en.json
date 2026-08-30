@@ -60,6 +60,20 @@
       "vigilancies": "Supervisions"
     }
   },
+  "displayPreferences": {
+    "title": "Display",
+    "textSize": "Display mode",
+    "font": "Font",
+    "sizes": { "standard": "Standard", "large": "Large", "extraLarge": "Magnified (compact)" },
+    "fonts": { "system": "System default", "sans": "Sans serif", "serif": "Serif", "kai": "Kai" }
+  },
+  "dailyExport": {
+    "title": "Export",
+    "hint": "Export daily rescheduling and cover forms for every absent teacher on the selected date. PDF is one file with two forms per page.",
+    "date": "Export date",
+    "excel": "Export Excel",
+    "pdf": "Export PDF"
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",
@@ -371,7 +385,7 @@
           "records_view": { "label": "View rescheduling records", "description": "View absence case, rescheduling and cover record details." },
           "records_manage": { "label": "Manage rescheduling records", "description": "Edit, revert or delete same-school absences and arrangements." },
           "statistics_view": { "label": "View statistics", "description": "View rescheduling and cover statistics for a selected date range." },
-          "exports_download": { "label": "Download daily forms", "description": "Download daily Excel, PDF or ZIP rescheduling and cover forms." },
+          "exports_download": { "label": "Download daily forms", "description": "Download daily Excel or a single PDF rescheduling and cover form from the workbench." },
           "timetable_upload": { "label": "Upload and preview timetables", "description": "Upload timetables, review differences and save review decisions." },
           "timetable_manage": { "label": "Activate and manage timetables", "description": "Activate, cancel, change dates or delete timetable versions." }
         }
@@ -1756,7 +1770,7 @@
     "next": "Next",
     "page": "Page {page} of {pages}, {total} items", "resume": "Continue handling",
     "statuses": { "open": "Pending", "resolved": "Arranged", "cancelled": "Cancelled", "confirmed": "Confirmed", "reverted": "Reverted" }, "needsReview": "Needs review",
-    "editReason": "Edit reason", "reason": "Reason: {reason}", "reasonPrompt": "Enter the adjustment reason (optional)", "editRemovesAdjustments": "Editing this absence invalidates and deletes its existing adjustments. Continue?", "deleteAbsenceConfirm": "Permanently delete this absence and all its adjustments?", "deleteAdjustmentConfirm": "Permanently delete this adjustment and restore the base timetable?",
+    "editRemovesAdjustments": "Editing this absence invalidates and deletes its existing adjustments. Continue?", "deleteAbsenceConfirm": "Permanently delete this absence and all its adjustments?", "deleteAdjustmentConfirm": "Permanently delete this adjustment and restore the base timetable?",
     "kinds": { "direct_swap": "Direct swap", "three_cycle": "Same-class cycle", "emergency_cover": "Emergency subject cover", "co_teacher_solo": "Remaining teacher continues", "manual_swap": "Manual swap", "manual_three_cycle": "Manual three-lesson cycle" }
   },
   "leave": {
@@ -1771,13 +1785,13 @@
     "title": "Rescheduling workbench",
     "revision": "Timetable revision {revision}",
     "steps": { "absence": "Absent teachers", "recommendations": "Review and manually confirm suggestions", "effective": "Today's affected timetable" },
-    "teacher": "Absent teacher", "teachers": "Absent teachers (multiple)", "selectTeacher": "Select teacher", "selectTeachers": "Select one or more teachers", "date": "Date", "absenceDate": "Absence date", "absentPeriods": "Absent periods", "allDay": "Absent all day", "analyzeAll": "Analyse all lessons", "checkingDate": "Checking date…", "invalidDate": "No timetable data for the selected date",
+    "teacher": "Absent teacher", "teachers": "Absent teachers (multiple)", "selectTeacher": "Select teacher", "selectTeachers": "Select one or more teachers", "date": "Date", "absenceDate": "Absence date", "absentPeriods": "Absent periods", "allDay": "Absent all day", "analyzeAll": "Analyse all lessons", "checkingDate": "Checking date…", "invalidDate": "No timetable data for the selected date", "absenceReason": "Absence reason", "selectAbsenceReason": "Select an absence reason (required)", "absenceReasonRequired": "Select an absence reason first", "absenceReasonMissing": "Not provided", "absenceReasons": { "sick": "Sick leave", "personal": "Personal leave", "official": "Official duty", "training": "Training", "other": "Other" }, "otherReasonPlaceholder": "Optional",
     "addAbsence": "Add absence", "addAbsenceHint": "Add up to three teachers at a time, each with their own date and periods.", "currentAbsences": "Current absences", "newAbsenceRecord": "No teacher selected", "addAnotherTeacher": "Add another teacher", "absenceLimit": "{count} of 3 teachers added", "removeAbsenceRecord": "Remove this record", "noPeriodsSelected": "No periods selected", "createAndAnalyze": "Add and analyse", "analysisDates": "Absence analysis dates",
     "counts": "Resolved {resolved} · Unresolved {unresolved}", "cancelAbsence": "Cancel added absences",
     "analysisEmpty": "Select Add absence to enter each teacher, date and periods, then analyse all affected lessons.", "noTasks": "There are no lessons left to handle in the selected periods.",
     "originalTeacher": "Original teacher: {teachers}", "recommendable": "Can be resolved", "unresolved": "Unresolved", "candidates": "Available arrangements", "specialCourseLater": "cross-day special lesson · lower priority", "breaksConsecutiveLesson": "Breaks an existing consecutive lesson pair",
-    "confirmArrangement": "Confirm this arrangement", "verifyTimetables": "Check involved teachers' timetables", "verifyTitle": "Check involved teachers' timetables", "verifyHint": "This is the post-confirmation timetable rebuilt from the current timetable and selected arrangement. It shows only adjusted lessons and unchanged lessons.", "adjusted": "Adjusted", "noCandidate": "There is no arrangement ready to confirm. Open manual arrangement to continue.",
-    "manualArrangement": "Manual arrangement", "arrangeThisLesson": "Arrange this lesson", "manualEyebrow": "Unresolved absences", "manualQueue": "Needs manual handling", "manualQueueHint": "Select an unresolved lesson first", "manualQueueCount": "{count} lessons remaining", "manualEmptyTitle": "All absence lessons are handled", "manualEmptyHint": "There are no lessons requiring manual arrangement.",
+    "confirmArrangement": "Confirm this arrangement", "verifyTimetables": "Check involved teachers' timetables", "verifyTitle": "Check involved teachers' timetables", "verifyHint": "Teachers are colour-coded below. Changed lessons show the original and new arrangement in each affected slot.", "adjusted": "Adjusted", "noCandidate": "There is no arrangement ready to confirm. Open manual arrangement to continue.", "useManualInstead": "System suggestions unsuitable — arrange manually", "originalArrangement": "Original", "newArrangement": "Now",
+    "manualArrangement": "Manual arrangement", "arrangeThisLesson": "Arrange this lesson", "manualEyebrow": "Manual arrangement", "manualQueue": "Lessons available for manual arrangement", "manualQueueHint": "Select a lesson first", "manualQueueCount": "{count} lessons", "manualEmptyTitle": "No lessons available for manual arrangement", "manualEmptyHint": "There are currently no lessons to arrange manually.",
     "manualStep": "Step {step}", "chooseCoverTeacher": "Choose a cover teacher", "candidateRule": "Clashes and absent teachers are excluded; free adjacent periods rank first", "noManualCandidate": "No teacher is currently available to cover this period.", "coverCount": "{count} covers so far", "sameSubject": "Same subject", "adjacentAllFree": "All adjacent periods free", "adjacentPartlyFree": "Some adjacent periods free", "adjacentAllBusy": "Adjacent periods busy", "availableToCover": "Available", "freePeriod": "Free", "unavailable": "Unavailable",
     "coTeacherAvailableTitle": "{teachers} remains in class", "coTeacherAvailableHint": "The administrator can confirm that the remaining original teacher continues without another cover teacher.", "confirmCoTeacherOnly": "Confirm original teacher only",
     "confirmManualArrangement": "Confirm arrangement", "lessonToHandle": "Lesson", "classSubject": "Class and subject", "absentTeacher": "Absent teacher", "remainingCoTeacher": "Remaining original teacher", "coverTeacher": "Cover teacher", "notSelected": "Not selected", "manualConfirmHint": "Confirmation updates the effective timetable and records the result on the original absence case.", "confirmManualCover": "Confirm manual cover",
@@ -1790,8 +1804,7 @@
   },
   "statistics": {
     "title": "Statistics", "description": "Review each teacher's confirmed covers and lesson-swap participation in the selected date range.",
-    "matrixTitle": "Monthly teacher totals", "matrixHint": "Only confirmed, non-reverted arrangements are counted.", "startDate": "Start date", "endDate": "End date", "apply": "Search", "teacher": "Teacher", "total": "Total", "invalidRange": "The end date cannot be earlier than the start date.", "loadError": "Could not load statistics.",
-    "exportTitle": "Export daily rescheduling / cover form", "exportHint": "Excel uses one worksheet per absent teacher. PDF creates one file per teacher and a ZIP when there are several.", "exportDate": "Export date", "exportExcel": "Export Excel", "exportPdf": "Export PDF"
+    "matrixTitle": "Monthly teacher totals", "matrixHint": "Only confirmed, non-reverted arrangements are counted.", "startDate": "Start date", "endDate": "End date", "apply": "Search", "teacher": "Teacher", "total": "Total", "invalidRange": "The end date cannot be earlier than the start date.", "loadError": "Could not load statistics."
   },
   "settings": {
     "title": "Configuration", "description": "Manage holiday, rescheduling and export settings.",
@@ -1807,8 +1820,8 @@
   "importCenter": {
     "eyebrow": "Administrator",
     "title": "Timetable import centre",
-    "description": "Check both workbooks first. Mismatched lessons are listed and locked.",
-    "baseTitle": "Import base timetable", "classFile": "Class timetable (.xls)", "teacherFile": "Teacher timetable (.xlsx, without duty sheet)", "effectiveFrom": "Start date (required)", "effectiveTo": "End date (required)", "check": "Compare timetable differences",
+    "description": "Normal and post-exam timetables both use class and teacher files; post-exam versions override only within the selected dates.",
+    "baseTitle": "Import timetable", "scheduleType": "Timetable type", "normalType": "Normal timetable", "postExamType": "Post-exam timetable", "classFile": "Class timetable (.xls)", "postExamClassFile": "Post-exam class timetable (.xlsx)", "teacherFile": "Teacher timetable (.xlsx, without duty sheet)", "effectiveFrom": "Start date (required)", "effectiveTo": "End date (required)", "check": "Compare timetable differences",
     "currentFiles": "Date {date} uses: {classFile} + {teacherFile}", "noCurrent": "No timetable is currently in effect.",
     "classes": "Classes", "teachers": "Teachers", "lessons": "Class lessons", "blocked": "Locked lessons", "resultTitle": "Validation result", "specialSubjects": "Special lessons", "specialSubjectsHint": "PE, visual arts and dictation-type lessons are preselected when recognised. Adjust as needed. Cross-day moves involving them receive lower priority.",
     "resultHint": "Confirm decisions individually or in batches. The timetable can only be activated after every review is complete.", "activate": "Activate", "cancelUpload": "Cancel this upload", "uploadCancelled": "Upload cancelled. You can select the files again.", "errorsBlock": "Some teacher data cannot be identified. Correct the Excel files before activation.", "reviewsBlock": "{count} review items remain. The timetable is not yet active.", "reviewsProgress": "{confirmed} of {total} confirmed; {remaining} remain and the timetable is not yet active.",

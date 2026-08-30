@@ -70,12 +70,12 @@ onMounted(async () => {
 .panel { width: 100%; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
 form { display: grid; gap: .45rem; margin-top: 1rem; }
 .period-row { display: grid; grid-template-columns: 82px 1fr auto 1fr; align-items: center; gap: .55rem; }
-.period-row b { font-size: .82rem; }
+.period-row b { font-size: var(--font-data); }
 input { min-height: 2.5rem; padding: .55rem .65rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
 .cycle-setting { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .65rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border-color); }
 .cycle-setting span { display: flex; flex-direction: column; gap: .2rem; }
 .cycle-setting small { color: var(--text-color-secondary); }
 .cycle-setting input { width: 90px; }
-.save-row { display: flex; align-items: center; justify-content: flex-end; gap: .6rem; margin-top: .45rem; color: #216a42; font-size: .82rem; }
+.save-row { display: flex; align-items: center; justify-content: flex-end; gap: .6rem; margin-top: .45rem; color: #216a42; font-size: var(--font-supporting); }
 @media (max-width: 600px) { .period-row { grid-template-columns: 72px 1fr auto 1fr; gap: .35rem; } .panel { padding: 1rem; } }
 </style>

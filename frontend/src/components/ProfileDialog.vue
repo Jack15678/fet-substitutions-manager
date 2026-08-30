@@ -189,7 +189,7 @@ watch(
   background: #f3f4f6;
   border-radius: 8px;
   padding: 0.5rem 0.75rem;
-  font-size: 0.9rem;
+  font-size: var(--font-data);
 }
 
 .profile-label {
@@ -204,12 +204,12 @@ watch(
 
 .profile-error {
   color: #b91c1c;
-  font-size: 0.9rem;
+  font-size: var(--font-ui);
 }
 
 .profile-success {
   color: #166534;
-  font-size: 0.9rem;
+  font-size: var(--font-ui);
 }
 
 :deep(.p-password) {

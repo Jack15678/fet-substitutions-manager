@@ -11,12 +11,19 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.pdfgen.canvas import Canvas
+from reportlab.platypus import (
+    Frame,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from models import AbsenceCase, Professor, ScheduleAdjustment, ScheduleAdjustmentLeg, TimetableLesson
 from repositories import ConfiguracioRepository
@@ -35,6 +42,13 @@ DEFAULT_PERIOD_TIMES = [
     {"period": 9, "start": "14:25", "end": "15:00"},
 ]
 WEEKDAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+ABSENCE_REASONS = {
+    "sick": "病假",
+    "personal": "事假",
+    "official": "公假",
+    "training": "培訓",
+    "other": "其他",
+}
 
 
 def _pdf_font() -> str:
@@ -47,10 +61,10 @@ def _pdf_font() -> str:
     windows = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
     candidates = [
         os.getenv("CJK_FONT_PATH"),
-        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
-        windows / "NotoSansJP-Regular.ttf",
         windows / "msjh.ttc",
         windows / "simhei.ttf",
+        windows / "NotoSansJP-Regular.ttf",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
     ]
     for candidate in candidates:
         if candidate and Path(candidate).is_file():
@@ -109,10 +123,17 @@ def _unique(values) -> str:
     return "、".join(dict.fromkeys(value for value in values if value))
 
 
+def _absence_reason(reason_type: str | None, reason_detail: str | None) -> str:
+    if not reason_type:
+        return "未填寫"
+    label = ABSENCE_REASONS.get(reason_type, "未填寫")
+    return f"{label}：{reason_detail}" if reason_type == "other" and reason_detail else label
+
+
 def daily_export_data(db, day) -> list[dict]:
     cases = (
         db.query(AbsenceCase)
-        .filter(AbsenceCase.data == day, AbsenceCase.status != "cancelled")
+        .filter(AbsenceCase.data == day, AbsenceCase.status == "resolved")
         .order_by(AbsenceCase.professor_id, AbsenceCase.id)
         .all()
     )
@@ -120,6 +141,7 @@ def daily_export_data(db, day) -> list[dict]:
         return []
 
     names = {row.id: row.nom for row in db.query(Professor).all()}
+    cases_by_teacher = {case.professor_id: case for case in cases}
     periods_by_teacher: dict[int, set[int]] = {}
     for case in cases:
         periods_by_teacher.setdefault(case.professor_id, set()).update(
@@ -134,7 +156,11 @@ def daily_export_data(db, day) -> list[dict]:
     confirmed_legs = (
         db.query(ScheduleAdjustmentLeg, ScheduleAdjustment)
         .join(ScheduleAdjustment, ScheduleAdjustmentLeg.adjustment_id == ScheduleAdjustment.id)
-        .filter(ScheduleAdjustment.status == "confirmed", ScheduleAdjustmentLeg.to_date == day)
+        .filter(
+            ScheduleAdjustment.status == "confirmed",
+            ScheduleAdjustment.absence_case_id.in_([case.id for case in cases]),
+        )
+        .order_by(ScheduleAdjustment.id, ScheduleAdjustmentLeg.id)
         .all()
     )
     result = []
@@ -154,31 +180,37 @@ def daily_export_data(db, day) -> list[dict]:
             actual_teacher_ids = [
                 value for occurrence in actual for value in occurrence["teachers"] if value != teacher_id
             ]
-            incoming = next((
-                (leg, adjustment) for leg, adjustment in confirmed_legs
+            related_adjustment_ids = {
+                adjustment.id for leg, adjustment in confirmed_legs
                 if adjustment.kind not in {"emergency_cover", "co_teacher_solo"} and leg.to_period == period
-                and leg.class_code in class_codes
-            ), None)
-            remark = ""
-            if incoming:
-                leg, adjustment = incoming
-                counterpart = _unique(
-                    names.get(int(value), str(value)) for value in json.loads(leg.teachers_json or "[]")
-                )
-                action = "連鎖互調" if adjustment.kind in {"three_cycle", "manual_three_cycle"} else "對調"
-                remark = f"與 {leg.from_date.isoformat()} 第 {leg.from_period} 節（{counterpart}）{action}"
+                and leg.to_date == day and leg.class_code in class_codes
+            }
+            remark_teacher_ids = {teacher_id, *actual_teacher_ids}
+            remarks = []
+            for leg, adjustment in confirmed_legs:
+                if adjustment.id not in related_adjustment_ids:
+                    continue
+                for value in json.loads(leg.teachers_json or "[]"):
+                    if int(value) in remark_teacher_ids:
+                        remarks.append(
+                            f"{leg.from_date:%m-%d}-{names.get(int(value), str(value))}-上{leg.class_code}{leg.subject}"
+                        )
             rows.append({
                 "period": period,
                 "class_code": _unique(class_codes),
                 "subject": _unique(lesson.subject for lesson in originals),
                 "substitute_teacher": _unique(names.get(value, str(value)) for value in actual_teacher_ids),
-                "remark": remark,
+                "remark": "，".join(dict.fromkeys(remarks)),
             })
+        absence = cases_by_teacher[teacher_id]
         result.append({
             "date": day,
             "weekday": WEEKDAYS[day.weekday()],
             "teacher_id": teacher_id,
             "teacher_name": names.get(teacher_id, str(teacher_id)),
+            "reason_type": absence.reason_type,
+            "reason_detail": absence.reason_detail,
+            "reason_label": _absence_reason(absence.reason_type, absence.reason_detail),
             "rows": rows,
         })
     return result
@@ -231,7 +263,7 @@ def build_daily_xlsx(entries: list[dict], period_times: list[dict]) -> bytes:
         sheet.merge_cells("A4:C4")
         sheet["A4"] = f"請假教師：{entry['teacher_name']}"
         sheet.merge_cells("D4:G4")
-        sheet["D4"] = "原因：__________ 假（____________________）"
+        sheet["D4"] = f"原因：{entry['reason_label']}"
         sheet.merge_cells("A5:B5")
         headers = {"A5": "節次", "C5": "班別", "D5": "科目", "E5": "代課教員", "F5": "簽署", "G5": "附註"}
         for cell, value in headers.items():
@@ -271,62 +303,93 @@ def build_daily_xlsx(entries: list[dict], period_times: list[dict]) -> bytes:
     return output.getvalue()
 
 
-def build_daily_pdf(entry: dict, period_times: list[dict]) -> bytes:
+def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
     times = {item["period"]: item for item in validate_period_times(period_times)}
     font = _pdf_font()
     output = BytesIO()
-    document = SimpleDocTemplate(
-        output, pagesize=landscape(A4), leftMargin=12 * mm, rightMargin=12 * mm,
-        topMargin=8 * mm, bottomMargin=8 * mm,
-    )
-    title = ParagraphStyle("daily-title", fontName=font, fontSize=15, leading=18, alignment=TA_CENTER)
-    info = ParagraphStyle("daily-info", fontName=font, fontSize=10, leading=13, alignment=TA_LEFT)
+    canvas = Canvas(output, pagesize=A4)
+    page_width, page_height = A4
+    margin = 5 * mm
+    half_height = (page_height - 2 * margin) / 2
+    title = ParagraphStyle("daily-title", fontName=font, fontSize=15.5, leading=17, alignment=TA_CENTER)
+    info = ParagraphStyle("daily-info", fontName=font, fontSize=12, leading=14, alignment=TA_LEFT)
     note = ParagraphStyle(
-        "daily-note", fontName=font, fontSize=8, leading=9, alignment=TA_CENTER, wordWrap="CJK"
+        "daily-note", fontName=font, fontSize=15.5, leading=15.5, alignment=TA_CENTER, wordWrap="CJK"
     )
-    day = entry["date"]
-    story = [
-        Paragraph(f"{day.year} 年", title),
-        Paragraph("調課／代課表（全日制）", title),
-        Spacer(1, 2 * mm),
-        Paragraph(f"代課日期：{day.year} 年 {day.month} 月 {day.day} 日（{entry['weekday']}）", info),
-        Paragraph(f"請假教師：{entry['teacher_name']}　　　　　原因：__________ 假（____________________）", info),
-        Spacer(1, 2 * mm),
-    ]
-    rows_by_period = {row["period"]: row for row in entry["rows"]}
-    table_data = [["節次", "", "班別", "科目", "代課教員", "簽署", "附註"], ["班主任課", "", "", "", "", "", ""]]
-    spans = [("SPAN", (0, 0), (1, 0)), ("SPAN", (0, 1), (1, 1))]
-    for period in range(1, 10):
-        row = rows_by_period[period]
-        timing = times[period]
-        table_data.append([
-            period,
-            f"{timing['start']}-{timing['end']}",
-            row["class_code"],
-            row["subject"],
-            row["substitute_teacher"],
-            "",
-            Paragraph(escape(row["remark"]), note) if row["remark"] else "",
-        ])
-        if period in (3, 6, 8):
-            label = {3: "一息", 6: "午膳", 8: "二息"}[period]
-            table_data.append([label, "", "", "", "", "", ""])
-            spans.append(("SPAN", (0, len(table_data) - 1), (-1, len(table_data) - 1)))
+    for index, entry in enumerate(entries):
+        day = entry["date"]
+        form = [
+            Paragraph(f"{day.year} 年　調課／代課表（全日制）", title),
+            Spacer(1, 1 * mm),
+            Paragraph(
+                f"代課日期：{day.year} 年 {day.month} 月 {day.day} 日（{entry['weekday']}）", info,
+            ),
+            Paragraph(
+                f"請假教師：{escape(entry['teacher_name'])}　　原因：{escape(entry['reason_label'])}", info,
+            ),
+            Spacer(1, 1.5 * mm),
+        ]
+        rows_by_period = {row["period"]: row for row in entry["rows"]}
+        table_data = [
+            ["節次", "", "班別", "科目", "代課教員", "簽署", "附註"],
+            ["班主任課", "", "", "", "", "", ""],
+        ]
+        row_heights = [7.5 * mm, 7.5 * mm]
+        spans = [("SPAN", (0, 0), (1, 0)), ("SPAN", (0, 1), (1, 1))]
+        for period in range(1, 10):
+            row = rows_by_period[period]
+            timing = times[period]
+            table_data.append([
+                period,
+                f"{timing['start']}-{timing['end']}",
+                row["class_code"],
+                row["subject"],
+                row["substitute_teacher"],
+                "",
+                Paragraph(escape(row["remark"]), note) if row["remark"] else "",
+            ])
+            row_heights.append((12 if row["remark"] else 7) * mm)
+            if period in (3, 6, 8):
+                label = {3: "一息", 6: "午膳", 8: "二息"}[period]
+                table_data.append([label, "", "", "", "", "", ""])
+                row_heights.append(6 * mm)
+                spans.append(("SPAN", (0, len(table_data) - 1), (-1, len(table_data) - 1)))
 
-    table = Table(table_data, colWidths=[15 * mm, 28 * mm, 28 * mm, 36 * mm, 40 * mm, 28 * mm, 64 * mm], rowHeights=[10 * mm] + [9 * mm] * (len(table_data) - 1))
-    style = [
-        ("FONTNAME", (0, 0), (-1, -1), font),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("GRID", (0, 0), (-1, -1), 0.75, colors.black),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F2F2F2")),
-    ]
-    for command in spans:
-        style.append(command)
-        if command[1][1] >= 2:
-            style.append(("BACKGROUND", command[1], command[2], colors.HexColor("#D9D9D9")))
-    table.setStyle(TableStyle(style))
-    story.append(table)
-    document.build(story)
+        table = Table(
+            table_data,
+            colWidths=[12 * mm, 28 * mm, 14 * mm, 18 * mm, 24 * mm, 12 * mm, 88 * mm],
+            rowHeights=row_heights,
+        )
+        style = [
+            ("FONTNAME", (0, 0), (-1, -1), font),
+            ("FONTSIZE", (0, 0), (-1, -1), 12),
+            ("TOPPADDING", (0, 0), (-1, -1), 1),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("GRID", (0, 0), (-1, -1), 0.75, colors.black),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F2F2F2")),
+        ]
+        for command in spans:
+            style.append(command)
+            if command[1][1] >= 2:
+                style.append(("BACKGROUND", command[1], command[2], colors.HexColor("#D9D9D9")))
+        table.setStyle(TableStyle(style))
+        form.append(table)
+        frame = Frame(
+            margin,
+            margin + half_height if index % 2 == 0 else margin,
+            page_width - 2 * margin,
+            half_height,
+            leftPadding=2 * mm,
+            rightPadding=2 * mm,
+            topPadding=2 * mm,
+            bottomPadding=2 * mm,
+        )
+        frame.addFromList(form, canvas)
+        if form:
+            raise RuntimeError("每日 PDF 表格超出半頁範圍")
+        if index % 2 == 1 or index == len(entries) - 1:
+            canvas.showPage()
+    canvas.save()
     return output.getvalue()

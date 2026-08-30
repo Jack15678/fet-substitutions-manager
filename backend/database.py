@@ -152,6 +152,17 @@ def _ensure_schedule_adjustment_columns(engine):
         pass
 
 
+def _ensure_absence_case_columns(engine):
+    """Add optional absence reasons while keeping legacy rows readable."""
+    with engine.begin() as conn:
+        columns = conn.exec_driver_sql("PRAGMA table_info(absence_cases);").fetchall()
+        names = {column[1] for column in columns}
+        if columns and "reason_type" not in names:
+            conn.exec_driver_sql("ALTER TABLE absence_cases ADD COLUMN reason_type VARCHAR")
+        if columns and "reason_detail" not in names:
+            conn.exec_driver_sql("ALTER TABLE absence_cases ADD COLUMN reason_detail VARCHAR(200)")
+
+
 @lru_cache(maxsize=None)
 def get_engine_for_institucio(institucio: str):
     data_dir = get_data_dir_for_institucio(institucio)
@@ -163,6 +174,7 @@ def get_engine_for_institucio(institucio: str):
     _ensure_timetable_version_columns(engine)
     _ensure_timetable_lesson_columns(engine)
     _ensure_schedule_adjustment_columns(engine)
+    _ensure_absence_case_columns(engine)
     return engine
 
 

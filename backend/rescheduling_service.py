@@ -122,7 +122,7 @@ def _time_key(value) -> tuple[int, int] | None:
 
 
 def teacher_names_from_workbook(content: bytes) -> list[str]:
-    workbook = openpyxl.load_workbook(BytesIO(content), data_only=True, read_only=True)
+    workbook = openpyxl.load_workbook(BytesIO(content), data_only=True)
     names = []
     for sheet in workbook.worksheets:
         teacher = ""
@@ -153,7 +153,7 @@ def _openpyxl_weekday_columns(sheet) -> dict[int, int]:
 def parse_teacher_workbook(content: bytes, period_times: list[tuple[int, int]],
                            names: list[str] | None = None) -> tuple[list[dict], list[str]]:
     """Read only the nine teaching-period rows; duty/recess rows are ignored."""
-    workbook = openpyxl.load_workbook(BytesIO(content), data_only=True, read_only=True)
+    workbook = openpyxl.load_workbook(BytesIO(content), data_only=True)
     slots: list[dict] = []
     names = names or teacher_names_from_workbook(content)
     for sheet in workbook.worksheets:
@@ -183,17 +183,30 @@ def parse_teacher_workbook(content: bytes, period_times: list[tuple[int, int]],
             class_row = rows_by_time[key]
             subject_row = class_row + 1
             for weekday, column in weekday_columns.items():
-                class_code = normalize_class(sheet.cell(row=class_row, column=column).value)
-                subject = normalize_subject(sheet.cell(row=subject_row, column=column).value)
-                if not (_is_real(class_code) or _is_real(subject)):
+                class_codes = [normalize_class(value) for value in re.split(
+                    r"[、,，/＋+;；\n]+", clean(sheet.cell(row=class_row, column=column).value)
+                ) if normalize_class(value)]
+                if class_codes:
+                    prefix = re.match(r"(\d+)", class_codes[0])
+                    class_codes = [
+                        f"{prefix.group(1)}{value}" if prefix and value.isalpha() else value
+                        for value in class_codes
+                    ]
+                subjects = [normalize_subject(value) for value in re.split(
+                    r"[、,，/＋+;；\n]+", clean(sheet.cell(row=subject_row, column=column).value)
+                ) if normalize_subject(value)]
+                if not (class_codes or subjects):
                     continue
-                slots.append({
-                    "teacher": teacher,
-                    "weekday": weekday,
-                    "period": period,
-                    "class_code": class_code,
-                    "subject": subject,
-                })
+                class_codes = class_codes or [""]
+                subjects = subjects or [""]
+                for index in range(max(len(class_codes), len(subjects))):
+                    slots.append({
+                        "teacher": teacher,
+                        "weekday": weekday,
+                        "period": period,
+                        "class_code": class_codes[min(index, len(class_codes) - 1)],
+                        "subject": subjects[min(index, len(subjects) - 1)],
+                    })
     workbook.close()
     return slots, names
 
@@ -220,6 +233,166 @@ def _contains_known_teacher(value, known_names: Iterable[str]) -> bool:
     raw = clean(value).replace(" ", "")
     return any(name in raw or any(alias in raw for alias, target in NAME_ALIASES.items() if target == name)
                for name in known_names if name)
+
+
+def _single_sheet(content: bytes, label: str):
+    workbook = openpyxl.load_workbook(BytesIO(content), data_only=True)
+    if len(workbook.worksheets) != 1:
+        workbook.close()
+        raise ValueError(f"{label}必須只有一張工作表")
+    return workbook, workbook.active
+
+
+def _split_classes(value) -> list[str]:
+    classes = [normalize_class(part) for part in re.split(
+        r"[、,，/＋+;；\n]+", clean(value)
+    ) if normalize_class(part)]
+    if classes:
+        prefix = re.match(r"(\d+)", classes[0])
+        classes = [f"{prefix.group(1)}{item}" if prefix and item.isalpha() else item
+                   for item in classes]
+    return classes
+
+
+def _split_subjects(value) -> list[str]:
+    return [normalize_subject(part) for part in re.split(
+        r"[、,，/＋+;；\n]+", clean(value)
+    ) if normalize_subject(part)]
+
+
+def _matrix_header_row(sheet, label: str) -> int:
+    for row in range(1, min(10, sheet.max_row) + 1):
+        if clean(sheet.cell(row=row, column=1).value).replace(" ", "") in {"班別", "教師"}:
+            return row
+    raise ValueError(f"{label}找不到橫排標題")
+
+
+def _matrix_period_rows(sheet, header_row: int, label: str,
+                        end_row: int | None = None) -> list[tuple[tuple[int, int], int]]:
+    rows = []
+    for row in range(header_row + 1, (end_row or sheet.max_row) + 1):
+        key = _time_key(sheet.cell(row=row, column=1).value)
+        if key and 25 <= key[1] - key[0] <= 55:
+            rows.append((key, row))
+    if len(rows) != 5:
+        raise ValueError(f"{label}辨識到 {len(rows)} 個正式教學節次，預期為 5 個")
+    return rows
+
+
+def parse_post_exam_class_workbook(
+    content: bytes, known_names: Iterable[str]
+) -> tuple[list[dict], list[tuple[int, int]]]:
+    workbook, sheet = _single_sheet(content, "試後班別表")
+    header_rows = [row for row in range(1, sheet.max_row + 1)
+                   if clean(sheet.cell(row=row, column=1).value).replace(" ", "") == "班別"]
+    if not header_rows:
+        workbook.close()
+        raise ValueError("試後班別表找不到橫排標題")
+    lessons: list[dict] = []
+    class_codes: set[str] = set()
+    expected_times: list[tuple[int, int]] | None = None
+    for index, header_row in enumerate(header_rows):
+        columns = [
+            (column, normalize_class(sheet.cell(row=header_row, column=column).value))
+            for column in range(2, sheet.max_column + 1)
+            if normalize_class(sheet.cell(row=header_row, column=column).value)
+        ]
+        block_codes = {class_code for _, class_code in columns}
+        if len(block_codes) != len(columns) or class_codes & block_codes:
+            workbook.close()
+            raise ValueError("試後班別表有重複班別")
+        class_codes.update(block_codes)
+        end_row = header_rows[index + 1] - 1 if index + 1 < len(header_rows) else sheet.max_row
+        period_rows = _matrix_period_rows(sheet, header_row, "試後班別表", end_row)
+        times = [key for key, _ in period_rows]
+        if expected_times is None:
+            expected_times = times
+        elif times != expected_times:
+            workbook.close()
+            raise ValueError("試後班別表各區塊的上課時間不一致")
+        for period, (_, row) in enumerate(period_rows, start=1):
+            for column, class_code in columns:
+                raw = clean(sheet.cell(row=row, column=column).value)
+                teacher_row = ""
+                if (row < end_row
+                        and not _time_key(sheet.cell(row=row + 1, column=1).value)
+                        and _contains_known_teacher(
+                            sheet.cell(row=row + 1, column=column).value, known_names
+                        )):
+                    teacher_row = clean(sheet.cell(row=row + 1, column=column).value)
+                teachers = _teachers_from_cell(f"{raw}\n{teacher_row}", known_names)
+                subject = raw
+                for teacher in teachers:
+                    subject = subject.replace(teacher, "")
+                    for alias, target in NAME_ALIASES.items():
+                        if target == teacher:
+                            subject = subject.replace(alias, "")
+                subject = normalize_subject(subject.strip(" /、,，-—"))
+                if not _is_real(subject):
+                    workbook.close()
+                    raise ValueError(f"試後班別表 {class_code} 第 {period} 節缺少科目")
+                for weekday in range(5):
+                    lessons.append({
+                        "weekday": weekday,
+                        "period": period,
+                        "class_code": class_code,
+                        "subject": subject,
+                        "teachers": teachers,
+                    })
+    if len(class_codes) != 25:
+        workbook.close()
+        raise ValueError("試後班別表必須合共列出 25 個不同班別")
+    workbook.close()
+    return lessons, expected_times or []
+
+
+def parse_post_exam_teacher_workbook(content: bytes) -> tuple[list[dict], list[str]]:
+    workbook, sheet = _single_sheet(content, "試後教師表")
+    header_row = _matrix_header_row(sheet, "試後教師表")
+    columns = []
+    for column in range(2, sheet.max_column + 1):
+        teacher = normalize_name(re.sub(
+            r"^\d+\s*", "", clean(sheet.cell(row=header_row, column=column).value)
+        ))
+        if teacher:
+            columns.append((column, teacher))
+    names = [teacher for _, teacher in columns]
+    if len(names) != 51 or len(set(names)) != 51:
+        workbook.close()
+        raise ValueError("試後教師表必須橫向列出 51 位不同教師的完整姓名")
+    period_rows = _matrix_period_rows(sheet, header_row, "試後教師表")
+    slots: list[dict] = []
+    for period, (_, row) in enumerate(period_rows, start=1):
+        for column, teacher in columns:
+            raw = str(sheet.cell(row=row, column=column).value or "")
+            if row < sheet.max_row and not _time_key(sheet.cell(row=row + 1, column=1).value):
+                class_row = sheet.cell(row=row + 1, column=column).value
+                classes = _split_classes(class_row)
+                if classes and all(re.fullmatch(r"\d+[A-Z]", code) for code in classes):
+                    raw = f"{raw}\n{class_row}"
+            lines = [clean(line) for line in re.split(
+                r"[\r\n]+", raw
+            ) if clean(line)]
+            if not lines:
+                continue
+            class_codes = _split_classes(lines[-1])
+            if not class_codes or not all(re.fullmatch(r"\d+[A-Z]", code) for code in class_codes):
+                class_codes, subjects = [], _split_subjects("、".join(lines))
+            else:
+                subjects = _split_subjects("、".join(lines[:-1]))
+            class_codes = class_codes or [""]
+            subjects = subjects or [""]
+            for index in range(max(len(class_codes), len(subjects))):
+                for weekday in range(5):
+                    slots.append({
+                        "teacher": teacher,
+                        "weekday": weekday,
+                        "period": period,
+                        "class_code": class_codes[min(index, len(class_codes) - 1)],
+                        "subject": subjects[min(index, len(subjects) - 1)],
+                    })
+    workbook.close()
+    return slots, sorted(names)
 
 
 def _xlrd_weekday_columns(sheet) -> dict[int, int]:
@@ -290,10 +463,14 @@ def parse_class_workbook(content: bytes, known_names: Iterable[str]) -> tuple[li
     return lessons, expected_times or []
 
 
-def build_import_preview(class_content: bytes, teacher_content: bytes) -> dict:
-    teacher_names = teacher_names_from_workbook(teacher_content)
-    lessons, period_times = parse_class_workbook(class_content, teacher_names)
-    teacher_slots, teacher_names = parse_teacher_workbook(teacher_content, period_times, teacher_names)
+def build_import_preview(class_content: bytes, teacher_content: bytes, post_exam: bool = False) -> dict:
+    if post_exam:
+        teacher_slots, teacher_names = parse_post_exam_teacher_workbook(teacher_content)
+        lessons, period_times = parse_post_exam_class_workbook(class_content, teacher_names)
+    else:
+        teacher_names = teacher_names_from_workbook(teacher_content)
+        lessons, period_times = parse_class_workbook(class_content, teacher_names)
+        teacher_slots, teacher_names = parse_teacher_workbook(teacher_content, period_times, teacher_names)
     warnings: list[str] = []
     issues: list[dict] = []
     known = set(teacher_names)
@@ -385,6 +562,7 @@ def build_import_preview(class_content: bytes, teacher_content: bytes) -> dict:
         warnings.append(f"有 {blocked_count} 堂課的班別／教師資料不一致，已鎖定為不可自動調動")
 
     return {
+        "format": "post_exam" if post_exam else "normal",
         "lessons": lessons,
         "teacher_slots": teacher_slots,
         "teachers": sorted(known | {name for lesson in lessons for name in lesson["teachers"]}),

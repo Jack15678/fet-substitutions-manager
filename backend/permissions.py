@@ -30,6 +30,7 @@ _PREREQUISITES = {
     "absence.create": "workbench.view",
     "adjustment.confirm": "workbench.view",
     "manual_arrangement.manage": "workbench.view",
+    "exports.download": "workbench.view",
     "records.manage": "records.view",
 }
 
@@ -77,6 +78,9 @@ def get_user_permissions(user) -> list[str]:
         decoded = json.loads(raw) if isinstance(raw, str) else raw
         if not isinstance(decoded, list):
             raise ValueError("stored permissions are not an array")
+        decoded = list(decoded)
+        if "exports.download" in decoded and "workbench.view" not in decoded:
+            decoded.append("workbench.view")
         return validate_permissions(decoded)
     except (json.JSONDecodeError, TypeError, ValueError) as exc:
         logger.error(

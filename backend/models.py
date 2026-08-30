@@ -538,6 +538,8 @@ class AbsenceCase(Base):
     professor_id = Column(Integer, ForeignKey('professors.id'), nullable=False)
     data = Column(Date, nullable=False)
     periods_json = Column(Text, nullable=False)
+    reason_type = Column(String)
+    reason_detail = Column(String(200))
     status = Column(String, default='open', nullable=False)
     created_by = Column(String)
     created_at = Column(DateTime, default=utc_now)

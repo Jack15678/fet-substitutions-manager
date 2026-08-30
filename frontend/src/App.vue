@@ -24,12 +24,19 @@
           <span class="school-mark" aria-hidden="true"><img src="/school-logo.png" alt="" /></span>
           <span>{{ $t('brand.school') }}</span>
         </div>
-        <div class="language-control login-language">
-          <label for="login-language">{{ $t('app.nav.language') }}</label>
-          <select id="login-language" v-model="currentLocale">
-            <option value="zh-HK">繁體中文（香港）</option>
-            <option value="en">English</option>
-          </select>
+        <div class="login-controls">
+          <div class="language-control login-language">
+            <label for="login-language">{{ $t('app.nav.language') }}</label>
+            <select id="login-language" v-model="currentLocale">
+              <option value="zh-HK">繁體中文（香港）</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <DisplayPreferences
+            id-prefix="login-display"
+            v-model:size="displaySize"
+            v-model:font="displayFont"
+          />
         </div>
         <h1 class="login-title">{{ $t('app.login.title') }}</h1>
         <p class="login-subtitle">{{ $t('app.login.subtitle') }}</p>
@@ -77,6 +84,11 @@
         </div>
 
         <div class="navbar-right">
+          <DisplayPreferences
+            id-prefix="navbar-display"
+            v-model:size="displaySize"
+            v-model:font="displayFont"
+          />
           <div class="language-control navbar-language">
             <label for="navbar-language" class="sr-only">{{ $t('app.nav.language') }}</label>
             <select id="navbar-language" v-model="currentLocale">
@@ -134,7 +146,7 @@
           <button v-if="can('records.view')" class="sidebar-link" :class="{ active: paginaActiva === 'records' }" :aria-current="paginaActiva === 'records' ? 'page' : undefined" @click="paginaActiva = 'records'">
             <span>{{ $t('app.pages.records') }}</span>
           </button>
-          <button v-if="can('statistics.view') || can('exports.download')" class="sidebar-link" :class="{ active: paginaActiva === 'statistics' }" :aria-current="paginaActiva === 'statistics' ? 'page' : undefined" @click="paginaActiva = 'statistics'">
+          <button v-if="can('statistics.view')" class="sidebar-link" :class="{ active: paginaActiva === 'statistics' }" :aria-current="paginaActiva === 'statistics' ? 'page' : undefined" @click="paginaActiva = 'statistics'">
             <span>{{ $t('app.pages.statistics') }}</span>
           </button>
           <button v-if="isAdmin" class="sidebar-link" :class="{ active: paginaActiva === 'settings' }" :aria-current="paginaActiva === 'settings' ? 'page' : undefined" @click="paginaActiva = 'settings'">
@@ -154,6 +166,10 @@
               <span class="date-weekday">{{ todayWeekdayLabel }}</span>
             </div>
           </div>
+          <DailyExportActions
+            v-if="paginaActiva === 'workbench' && can('exports.download')"
+            :date="dataSeleccionada"
+          />
         </div>
 
         <!-- La demo és pública i compartida: qui hi entra ha de saber que el que
@@ -180,7 +196,7 @@
             :can="can"
           />
           <RecordsView v-if="can('records.view') && paginaActiva === 'records'" :can="can" @resume-absence="resumeAbsence" />
-          <StatisticsView v-if="availablePages.includes('statistics') && paginaActiva === 'statistics'" :dataGlobal="dataSeleccionada" :can="can" />
+          <StatisticsView v-if="can('statistics.view') && paginaActiva === 'statistics'" :dataGlobal="dataSeleccionada" />
           <SettingsView v-if="isAdmin && paginaActiva === 'settings'" />
           <TimetableImportView v-if="can('timetable.upload') || can('timetable.manage')" v-show="paginaActiva === 'import'" :can="can" />
         </main>
@@ -212,10 +228,16 @@
         <div class="mobile-menu">
           <Button v-if="can('workbench.view')" class="p-button-text" :label="$t('app.pages.workbench')" @click="paginaActiva = 'workbench'; mostrarMenuMobil = false" />
           <Button v-if="can('records.view')" class="p-button-text" :label="$t('app.pages.records')" @click="paginaActiva = 'records'; mostrarMenuMobil = false" />
-          <Button v-if="can('statistics.view') || can('exports.download')" class="p-button-text" :label="$t('app.pages.statistics')" @click="paginaActiva = 'statistics'; mostrarMenuMobil = false" />
+          <Button v-if="can('statistics.view')" class="p-button-text" :label="$t('app.pages.statistics')" @click="paginaActiva = 'statistics'; mostrarMenuMobil = false" />
           <Button v-if="isAdmin" class="p-button-text" :label="$t('app.pages.settings')" @click="paginaActiva = 'settings'; mostrarMenuMobil = false" />
           <Button v-if="can('timetable.upload') || can('timetable.manage')" class="p-button-text" :label="$t('app.pages.import')" @click="paginaActiva = 'import'; mostrarMenuMobil = false" />
           <hr />
+          <DisplayPreferences
+            id-prefix="mobile-display"
+            v-model:size="displaySize"
+            v-model:font="displayFont"
+            inline
+          />
           <Button
             v-if="isAdmin"
             class="p-button-text"
@@ -256,6 +278,8 @@ import SettingsView from './views/SettingsView.vue'
 import TimetableImportView from './views/TimetableImportView.vue'
 import ConfiguracioDialog from './components/ConfiguracioDialog.vue'
 import ProfileDialog from './components/ProfileDialog.vue'
+import DisplayPreferences from './components/DisplayPreferences.vue'
+import DailyExportActions from './components/DailyExportActions.vue'
 import { setLocale } from './i18n'
 import { can as hasPermission } from './permissions'
 
@@ -280,6 +304,25 @@ const currentLocale = computed({
   get: () => locale.value,
   set: (value) => setLocale(value)
 })
+const preference = (key, allowed, fallback) => {
+  try {
+    const value = localStorage.getItem(key)
+    return allowed.includes(value) ? value : fallback
+  } catch {
+    return fallback
+  }
+}
+const displaySize = ref(preference('display.fontSize', ['standard', 'large', 'extra-large'], 'standard'))
+const displayFont = ref(preference('display.fontFamily', ['system', 'sans', 'serif', 'kai'], 'system'))
+watch([displaySize, displayFont], ([size, font]) => {
+  document.documentElement.style.removeProperty('font-size')
+  document.documentElement.dataset.textSize = size
+  document.documentElement.dataset.fontFamily = font
+  try {
+    localStorage.setItem('display.fontSize', size)
+    localStorage.setItem('display.fontFamily', font)
+  } catch {}
+}, { immediate: true })
 
 const autenticat = ref(false)
 const paginaActiva = ref('workbench')
@@ -308,7 +351,7 @@ const can = (permission) => hasPermission(userProfile.value, permission)
 const availablePages = computed(() => [
   can('workbench.view') && 'workbench',
   can('records.view') && 'records',
-  (can('statistics.view') || can('exports.download')) && 'statistics',
+  can('statistics.view') && 'statistics',
   isAdmin.value && 'settings',
   (can('timetable.upload') || can('timetable.manage')) && 'import',
 ].filter(Boolean))
@@ -346,20 +389,24 @@ const carregarPerfil = async () => {
 
 onMounted(async () => {
   axios.defaults.withCredentials = true
-  mediaQuery = window.matchMedia('(max-width: 720px)')
+  mediaQuery = window.matchMedia('(max-width: 1100px)')
   actualitzarModeMobil()
   mediaQuery.addEventListener('change', actualitzarModeMobil)
 
   axios.interceptors.response.use(
     (response) => response,
-    (error) => {
+    async (error) => {
       const status = error?.response?.status
       if (status === 401) {
         netejarToken()
         return Promise.reject(error)
       }
       if (!error.config?._silent) {
-        const detail = error.response?.data?.detail
+        const data = error.response?.data
+        let detail = data?.detail
+        if (data instanceof Blob) {
+          try { detail = JSON.parse(await data.text()).detail } catch {}
+        }
         const msg = typeof detail === 'string' ? detail
           : !error.response ? t('app.errors.connection')
           : status >= 500 ? t('app.errors.server')
@@ -453,6 +500,11 @@ const resumeAbsence = (record) => {
 
 <style>
 :root {
+  --app-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --font-supporting: .875rem;
+  --font-ui: .9375rem;
+  --font-data: 1rem;
+  --font-critical: 1.0625rem;
   --primary-color: #193f66;
   --primary-color-dark: #0c2948;
   --primary-color-light: #e7eff7;
@@ -460,7 +512,7 @@ const resumeAbsence = (record) => {
   --highlight-bg: #edf3f8;
   --highlight-text-color: #173d62;
   --text-color-primary: #15263a;
-  --text-color-secondary: #687588;
+  --text-color-secondary: #5d6a7d;
   --background-light: #f3f6f9;
   --card-background: #ffffff;
   --border-color: #d8e0e9;
@@ -470,6 +522,20 @@ const resumeAbsence = (record) => {
   --focus-ring: 0 0 0 3px rgba(25, 63, 102, 0.2);
 }
 
+html[data-text-size="large"] {
+  --font-supporting: .9375rem;
+  --font-ui: 1rem;
+  --font-data: 1.0625rem;
+  --font-critical: 1.125rem;
+}
+
+html[data-text-size="extra-large"] {
+  --font-supporting: 1.125rem;
+  --font-ui: 1.25rem;
+  --font-data: 1.375rem;
+  --font-critical: 1.5rem;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -477,16 +543,24 @@ const resumeAbsence = (record) => {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  font-family: var(--app-font-family);
+  font-size: var(--font-data);
   background: var(--background-light);
   color: var(--text-color-primary);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
+small { font-size: var(--font-supporting); }
+
 html[lang="zh-HK"] body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  font-family: var(--app-font-family);
 }
+
+html[data-font-family="sans"] { --app-font-family: "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", Arial, sans-serif; }
+html[data-font-family="serif"] { --app-font-family: "Songti TC", PMingLiU, "Noto Serif CJK TC", serif; }
+html[data-font-family="kai"] { --app-font-family: "Kaiti TC", "DFKai-SB", BiauKai, KaiTi, STKaiti, serif; }
+.p-component { font-family: var(--app-font-family); font-size: var(--font-data); }
 
 .p-button.progress-fill-button {
   position: relative;
@@ -539,7 +613,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .p-datatable .p-paginator .p-dropdown .p-dropdown-label {
   padding: 0.4rem 0.5rem !important;
   line-height: 1.4rem;
-  font-size: 0.9rem !important;
+  font-size: var(--font-ui) !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
@@ -681,7 +755,8 @@ input.p-inputtext.p-inputtext-sm {
   border: 1px solid var(--border-color);
 }
 
-.language-control{display:flex;align-items:center;gap:.45rem}.language-control label{font-size:.78rem}.language-control select,.mobile-header-actions select{border:1px solid #d7dce7;border-radius:4px;background:#fff;color:#243047;padding:.35rem .5rem}.login-language{justify-content:flex-end;margin-bottom:1rem;color:var(--text-color-secondary)}.navbar-language select{border-color:var(--border-color)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.mobile-header-actions{display:flex;align-items:center;gap:.35rem}
+.language-control{display:flex;align-items:center;gap:.45rem}.language-control label{font-size:var(--font-ui)}.language-control select,.mobile-header-actions select{border:1px solid #d7dce7;border-radius:4px;background:#fff;color:#243047;padding:.35rem .5rem}.login-language{color:var(--text-color-secondary)}.navbar-language select{border-color:var(--border-color)}.sr-only{position:absolute;left:0;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.mobile-header-actions{display:flex;align-items:center;gap:.35rem}
+.login-controls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
 
 .login-brand {
   display: flex;
@@ -689,7 +764,7 @@ input.p-inputtext.p-inputtext-sm {
   gap: .7rem;
   margin-bottom: 1.35rem;
   color: var(--primary-color-dark);
-  font-size: .9rem;
+  font-size: var(--font-data);
   font-weight: 700;
 }
 
@@ -718,7 +793,7 @@ input.p-inputtext.p-inputtext-sm {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  font-size: 0.9rem;
+  font-size: var(--font-ui);
   color: var(--text-color-secondary);
 }
 
@@ -734,7 +809,7 @@ input.p-inputtext.p-inputtext-sm {
 
 .login-error {
   color: #b91c1c;
-  font-size: 0.9rem;
+  font-size: var(--font-ui);
 }
 
 .login-submit {
@@ -775,7 +850,7 @@ input.p-inputtext.p-inputtext-sm {
   min-height: 100dvh;
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
-  grid-template-rows: 72px minmax(0, 1fr);
+  grid-template-rows: minmax(72px, auto) minmax(0, 1fr);
 }
 
 .navbar {
@@ -793,6 +868,7 @@ input.p-inputtext.p-inputtext-sm {
   align-items: center;
   justify-content: space-between;
   gap: 1.5rem;
+  flex-wrap: wrap;
 }
 
 .navbar-brand {
@@ -806,7 +882,7 @@ input.p-inputtext.p-inputtext-sm {
   display: flex;
   align-items: center;
   gap: .65rem;
-  font-size: .95rem;
+  font-size: var(--font-data);
   font-weight: 650;
   margin: 0;
   letter-spacing: 0;
@@ -832,6 +908,8 @@ input.p-inputtext.p-inputtext-sm {
 .navbar-right {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
@@ -846,7 +924,7 @@ input.p-inputtext.p-inputtext-sm {
 
 .navbar-right .nav-action {
   padding: .45rem .65rem;
-  font-size: .82rem;
+  font-size: var(--font-ui);
   font-weight: 600;
 }
 
@@ -873,7 +951,7 @@ input.p-inputtext.p-inputtext-sm {
   padding: 1rem 1.1rem;
   border-bottom: 1px solid rgba(255, 255, 255, .13);
   color: #fff;
-  font-size: .88rem;
+  font-size: var(--font-ui);
   font-weight: 700;
   line-height: 1.25;
 }
@@ -896,7 +974,7 @@ input.p-inputtext.p-inputtext-sm {
   background: transparent;
   color: rgba(255, 255, 255, .72);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--font-ui);
   font-weight: 600;
   text-align: left;
   cursor: pointer;
@@ -925,7 +1003,9 @@ input.p-inputtext.p-inputtext-sm {
 
 .content-toolbar {
   display: flex;
-  justify-content: flex-start;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;
@@ -948,7 +1028,7 @@ input.p-inputtext.p-inputtext-sm {
 
 .date-main {
   color: var(--primary-color-dark);
-  font-size: 1rem;
+  font-size: var(--font-critical);
   font-weight: 720;
   font-variant-numeric: tabular-nums;
   letter-spacing: -.01em;
@@ -956,7 +1036,7 @@ input.p-inputtext.p-inputtext-sm {
 
 .date-weekday {
   color: var(--text-color-secondary);
-  font-size: .78rem;
+  font-size: var(--font-supporting);
 }
 
 /* PrimeVue TabView unificat (diàlegs + scheduler) */
@@ -978,7 +1058,7 @@ input.p-inputtext.p-inputtext-sm {
   align-items: center;
   justify-content: center;
   text-align: center;
-  font-size: 0.85rem;
+  font-size: var(--font-ui);
   font-weight: 600;
   color: #64748b;
   background: transparent;
@@ -1033,7 +1113,7 @@ input.p-inputtext.p-inputtext-sm {
   border-radius: 4px;
   background: #f0f9ff;
   color: #075985;
-  font-size: 0.85rem;
+  font-size: var(--font-supporting);
   line-height: 1.35;
 }
 
@@ -1050,7 +1130,7 @@ input.p-inputtext.p-inputtext-sm {
   border-top: 1px solid var(--border-color);
   text-align: center;
   padding: 1rem;
-  font-size: 0.9rem;
+  font-size: var(--font-supporting);
 }
 
 .permission-empty {
@@ -1075,7 +1155,7 @@ input.p-inputtext.p-inputtext-sm {
   border-radius: 4px;
   transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
   padding: 0.65rem 1rem;
-  font-size: 0.9rem;
+  font-size: var(--font-ui);
   min-width: unset;
 }
 
@@ -1099,7 +1179,7 @@ input.p-inputtext.p-inputtext-sm {
 /* Botons de text, mantenir petits */
 .p-button.p-button-text {
     padding: 0.5rem 0.75rem;
-    font-size: 0.9rem;
+    font-size: var(--font-ui);
 }
 
 .p-datatable {
@@ -1122,7 +1202,7 @@ input.p-inputtext.p-inputtext-sm {
 
 }
 
-@media (max-width: 720px) {
+@media (max-width: 1100px) {
   .app-shell.is-mobile {
     display: flex;
     flex-direction: column;
@@ -1138,18 +1218,23 @@ input.p-inputtext.p-inputtext-sm {
   }
 
   .date-current { justify-content: center; }
-  .date-main { font-size: .9rem; }
-  .date-weekday { font-size: .72rem; }
+  .date-main { font-size: var(--font-critical); }
+  .date-weekday { font-size: var(--font-supporting); }
 
-  .logo {
-    font-size: 1rem;
-  }
+  .logo { font-size: var(--font-data); }
 
   .mobile-brand {
     display: flex;
     align-items: center;
     gap: .65rem;
     min-width: 0;
+    flex: 1;
+  }
+
+  .mobile-brand .logo {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
   }
 
   .mobile-brand .school-mark {
@@ -1168,7 +1253,7 @@ input.p-inputtext.p-inputtext-sm {
   }
 
   .footer {
-    font-size: 0.8rem;
+    font-size: var(--font-supporting);
     padding: 0.75rem;
   }
 }
@@ -1227,5 +1312,30 @@ input.p-inputtext.p-inputtext-sm {
   margin: 0.25rem 0;
   border: 0;
   border-top: 1px solid var(--border-color);
+}
+
+/* 「放大版」同時放大操作目標並收緊外圍留白，避免小螢幕浪費空間。 */
+html[data-text-size="extra-large"] .app-shell { grid-template-columns: 210px minmax(0, 1fr); grid-template-rows: minmax(64px, auto) minmax(0, 1fr); }
+html[data-text-size="extra-large"] .navbar { min-height: 64px; padding: .5rem 1.25rem; }
+html[data-text-size="extra-large"] .sidebar-brand { min-height: 72px; padding: .75rem 1rem; }
+html[data-text-size="extra-large"] .sidebar-nav { padding: .75rem .6rem; }
+html[data-text-size="extra-large"] .sidebar-link { padding: .65rem .8rem; }
+html[data-text-size="extra-large"] .app-workspace { min-height: calc(100dvh - 64px); }
+html[data-text-size="extra-large"] .content-toolbar { padding: .85rem 1.25rem 0; }
+html[data-text-size="extra-large"] .main-content { padding: 1rem 1.25rem 1.5rem; }
+html[data-text-size="extra-large"] .main-content .panel { padding: .9rem; }
+html[data-text-size="extra-large"] .footer { padding: .6rem; }
+html[data-text-size="extra-large"] .p-button { min-height: 3.25rem; padding: .75rem 1rem; font-size: var(--font-ui); }
+html[data-text-size="extra-large"] .p-button .p-button-label { font-size: inherit; }
+html[data-text-size="extra-large"] .p-button.p-button-text { min-height: 3rem; padding: .6rem .8rem; }
+html[data-text-size="extra-large"] :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea, .p-dropdown, .p-multiselect) { min-height: 3.25rem; font-size: var(--font-data); }
+html[data-text-size="extra-large"] body input:is([type="checkbox"], [type="radio"]) { width: 1.25rem; height: 1.25rem; min-height: 1.25rem; }
+html[data-text-size="extra-large"] input.p-inputtext,
+html[data-text-size="extra-large"] .p-password-input { height: 3.25rem; line-height: 3.25rem; }
+html[data-text-size="extra-large"] .p-datepicker-trigger.p-button { width: 3.25rem; height: 3.25rem; }
+
+@media (max-width: 1100px) {
+  html[data-text-size="extra-large"] .main-content { padding: .75rem .5rem 1.25rem; }
+  html[data-text-size="extra-large"] .content-toolbar { padding: .65rem .5rem 0; }
 }
 </style>

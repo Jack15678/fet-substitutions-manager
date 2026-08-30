@@ -494,13 +494,13 @@ onMounted(() => {
 
 .user-summary strong {
   color: #1e293b;
-  font-size: 0.92rem;
+  font-size: var(--font-data);
 }
 
 .user-summary small {
   margin-top: 0.15rem;
   color: #64748b;
-  font-size: 0.75rem;
+  font-size: var(--font-supporting);
 }
 
 .inactive-icon {
@@ -509,7 +509,7 @@ onMounted(() => {
 
 .chevron {
   color: #94a3b8;
-  font-size: 0.75rem;
+  font-size: var(--font-supporting);
 }
 
 .list-message,

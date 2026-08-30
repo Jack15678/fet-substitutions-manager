@@ -4,12 +4,11 @@ from io import BytesIO
 import json
 import math
 import uuid
-import zipfile
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
@@ -82,6 +81,16 @@ class AbsenceCreateRequest(BaseModel):
     professor_id: int
     data: date
     periods: list[int] = Field(min_length=1)
+    reason_type: Literal["sick", "personal", "official", "training", "other"]
+    reason_detail: Optional[str] = None
+
+    @model_validator(mode="after")
+    def normalize_reason(self):
+        detail = (self.reason_detail or "").strip() or None
+        if detail and len(detail) > 200:
+            raise ValueError("其他原因最多 200 字")
+        self.reason_detail = detail if self.reason_type == "other" else None
+        return self
 
 
 class AbsenceBatchCreateRequest(BaseModel):
@@ -166,6 +175,10 @@ def _audit(db: Session, action: str, entity_type: str, entity_id, username: str,
     ))
 
 
+def _absence_reason_payload(absence: AbsenceCase) -> dict:
+    return {"reason_type": absence.reason_type, "reason_detail": absence.reason_detail}
+
+
 def _serialize_adjustment(db: Session, adjustment: ScheduleAdjustment) -> dict:
     professor_names = {row.id: row.nom for row in db.query(Professor).all()}
     legs = db.query(ScheduleAdjustmentLeg).filter_by(adjustment_id=adjustment.id).order_by(ScheduleAdjustmentLeg.id).all()
@@ -241,6 +254,11 @@ def _overlapping_version(db: Session, start: date, end: date, exclude_id: int | 
     if exclude_id is not None:
         query = query.filter(TimetableVersion.id != exclude_id)
     return query.first()
+
+
+def _is_post_exam_version(version: TimetableVersion) -> bool:
+    # ponytail: normal class imports are .xls; persist a type column if they later accept .xlsx.
+    return version.class_filename.lower().endswith(".xlsx")
 
 
 def _version_record_dates(db: Session, version: TimetableVersion) -> set[date]:
@@ -324,6 +342,7 @@ def list_timetable_versions(
             "effective_to": version.effective_to.isoformat() if version.effective_to else None,
             "class_filename": version.class_filename,
             "teacher_filename": version.teacher_filename,
+            "post_exam": _is_post_exam_version(version),
             "resolution_count": len(json.loads(version.resolutions_json or "{}")),
             "lessons": len(lessons),
             "subjects": sorted({lesson.subject for lesson in lessons}),
@@ -363,7 +382,8 @@ def update_timetable_version(
     specials_changed = requested_specials != current_specials
     if not dates_changed and not specials_changed:
         return {"success": True, "revision": get_schedule_revision(db)}
-    if dates_changed and _overlapping_version(db, request.effective_from, request.effective_to, version.id):
+    if (dates_changed and not _is_post_exam_version(version)
+            and _overlapping_version(db, request.effective_from, request.effective_to, version.id)):
         raise HTTPException(409, "課表適用日期與另一個版本重疊")
     if dates_changed:
         record_dates = _version_record_dates(db, version)
@@ -418,19 +438,25 @@ def delete_timetable_version(
 async def preview_import(
     class_workbook: UploadFile = File(...),
     teacher_workbook: UploadFile = File(...),
+    schedule_type: str = Form("normal"),
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("timetable.upload")),
 ):
-    if not class_workbook.filename.lower().endswith(".xls"):
-        raise HTTPException(400, "班別時間表必須是 .xls")
-    if not teacher_workbook.filename.lower().endswith(".xlsx"):
+    if schedule_type not in {"normal", "post_exam"}:
+        raise HTTPException(400, "不支援的課表類型")
+    class_extension = ".xlsx" if schedule_type == "post_exam" else ".xls"
+    if not (class_workbook.filename or "").lower().endswith(class_extension):
+        raise HTTPException(400, f"班別時間表必須是 {class_extension}")
+    if not (teacher_workbook.filename or "").lower().endswith(".xlsx"):
         raise HTTPException(400, "教師時間表必須是 .xlsx（請使用非值日版本）")
     class_content = await class_workbook.read(MAX_UPLOAD_BYTES + 1)
     teacher_content = await teacher_workbook.read(MAX_UPLOAD_BYTES + 1)
     if len(class_content) > MAX_UPLOAD_BYTES or len(teacher_content) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "課表檔案不可超過 12 MB")
     try:
-        payload = build_import_preview(class_content, teacher_content)
+        payload = build_import_preview(
+            class_content, teacher_content, post_exam=schedule_type == "post_exam"
+        )
     except Exception as exc:
         raise HTTPException(400, f"無法讀取課表：{exc}") from exc
     preview_id = uuid.uuid4().hex
@@ -445,6 +471,7 @@ async def preview_import(
     db.commit()
     return {"preview_id": preview_id, **payload["summary"], "warnings": payload["warnings"],
             "issues": payload["issues"],
+            "post_exam": payload.get("format") == "post_exam",
             "subjects": sorted({lesson["subject"] for lesson in payload["lessons"]})}
 
 
@@ -472,7 +499,9 @@ def activate_import(
         raise HTTPException(400, "包含課表中不存在的特殊課程")
     if request.effective_from > request.effective_to:
         raise HTTPException(400, "結束日期不可早於開始日期")
-    if _overlapping_version(db, request.effective_from, request.effective_to):
+    if payload.get("format") != "post_exam" and _overlapping_version(
+        db, request.effective_from, request.effective_to
+    ):
         raise HTTPException(409, "課表適用日期與另一個版本重疊")
     if any(_records_in_range(db, request.effective_from, request.effective_to)):
         raise HTTPException(409, "新版本適用日期範圍已有缺席或調課記錄，不能覆蓋")
@@ -601,6 +630,7 @@ def current_timetable(
         "effective_to": version.effective_to.isoformat() if version.effective_to else None,
         "class_filename": version.class_filename,
         "teacher_filename": version.teacher_filename,
+        "post_exam": _is_post_exam_version(version),
         "lessons": db.query(TimetableLesson).filter_by(version_id=version.id).count(),
         "revision": get_schedule_revision(db),
     }
@@ -746,7 +776,7 @@ def export_daily_xlsx(
 ):
     entries = daily_export_data(db, data)
     if not entries:
-        raise HTTPException(404, "所選日期沒有缺席記錄")
+        raise HTTPException(404, "所選日期沒有可匯出的調課／代課記錄")
     content = build_daily_xlsx(entries, get_period_times(db))
     return StreamingResponse(
         BytesIO(content),
@@ -763,26 +793,11 @@ def export_daily_pdf(
 ):
     entries = daily_export_data(db, data)
     if not entries:
-        raise HTTPException(404, "所選日期沒有缺席記錄")
-    periods = get_period_times(db)
-    if len(entries) == 1:
-        content = build_daily_pdf(entries[0], periods)
-        return StreamingResponse(
-            BytesIO(content), media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="daily-substitution-{data.isoformat()}.pdf"'},
-        )
-
-    output = BytesIO()
-    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
-        for entry in entries:
-            archive.writestr(
-                f"teacher-{entry['teacher_id']}-{data.isoformat()}.pdf",
-                build_daily_pdf(entry, periods),
-            )
-    output.seek(0)
+        raise HTTPException(404, "所選日期沒有可匯出的調課／代課記錄")
+    content = build_daily_pdf(entries, get_period_times(db))
     return StreamingResponse(
-        output, media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="daily-substitution-{data.isoformat()}.zip"'},
+        BytesIO(content), media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="daily-substitution-{data.isoformat()}.pdf"'},
     )
 
 
@@ -865,16 +880,21 @@ def create_absence(
         professor_id=professor.id,
         data=request.data,
         periods_json=json.dumps(periods),
+        reason_type=request.reason_type,
+        reason_detail=request.reason_detail,
         created_by=current_user.username,
     )
     db.add(absence)
     db.flush()
     revision = bump_schedule_revision(db)
-    _audit(db, "create", "absence_case", absence.id, current_user.username,
-           {"teacher": professor.nom, "date": request.data.isoformat(), "periods": periods})
+    _audit(db, "create", "absence_case", absence.id, current_user.username, {
+        "teacher": professor.nom, "date": request.data.isoformat(), "periods": periods,
+        **_absence_reason_payload(absence),
+    })
     db.commit()
     return {"id": absence.id, "professor_id": professor.id, "teacher_name": professor.nom,
             "date": absence.data.isoformat(), "periods": periods, "status": absence.status,
+            **_absence_reason_payload(absence),
             "revision": revision}
 
 
@@ -911,27 +931,40 @@ def create_absences_batch(
     updated_ids: list[int] = []
     for item, professor, periods, existing in validated:
         if existing:
-            if json.loads(existing.periods_json or "[]") != periods:
+            periods_changed = json.loads(existing.periods_json or "[]") != periods
+            reason_changed = (
+                existing.reason_type != item.reason_type
+                or existing.reason_detail != item.reason_detail
+            )
+            if periods_changed or reason_changed:
                 existing.periods_json = json.dumps(periods)
-                existing.status = "open"
+                existing.reason_type = item.reason_type
+                existing.reason_detail = item.reason_detail
+                if periods_changed:
+                    existing.status = "open"
                 updated_ids.append(existing.id)
-                _audit(db, "update", "absence_case", existing.id, current_user.username,
-                       {"teacher": professor.nom, "date": item.data.isoformat(),
-                        "periods": periods})
+                _audit(db, "update", "absence_case", existing.id, current_user.username, {
+                    "teacher": professor.nom, "date": item.data.isoformat(),
+                    "periods": periods, **_absence_reason_payload(existing),
+                })
             selected_cases.append(existing)
             continue
         absence = AbsenceCase(
             professor_id=professor.id,
             data=item.data,
             periods_json=json.dumps(periods),
+            reason_type=item.reason_type,
+            reason_detail=item.reason_detail,
             created_by=current_user.username,
         )
         db.add(absence)
         db.flush()
         selected_cases.append(absence)
         created_ids.append(absence.id)
-        _audit(db, "create", "absence_case", absence.id, current_user.username,
-               {"teacher": professor.nom, "date": item.data.isoformat(), "periods": periods})
+        _audit(db, "create", "absence_case", absence.id, current_user.username, {
+            "teacher": professor.nom, "date": item.data.isoformat(), "periods": periods,
+            **_absence_reason_payload(absence),
+        })
     if created_ids or updated_ids:
         bump_schedule_revision(db)
         db.commit()
@@ -985,25 +1018,36 @@ def update_absence(
     if not absence:
         raise HTTPException(404, "找不到缺席紀錄")
     can_manage_records = _ensure_absence_editable(current_user, absence)
-    if not can_manage_records and db.query(ScheduleAdjustment).filter_by(
+    professor, periods = _validate_absence_request(db, request, absence.id)
+    schedule_changed = (
+        absence.professor_id != professor.id
+        or absence.data != request.data
+        or json.loads(absence.periods_json or "[]") != periods
+    )
+    if schedule_changed and not can_manage_records and db.query(ScheduleAdjustment).filter_by(
         absence_case_id=absence.id, status="confirmed"
     ).count():
         raise HTTPException(409, "已有鎖定的調課，請先撤銷調課")
-    professor, periods = _validate_absence_request(db, request, absence.id)
-    adjustments = db.query(ScheduleAdjustment).filter_by(absence_case_id=absence.id).all()
-    removed_ids = [row.id for row in adjustments]
-    for adjustment in adjustments:
-        _delete_adjustment_rows(db, adjustment)
-    absence.professor_id = professor.id
-    absence.data = request.data
-    absence.periods_json = json.dumps(periods)
-    absence.status = "open"
-    revision = bump_schedule_revision(db)
-    _audit(db, "update", "absence_case", absence.id, current_user.username,
-           {"teacher": professor.nom, "date": request.data.isoformat(), "periods": periods,
-            "removed_adjustments": removed_ids})
+    removed_ids = []
+    if schedule_changed:
+        adjustments = db.query(ScheduleAdjustment).filter_by(absence_case_id=absence.id).all()
+        removed_ids = [row.id for row in adjustments]
+        for adjustment in adjustments:
+            _delete_adjustment_rows(db, adjustment)
+        absence.professor_id = professor.id
+        absence.data = request.data
+        absence.periods_json = json.dumps(periods)
+        absence.status = "open"
+    absence.reason_type = request.reason_type
+    absence.reason_detail = request.reason_detail
+    revision = bump_schedule_revision(db) if schedule_changed else get_schedule_revision(db)
+    _audit(db, "update", "absence_case", absence.id, current_user.username, {
+        "teacher": professor.nom, "date": request.data.isoformat(), "periods": periods,
+        "schedule_changed": schedule_changed, "removed_adjustments": removed_ids,
+        **_absence_reason_payload(absence),
+    })
     db.commit()
-    return {"success": True, "revision": revision}
+    return {"success": True, **_absence_reason_payload(absence), "revision": revision}
 
 
 @router.delete("/api/absence-cases/{absence_id}/purge")
@@ -1043,7 +1087,7 @@ def list_absences(
     return [{
         "id": row.id, "professor_id": row.professor_id, "teacher_name": names.get(row.professor_id),
         "date": row.data.isoformat(), "periods": json.loads(row.periods_json), "status": row.status,
-        "created_by": row.created_by,
+        "created_by": row.created_by, **_absence_reason_payload(row),
     } for row in rows]
 
 
@@ -1230,7 +1274,7 @@ def _manual_arrangements(db: Session) -> dict:
         unavailable = absence_keys(db, target_date, target_date)
         absences_by_id = {row.id: row for row in active_absences}
         for task in analysis["tasks"]:
-            if task["status"] != "unresolved":
+            if task["status"] not in {"recommended", "unresolved"}:
                 continue
             absence = absences_by_id.get(task["absence_case_id"])
             target = occurrence_map.get(task["target"]["occurrence_id"])
@@ -1240,6 +1284,7 @@ def _manual_arrangements(db: Session) -> dict:
                 **task,
                 "absent_teacher_id": absence.professor_id,
                 "absent_teacher_name": professor_names.get(absence.professor_id, str(absence.professor_id)),
+                **_absence_reason_payload(absence),
                 "co_teachers": [{
                     "id": teacher_id,
                     "name": professor_names.get(teacher_id, str(teacher_id)),
@@ -1279,7 +1324,7 @@ def confirm_manual_cover(
     task = next((item for item in analysis["tasks"] if (
         item["absence_case_id"] == absence.id
         and item["target"]["occurrence_id"] == request.occurrence_id
-        and item["status"] == "unresolved"
+        and item["status"] in {"recommended", "unresolved"}
     )), None)
     if not task:
         raise HTTPException(409, "這堂課的狀態已改變，請重新載入")
@@ -1506,6 +1551,7 @@ def list_records(
             "date": absence.data.isoformat(),
             "teacher_name": names.get(absence.professor_id),
             "periods": json.loads(absence.periods_json or "[]"),
+            **_absence_reason_payload(absence),
             "status": absence.status,
             "needs_review": any(row.needs_review for row in by_absence.get(absence.id, [])),
             "created_by": absence.created_by,

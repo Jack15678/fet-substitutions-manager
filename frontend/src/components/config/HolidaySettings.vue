@@ -164,7 +164,7 @@ onMounted(async () => {
 .section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; }
 h3, h4 { margin: 0; }
 .section-heading p { margin: .3rem 0 0; color: var(--text-color-secondary); }
-label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: .84rem; font-weight: 650; }
+label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: var(--font-ui); font-weight: 650; }
 input, textarea { min-height: 2.5rem; padding: .55rem .65rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
 textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .mode-switch { display: inline-flex; width: fit-content; padding: .2rem; border-radius: 8px; background: var(--surface-soft); }
@@ -174,16 +174,16 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regu
 .text-import .p-button { justify-self: end; }
 .year-calendar { display: grid; grid-template-columns: repeat(3, minmax(210px, 1fr)); gap: .75rem; }
 .month-card { padding: .75rem; border: 1px solid var(--border-color); border-radius: 9px; }
-.month-card h4 { margin-bottom: .5rem; text-align: center; font-size: .88rem; }
+.month-card h4 { margin-bottom: .5rem; text-align: center; font-size: var(--font-data); }
 .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: .18rem; }
-.weekday-row { margin-bottom: .2rem; color: var(--text-color-secondary); font-size: .68rem; text-align: center; }
+.weekday-row { margin-bottom: .2rem; color: var(--text-color-secondary); font-size: var(--font-supporting); text-align: center; }
 .month-grid button { aspect-ratio: 1; border: 0; border-radius: 5px; background: transparent; color: var(--text-color-primary); cursor: pointer; }
 .month-grid button:hover { background: var(--surface-soft); }
 .month-grid button.weekend { color: #9a6670; }
 .month-grid button.selected { background: var(--primary-color); color: #fff; font-weight: 700; }
-.feedback { margin: 0; color: #216a42; font-size: .84rem; }
+.feedback { margin: 0; color: #216a42; font-size: var(--font-ui); }
 .feedback.error { color: #9b3b30; }
-.save-row { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; color: var(--text-color-secondary); font-size: .82rem; }
+.save-row { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; color: var(--text-color-secondary); font-size: var(--font-ui); }
 @media (max-width: 800px) { .year-calendar { grid-template-columns: repeat(2, minmax(200px, 1fr)); } }
 @media (max-width: 560px) { .section-heading, .save-row { align-items: stretch; flex-direction: column; } .year-calendar { grid-template-columns: 1fr; } }
 </style>

@@ -11,11 +11,12 @@
     <section class="panel">
       <h3>{{ $t('importCenter.baseTitle') }}</h3>
       <div v-if="can('timetable.upload')" class="import-grid">
-        <label>{{ $t('importCenter.classFile') }}<input :key="`class-${uploadInputKey}`" type="file" accept=".xls" @change="classFile = $event.target.files[0]" /></label>
+        <label>{{ $t('importCenter.scheduleType') }}<select v-model="scheduleType" :disabled="Boolean(preview)" @change="classFile = null; teacherFile = null; uploadInputKey += 1"><option value="normal">{{ $t('importCenter.normalType') }}</option><option value="post_exam">{{ $t('importCenter.postExamType') }}</option></select></label>
+        <label>{{ $t(scheduleType === 'post_exam' ? 'importCenter.postExamClassFile' : 'importCenter.classFile') }}<input :key="`class-${uploadInputKey}`" type="file" :accept="scheduleType === 'post_exam' ? '.xlsx' : '.xls'" @change="classFile = $event.target.files[0]" /></label>
         <label>{{ $t('importCenter.teacherFile') }}<input :key="`teacher-${uploadInputKey}`" type="file" accept=".xlsx" @change="teacherFile = $event.target.files[0]" /></label>
         <label>{{ $t('importCenter.effectiveFrom') }}<input v-model="effectiveFrom" type="date" /></label>
         <label>{{ $t('importCenter.effectiveTo') }}<input v-model="effectiveTo" type="date" /></label>
-        <Button :label="$t('importCenter.check')" icon="pi pi-search" class="progress-fill-button" :class="{ 'is-progressing': busy === 'preview' }" :loading="busy === 'preview'" :disabled="!classFile || !teacherFile || !effectiveFrom || !effectiveTo" @click="previewImport" />
+        <Button :label="$t('importCenter.check')" icon="pi pi-search" class="progress-fill-button" :class="{ 'is-progressing': busy === 'preview' }" :loading="busy === 'preview'" :disabled="!filesReady || !effectiveFrom || !effectiveTo" @click="previewImport" />
       </div>
       <p v-if="timetable.active" class="muted">{{ $t('importCenter.currentFiles', { date: timetable.query_date, classFile: timetable.class_filename, teacherFile: timetable.teacher_filename }) }}</p>
       <p v-else class="notice warning">{{ $t('importCenter.noCurrent') }}</p>
@@ -145,6 +146,7 @@ defineProps({ can: { type: Function, required: true } })
 
 const timetable = ref({ active: false })
 const versions = ref([])
+const scheduleType = ref('normal')
 const classFile = ref(null)
 const teacherFile = ref(null)
 const effectiveFrom = ref('')
@@ -161,6 +163,7 @@ const resolutionId = (issue) => issue.resolution_id || `${issue.weekday}:${issue
 const reviewIds = computed(() => (preview.value?.issues || [])
   .filter(issue => issue.severity === 'review')
   .map(resolutionId))
+const filesReady = computed(() => Boolean(classFile.value && teacherFile.value))
 const allReviewsSelected = computed(() => reviewIds.value.length > 0 && selectedReviewIds.value.length === reviewIds.value.length)
 const hasErrors = computed(() => preview.value?.issues.some(issue => issue.severity === 'error'))
 const isResolutionConfirmed = (issue) => Boolean(savedResolutions.value[resolutionId(issue)])
@@ -250,6 +253,7 @@ const previewImport = async () => {
   busy.value = 'preview'; message.value = ''
   try {
     const form = new FormData()
+    form.append('schedule_type', scheduleType.value)
     form.append('class_workbook', classFile.value)
     form.append('teacher_workbook', teacherFile.value)
     preview.value = (await axios.post('/api/timetables/import/preview', form)).data
@@ -304,18 +308,18 @@ onMounted(loadCurrent)
 .result-actions { display: flex; align-items: center; gap: .45rem; }
 .page-heading h2 { margin: 0 0 .35rem; font-size: clamp(1.65rem, 3vw, 2.15rem); line-height: 1.15; letter-spacing: -.035em; }
 .page-heading p, .muted { color: var(--text-color-secondary); }
-.revision { padding-top: .4rem; color: var(--text-color-secondary); font-size: .8rem; white-space: nowrap; }
+.revision { padding-top: .4rem; color: var(--text-color-secondary); font-size: var(--font-supporting); white-space: nowrap; }
 .special-subjects { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border-color); border-radius: 10px; }
-.special-subjects legend { padding: 0 .35rem; font-size: .88rem; font-weight: 700; }
-.special-subjects p { margin: 0 0 .65rem; font-size: .78rem; }
+.special-subjects legend { padding: 0 .35rem; font-size: var(--font-data); font-weight: 700; }
+.special-subjects p { margin: 0 0 .65rem; font-size: var(--font-supporting); }
 .special-subjects > div { display: flex; flex-wrap: wrap; gap: .45rem; }
-.special-subjects label { display: flex; align-items: center; gap: .35rem; padding: .42rem .6rem; border: 1px solid var(--border-color); border-radius: 7px; cursor: pointer; font-size: .78rem; }
+.special-subjects label { display: flex; align-items: center; gap: .35rem; padding: .42rem .6rem; border: 1px solid var(--border-color); border-radius: 7px; cursor: pointer; font-size: var(--font-ui); }
 .special-subjects label.selected { border-color: #d3aa52; background: #fff6db; color: #72500b; }
 .panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
 .panel h3 { margin: 0 0 .9rem; }
 .result-heading h3 { margin: 0; }
-.import-grid { display: grid; grid-template-columns: 1fr 1fr .62fr .62fr auto; align-items: end; gap: .8rem; }
-.import-grid label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: .82rem; font-weight: 650; }
+.import-grid { display: grid; grid-template-columns: .7fr 1fr 1fr .62fr .62fr auto; align-items: end; gap: .8rem; }
+.import-grid label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: var(--font-ui); font-weight: 650; }
 input { width: 100%; min-height: 2.55rem; padding: .6rem .7rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
 input:hover { border-color: #aeb8c5; }
 input:focus { border-color: var(--primary-color); }
@@ -325,33 +329,33 @@ input[type=checkbox] { width: auto; min-height: auto; accent-color: var(--primar
 .summary-grid div { display: flex; flex-direction: column; padding: 1rem 1.1rem; border-left: 1px solid var(--border-color); }
 .summary-grid div:first-child { border-left: 0; }
 .summary-grid strong { font-size: 1.7rem; letter-spacing: -.03em; }
-.summary-grid span { color: var(--text-color-secondary); font-size: .82rem; }
+.summary-grid span { color: var(--text-color-secondary); font-size: var(--font-ui); }
 .summary-grid .alert { background: #fff8e8; color: #84590e; }
 .warnings { margin: .9rem 0; padding-left: 1.2rem; color: #87591d; }
 .bulk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; margin-top: .9rem; padding: .7rem .8rem; border: 1px solid var(--border-color); border-radius: 9px; background: var(--surface-soft); }
-.bulk-actions label { display: inline-flex; align-items: center; gap: .4rem; color: #344054; font-size: .82rem; font-weight: 650; cursor: pointer; }
+.bulk-actions label { display: inline-flex; align-items: center; gap: .4rem; color: #344054; font-size: var(--font-ui); font-weight: 650; cursor: pointer; }
 .bulk-actions label input { width: auto; min-height: auto; margin: 0; }
-.bulk-actions > span { margin-right: auto; color: var(--text-color-secondary); font-size: .8rem; }
+.bulk-actions > span { margin-right: auto; color: var(--text-color-secondary); font-size: var(--font-supporting); }
 .table-wrap { overflow: auto; margin-top: 1rem; border: 1px solid var(--border-color); border-radius: 10px; }
-table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+table { width: 100%; border-collapse: collapse; font-size: var(--font-data); }
 th, td { padding: .72rem .75rem; border-bottom: 1px solid #edf0f3; text-align: left; white-space: nowrap; }
-th { background: var(--surface-soft); color: var(--text-color-secondary); font-size: .77rem; font-weight: 700; }
+th { background: var(--surface-soft); color: var(--text-color-secondary); font-size: var(--font-ui); font-weight: 700; }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: #fbfcfe; }
 .file-list { display: flex; flex-direction: column; gap: .2rem; max-width: 260px; }
 .file-list span { overflow: hidden; text-overflow: ellipsis; }
 .version-actions { display: flex; gap: .4rem; }
 .version-specials { margin-top: .35rem; }
-.version-specials summary { color: var(--primary-color-dark); cursor: pointer; font-size: .75rem; font-weight: 650; }
+.version-specials summary { color: var(--primary-color-dark); cursor: pointer; font-size: var(--font-ui); font-weight: 650; }
 .version-specials > div { display: flex; max-width: 420px; flex-wrap: wrap; gap: .3rem; padding-top: .45rem; white-space: normal; }
-.version-specials label { display: inline-flex; align-items: center; gap: .25rem; padding: .28rem .4rem; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; font-size: .7rem; }
+.version-specials label { display: inline-flex; align-items: center; gap: .25rem; padding: .28rem .4rem; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; font-size: var(--font-supporting); }
 .version-specials label.selected { border-color: #d3aa52; background: #fff6db; color: #72500b; }
 .resolution-choice { display: flex; gap: .35rem; }
 .resolution-cell { display: flex; align-items: center; gap: .5rem; }
 .resolution-choice label { display: inline-flex; align-items: center; gap: .3rem; padding: .42rem .55rem; border: 1px solid #d6dce5; border-radius: 7px; cursor: pointer; }
 .resolution-choice label.selected { border-color: var(--primary-color); background: var(--highlight-bg); color: var(--primary-color-dark); }
 .resolution-choice input { width: auto; min-height: 0; margin: 0; }
-.status { display: inline-flex; align-items: center; padding: .24rem .52rem; border-radius: 999px; background: #fff4d6; color: #84590e; font-size: .74rem; white-space: nowrap; }
+.status { display: inline-flex; align-items: center; padding: .24rem .52rem; border-radius: 999px; background: #fff4d6; color: #84590e; font-size: var(--font-supporting); white-space: nowrap; }
 .status + .status { margin-left: .35rem; }
 .status.error, .status.locked { background: #fdecea; color: #9b3b30; }
 .status.available { background: #e4f5e9; color: #216a42; }

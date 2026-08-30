@@ -26,6 +26,20 @@
       "noneAssignedHint": "請聯絡管理員分配所需功能；你仍可使用個人資料及登出。"
     }
   },
+  "displayPreferences": {
+    "title": "顯示設定",
+    "textSize": "顯示模式",
+    "font": "字體",
+    "sizes": { "standard": "標準", "large": "大", "extraLarge": "放大版（緊湊）" },
+    "fonts": { "system": "系統預設", "sans": "黑體", "serif": "宋體", "kai": "楷體" }
+  },
+  "dailyExport": {
+    "title": "匯出代課表",
+    "hint": "匯出所選日期全部缺席老師的每日調課／代課表；PDF 為單一檔案，每頁兩表。",
+    "date": "匯出日期",
+    "excel": "匯出 Excel",
+    "pdf": "匯出 PDF"
+  },
   "profile": {
     "title": "個人資料", "username": "用戶名稱", "currentPassword": "現時密碼", "newPassword": "新密碼",
     "confirmPassword": "確認新密碼", "passwordMismatch": "兩次輸入的新密碼不一致。", "passwordUpdated": "密碼已更新。", "passwordError": "無法更新密碼。"
@@ -68,7 +82,7 @@
           "records_view": { "label": "查看調課記錄", "description": "查看缺席個案、調課及代課記錄詳情。" },
           "records_manage": { "label": "管理調課記錄", "description": "修改、撤銷或刪除同校的缺席及安排記錄。" },
           "statistics_view": { "label": "查看統計", "description": "查看所選日期範圍內的調課及代課統計。" },
-          "exports_download": { "label": "下載每日表格", "description": "下載每日 Excel、PDF 或 ZIP 調課／代課表。" },
+          "exports_download": { "label": "下載每日表格", "description": "從調課工作台下載每日 Excel 或單一 PDF 調課／代課表。" },
           "timetable_upload": { "label": "上傳及預覽課表", "description": "上傳課表、檢視差異及保存核對決定。" },
           "timetable_manage": { "label": "啟用及管理課表", "description": "啟用、取消、修改日期或刪除課表版本。" }
         }
@@ -103,11 +117,11 @@
     "manual": "人工互調", "period": "第 {period} 節", "createdBy": "建立者：{user}", "noAdjustment": "尚未確認任何調課安排。",
     "previous": "上一頁", "next": "下一頁", "page": "第 {page}／{pages} 頁，共 {total} 項", "resume": "繼續處理",
     "statuses": { "open": "待處理", "resolved": "已安排", "cancelled": "已取消", "confirmed": "已確認", "reverted": "已撤銷" }, "needsReview": "需覆核",
-    "editReason": "修改原因", "reason": "原因：{reason}", "reasonPrompt": "輸入調課原因（可留空）", "editRemovesAdjustments": "修改缺席後，原有調課方案會失效並被刪除。繼續？", "deleteAbsenceConfirm": "完整刪除此缺席及其所有調課記錄？", "deleteAdjustmentConfirm": "完整刪除此調課記錄並回復基礎課表？",
+    "editRemovesAdjustments": "修改缺席後，原有調課方案會失效並被刪除。繼續？", "deleteAbsenceConfirm": "完整刪除此缺席及其所有調課記錄？", "deleteAdjustmentConfirm": "完整刪除此調課記錄並回復基礎課表？",
     "kinds": { "direct_swap": "直接互調", "three_cycle": "同班連鎖互調", "emergency_cover": "同科緊急代課", "co_teacher_solo": "原任老師單獨上課", "manual_swap": "人工互調", "manual_three_cycle": "人工三堂連鎖" }
   },
   "leave": {
-    "title": "長期缺席", "description": "日期範圍內的教師會被視為全日不可調動；不儲存醫療詳情。", "teacher": "教師", "type": "類型",
+    "title": "長期缺席", "description": "日期範圍內的教師會被視為全日不可調動。", "teacher": "教師", "type": "類型",
     "startDate": "開始日期", "endDate": "結束日期", "add": "新增長期缺席", "update": "更新記錄", "cancelEdit": "取消編輯", "empty": "尚未有長期缺席記錄。",
     "types": { "sick": "長期病假", "maternity": "產假", "other": "其他長期缺席" }
   },
@@ -115,13 +129,13 @@
     "eyebrow": "學校代課推薦系統", "title": "調課工作台",
     "revision": "課表版本 {revision}",
     "steps": { "absence": "缺席老師", "recommendations": "查看並人工確認建議", "effective": "調課安排" },
-    "teacher": "缺席老師", "teachers": "缺席老師（可多選）", "selectTeacher": "選擇老師", "selectTeachers": "選擇一位或多位老師", "date": "日期", "absenceDate": "缺席日期", "absentPeriods": "缺席節次", "allDay": "全天缺席", "analyzeAll": "分析全部課堂", "checkingDate": "正在核對日期……", "invalidDate": "所選日期未有課表資料",
+    "teacher": "缺席老師", "teachers": "缺席老師（可多選）", "selectTeacher": "選擇老師", "selectTeachers": "選擇一位或多位老師", "date": "日期", "absenceDate": "缺席日期", "absentPeriods": "缺席節次", "allDay": "全天缺席", "analyzeAll": "分析全部課堂", "checkingDate": "正在核對日期……", "invalidDate": "所選日期未有課表資料", "absenceReason": "缺席原因", "selectAbsenceReason": "請選擇缺席原因（必填）", "absenceReasonRequired": "請先選擇缺席原因", "absenceReasonMissing": "未填寫", "absenceReasons": { "sick": "病假", "personal": "事假", "official": "公假", "training": "培訓", "other": "其他" }, "otherReasonPlaceholder": "可留空",
     "addAbsence": "新增缺席", "addAbsenceHint": "每次最多新增 3 位老師；每位老師可使用不同日期及節次。", "currentAbsences": "本次缺席", "newAbsenceRecord": "未選擇老師", "addAnotherTeacher": "再加入一位老師", "absenceLimit": "已加入 {count}／3 位", "removeAbsenceRecord": "移除此記錄", "noPeriodsSelected": "尚未選擇節次", "createAndAnalyze": "新增並分析", "analysisDates": "缺席分析日期",
     "counts": "已解決 {resolved} · 未解決 {unresolved}", "cancelAbsence": "取消已新增缺席",
     "analysisEmpty": "按「新增缺席」登記老師、日期和節次，系統會分析全部受影響課堂。", "noTasks": "所選節次已沒有需要處理的課堂。",
     "originalTeacher": "原任：{teachers}", "recommendable": "可處理", "unresolved": "未解決", "candidates": "可選方案", "specialCourseLater": "特殊課跨日，已降低優先級", "breaksConsecutiveLesson": "會拆散原有連課",
-    "confirmArrangement": "確認這個安排", "verifyTimetables": "核對涉及老師的課表", "verifyTitle": "核對涉及老師的課表", "verifyHint": "以下是系統根據現行課表及所選方案重建的確認後課表，只顯示調整後的新安排及沒有改變的課。", "adjusted": "調整", "noCandidate": "系統沒有可直接確認的方案，請進入人工安排。",
-    "manualArrangement": "人工安排", "arrangeThisLesson": "人工安排此課堂", "manualEyebrow": "未處理缺席", "manualQueue": "需人工處理", "manualQueueHint": "先選擇一堂未解決課堂", "manualQueueCount": "尚有 {count} 堂", "manualEmptyTitle": "所有缺席課堂都已處理", "manualEmptyHint": "目前沒有需要人工安排的課堂。",
+    "confirmArrangement": "確認這個安排", "verifyTimetables": "核對涉及老師的課表", "verifyTitle": "核對涉及老師的課表", "verifyHint": "以下按老師分色顯示現行課表；變更課堂會逐格列出原安排及新安排。", "adjusted": "調整", "noCandidate": "系統沒有可直接確認的方案，請進入人工安排。", "useManualInstead": "系統建議均不合適，人工安排", "originalArrangement": "原", "newArrangement": "現",
+    "manualArrangement": "人工安排", "arrangeThisLesson": "人工安排此課堂", "manualEyebrow": "人工安排", "manualQueue": "可人工安排的課堂", "manualQueueHint": "先選擇一堂課堂", "manualQueueCount": "共有 {count} 堂", "manualEmptyTitle": "沒有可人工安排的課堂", "manualEmptyHint": "目前沒有課堂需要人工安排。",
     "manualStep": "步驟 {step}", "chooseCoverTeacher": "選擇代課老師", "candidateRule": "已排除撞課及缺席老師，前後節空堂者優先", "noManualCandidate": "目前沒有可在該節代課的老師。", "coverCount": "已代課 {count} 次", "sameSubject": "同科", "adjacentAllFree": "相鄰節次均空堂", "adjacentPartlyFree": "相鄰節次部分空堂", "adjacentAllBusy": "相鄰節次有課", "availableToCover": "可代課", "freePeriod": "空堂", "unavailable": "不可用",
     "coTeacherAvailableTitle": "仍有 {teachers} 在場", "coTeacherAvailableHint": "管理員可確認由在場原任老師繼續上課，不另安排代課。", "confirmCoTeacherOnly": "確認由原任老師上課",
     "confirmManualArrangement": "確認安排", "lessonToHandle": "課堂", "classSubject": "班別與科目", "absentTeacher": "缺席老師", "remainingCoTeacher": "仍在場原任", "coverTeacher": "代課老師", "notSelected": "尚未選擇", "manualConfirmHint": "確認後會更新有效課表，並把結果記錄在原缺席個案。", "confirmManualCover": "確認人工代課",
@@ -134,8 +148,7 @@
   },
   "statistics": {
     "title": "統計", "description": "按所選日期範圍查看每位老師參與代課及互調課堂的次數。",
-    "matrixTitle": "教師月份統計", "matrixHint": "只計已確認且未撤銷的安排。", "startDate": "開始日期", "endDate": "結束日期", "apply": "查詢", "teacher": "老師", "total": "合計", "invalidRange": "結束日期不可早於開始日期。", "loadError": "載入統計失敗。",
-    "exportTitle": "導出每日調課／代課表", "exportHint": "Excel 每名缺席老師一個工作表；PDF 每名老師一份，多人時下載 ZIP。", "exportDate": "匯出日期", "exportExcel": "匯出 Excel", "exportPdf": "匯出 PDF"
+    "matrixTitle": "教師月份統計", "matrixHint": "只計已確認且未撤銷的安排。", "startDate": "開始日期", "endDate": "結束日期", "apply": "查詢", "teacher": "老師", "total": "合計", "invalidRange": "結束日期不可早於開始日期。", "loadError": "載入統計失敗。"
   },
   "settings": {
     "title": "配置", "description": "管理假期、調課及導出所使用的設定。",
@@ -149,8 +162,8 @@
     }
   },
   "importCenter": {
-    "eyebrow": "管理員", "title": "課表匯入中心", "description": "先檢查兩份課表；資料不一致的課堂會逐項列出並鎖定。",
-    "baseTitle": "匯入基礎課表", "classFile": "班別時間表（.xls）", "teacherFile": "教師時間表（.xlsx，非值日版）", "effectiveFrom": "開始適用日期（必須選擇）", "effectiveTo": "結束適用日期（必須選擇）", "check": "對比時間表差異",
+    "eyebrow": "管理員", "title": "課表匯入中心", "description": "正常及試後課表均使用班別表和教師表；試後課表只在所選日期內覆蓋正常課表。",
+    "baseTitle": "匯入課表", "scheduleType": "課表類型", "normalType": "正常課表", "postExamType": "試後課表", "classFile": "班別時間表（.xls）", "postExamClassFile": "試後班別時間表（.xlsx）", "teacherFile": "教師時間表（.xlsx，非值日版）", "effectiveFrom": "開始適用日期（必須選擇）", "effectiveTo": "結束適用日期（必須選擇）", "check": "對比時間表差異",
     "currentFiles": "查詢日期 {date} 使用：{classFile} + {teacherFile}", "noCurrent": "目前日期尚未有已生效的課表。",
     "classes": "班別", "teachers": "教師", "lessons": "班別課堂", "blocked": "鎖定課堂", "resultTitle": "核對結果", "specialSubjects": "特殊課程標註", "specialSubjectsHint": "系統已預選體育、視藝及默書類課程；可按實際需要增減。涉及這些課程的跨日調動會降低優先級。",
     "resultHint": "每項決定可以單獨或批量確認；全部核對完成後，課表才可啟用。", "activate": "確認啟用", "cancelUpload": "取消這次上傳", "uploadCancelled": "已取消這次上傳，可以重新選擇檔案。", "errorsBlock": "存在無法辨識的教師資料，修正 Excel 後才能啟用。", "reviewsBlock": "尚有 {count} 項未完成核對，課表尚未生效。", "reviewsProgress": "已確認 {confirmed}／{total} 項；尚有 {remaining} 項未處理，課表尚未生效。",

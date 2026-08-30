@@ -59,9 +59,13 @@ class PermissionManagementTests(unittest.TestCase):
     def test_legacy_null_empty_and_corrupt_permissions_are_distinct(self):
         legacy = self.add_user("legacy")
         empty = self.add_user("empty", permissions="[]")
+        legacy_export = self.add_user("legacy-export", permissions='["exports.download"]')
 
         self.assertEqual(get_user_permissions(legacy), list(DEFAULT_USER_PERMISSIONS))
         self.assertEqual(get_user_permissions(empty), [])
+        self.assertEqual(
+            get_user_permissions(legacy_export), ["workbench.view", "exports.download"]
+        )
         for username, raw in (("broken-json", "{"), ("non-string", "[1]")):
             with self.subTest(raw=raw), self.assertLogs("permissions", level="ERROR"):
                 self.assertEqual(get_user_permissions(self.add_user(username, permissions=raw)), [])
@@ -94,7 +98,7 @@ class PermissionManagementTests(unittest.TestCase):
     def test_unknown_or_invalid_permission_combination_is_rejected(self):
         admin = self.add_user("admin", role="admin")
         target = self.add_user()
-        for permissions in (["users.manage"], ["absence.create"]):
+        for permissions in (["users.manage"], ["absence.create"], ["exports.download"]):
             with self.subTest(permissions=permissions), self.assertRaises(HTTPException) as raised:
                 update_user(target.id, UserUpdate(permissions=permissions), admin, self.db)
             self.assertEqual(raised.exception.status_code, 400)

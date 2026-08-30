@@ -208,6 +208,7 @@ const requiredParents = {
   'absence.create': 'workbench.view',
   'adjustment.confirm': 'workbench.view',
   'manual_arrangement.manage': 'workbench.view',
+  'exports.download': 'workbench.view',
   'records.manage': 'records.view'
 }
 
@@ -329,7 +330,7 @@ defineExpose({ focus })
 .eyebrow {
   margin-bottom: 0.25rem !important;
   color: #64748b;
-  font-size: 0.75rem;
+  font-size: var(--font-supporting);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -340,7 +341,7 @@ defineExpose({ focus })
   border-radius: 999px;
   background: #dcfce7;
   color: #166534;
-  font-size: 0.8rem;
+  font-size: var(--font-supporting);
   font-weight: 700;
 }
 
@@ -365,7 +366,7 @@ defineExpose({ focus })
   display: block;
   margin-bottom: 0.45rem;
   color: #334155;
-  font-size: 0.9rem;
+  font-size: var(--font-ui);
   font-weight: 600;
 }
 
@@ -401,7 +402,7 @@ defineExpose({ focus })
 .all-permissions p {
   margin-top: 0.25rem;
   color: #64748b;
-  font-size: 0.85rem;
+  font-size: var(--font-supporting);
 }
 
 .all-permissions,
@@ -423,7 +424,7 @@ defineExpose({ focus })
   margin-bottom: 0.9rem;
   background: #fff7ed;
   color: #9a3412;
-  font-size: 0.85rem;
+  font-size: var(--font-supporting);
 }
 
 .permission-groups {
@@ -441,7 +442,7 @@ defineExpose({ focus })
   padding: 0.65rem 0.85rem;
   background: #f8fafc;
   color: #334155;
-  font-size: 0.9rem;
+  font-size: var(--font-ui);
 }
 
 .permission-row {
@@ -478,7 +479,7 @@ defineExpose({ focus })
   border-radius: 4px;
   background: #ffedd5;
   color: #9a3412;
-  font-size: 0.68rem;
+  font-size: var(--font-supporting);
   vertical-align: 0.08rem;
 }
 
@@ -495,7 +496,7 @@ defineExpose({ focus })
   margin: 1rem 0 0;
   background: #f8fafc;
   color: #475569;
-  font-size: 0.85rem;
+  font-size: var(--font-supporting);
 }
 
 .panel-actions {
