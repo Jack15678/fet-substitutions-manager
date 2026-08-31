@@ -44,7 +44,7 @@
 
         <div v-if="usersLoading" class="list-message">{{ $t('common.loading') }}</div>
         <div v-else-if="!usersFiltered.length" class="list-message">{{ $t('config.users.empty') }}</div>
-        <div v-else class="user-list" role="list">
+        <TransitionGroup v-else name="motion-list" tag="div" class="user-list" role="list">
           <button
             v-for="user in usersFiltered"
             :key="user.id"
@@ -68,12 +68,14 @@
             <i v-if="!user.active" class="pi pi-ban inactive-icon" :title="$t('config.users.inactive')"></i>
             <i class="pi pi-chevron-right chevron" aria-hidden="true"></i>
           </button>
-        </div>
+        </TransitionGroup>
       </aside>
 
       <main class="user-detail">
+        <Transition name="motion-fade" mode="out-in">
         <UserPermissionsPanel
           v-if="selectedUser"
+          :key="selectedUser.id"
           ref="permissionsPanelRef"
           :user="selectedUser"
           :institutions="institucionsOptions"
@@ -84,10 +86,11 @@
           @deactivate="desactivarUsuari"
           @delete="eliminarUsuari"
         />
-        <div v-else class="empty-detail">
+        <div v-else key="empty" class="empty-detail">
           <i class="pi pi-users" aria-hidden="true"></i>
           <p>{{ $t('config.users.selectUser') }}</p>
         </div>
+        </Transition>
       </main>
     </div>
 
@@ -430,6 +433,7 @@ onMounted(() => {
 }
 
 .user-list {
+  position: relative;
   display: grid;
   gap: 0.4rem;
   max-height: 460px;
@@ -444,16 +448,18 @@ onMounted(() => {
   gap: 0.65rem;
   padding: 0.6rem 0.7rem;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: inherit;
   cursor: pointer;
   font: inherit;
   text-align: left;
+  transition: background-color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease);
 }
 
 .user-list-item:hover {
   background: #fff;
+  transform: translateX(2px);
 }
 
 .user-list-item:focus-visible {
@@ -462,8 +468,8 @@ onMounted(() => {
 }
 
 .user-list-item.selected {
-  border-color: #bfdbfe;
-  background: #eff6ff;
+  border-color: var(--border-strong);
+  background: var(--primary-light);
 }
 
 .user-avatar {
@@ -474,8 +480,8 @@ onMounted(() => {
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 50%;
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: #d9e7ef;
+  color: var(--primary-color-dark);
   font-weight: 700;
 }
 

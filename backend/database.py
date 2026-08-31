@@ -163,6 +163,15 @@ def _ensure_absence_case_columns(engine):
             conn.exec_driver_sql("ALTER TABLE absence_cases ADD COLUMN reason_detail VARCHAR(200)")
 
 
+def _ensure_active_absence_unique_index(engine):
+    """Keep one active absence case per teacher and school date."""
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_active_absence_teacher_date "
+            "ON absence_cases (professor_id, data) WHERE status != 'cancelled'"
+        )
+
+
 @lru_cache(maxsize=None)
 def get_engine_for_institucio(institucio: str):
     data_dir = get_data_dir_for_institucio(institucio)
@@ -175,6 +184,7 @@ def get_engine_for_institucio(institucio: str):
     _ensure_timetable_lesson_columns(engine)
     _ensure_schedule_adjustment_columns(engine)
     _ensure_absence_case_columns(engine)
+    _ensure_active_absence_unique_index(engine)
     return engine
 
 

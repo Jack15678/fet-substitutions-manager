@@ -5,7 +5,7 @@ stored separately and overlaid whenever an effective timetable is requested.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from io import BytesIO
 import hashlib
 from itertools import permutations
@@ -39,6 +39,7 @@ WEEKDAYS = {f"星期{name}": index for index, name in enumerate("一二三四五
 TIME_RANGE = re.compile(r"(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})")
 MAX_CYCLE_LESSONS_KEY = "rescheduling_max_cycle_lessons"
 CORE_CONSECUTIVE_SUBJECTS = {"中文", "中國語文", "英文", "英語", "數學"}
+REPAIRABLE_SWAP_KINDS = {"direct_swap", "three_cycle", "manual_swap", "manual_three_cycle"}
 
 
 def clean(value) -> str:
@@ -682,6 +683,7 @@ def professor_ids_for_version(db: Session, version: TimetableVersion) -> set[int
 def _lesson_payload(row: TimetableLesson) -> dict:
     return {
         "lesson_id": row.id,
+        "version_id": row.version_id,
         "weekday": row.weekday,
         "period": row.period,
         "class_code": row.class_code,
@@ -769,6 +771,7 @@ def effective_occurrences(db: Session, start: date, end: date) -> list[dict]:
             occurrences.append({
                 "occurrence_id": f"slot-{slot.id}:{day.isoformat()}",
                 "lesson_id": None,
+                "version_id": slot.version_id,
                 "weekday": slot.weekday,
                 "date": day,
                 "period": slot.period,
@@ -783,7 +786,9 @@ def effective_occurrences(db: Session, start: date, end: date) -> list[dict]:
 
     confirmed = (db.query(ScheduleAdjustmentLeg, ScheduleAdjustment)
                  .join(ScheduleAdjustment, ScheduleAdjustmentLeg.adjustment_id == ScheduleAdjustment.id)
-                 .filter(ScheduleAdjustment.status == "confirmed").all())
+                 .filter(ScheduleAdjustment.status == "confirmed")
+                 .order_by(ScheduleAdjustment.confirmed_at, ScheduleAdjustment.id, ScheduleAdjustmentLeg.id)
+                 .all())
     for leg, adjustment in confirmed:
         if adjustment.kind == "co_teacher_solo":
             for occ in occurrences:
@@ -818,6 +823,7 @@ def effective_occurrences(db: Session, start: date, end: date) -> list[dict]:
             occurrences.append({
                 "occurrence_id": f"moved-{leg.id}",
                 "lesson_id": row.id,
+                "version_id": row.version_id,
                 "weekday": leg.to_date.weekday(),
                 "date": leg.to_date,
                 "period": leg.to_period,
@@ -891,9 +897,22 @@ def _occupancy_index(occurrences: list[dict]) -> tuple[dict[str, dict], dict[tup
     return by_id, teachers, classes
 
 
+def schedule_slot_started(day: date, period: int, now: datetime | None,
+                          period_starts: dict[int, str] | None) -> bool:
+    if not now or not period_starts:
+        return False
+    if day != now.date():
+        return day < now.date()
+    hour, minute = map(int, period_starts[int(period)].split(":"))
+    return (now.hour, now.minute) >= (hour, minute)
+
+
 def validate_move_legs(legs: list[dict], occurrences: list[dict], absences: set,
                        closures: set[date] | None = None, max_legs: int = 3,
                        occupancy: tuple[dict[str, dict], dict[tuple, set[str]], dict[tuple, set[str]]] | None = None,
+                       allowed_locked_ids: set[str] | None = None,
+                       now: datetime | None = None,
+                       period_starts: dict[int, str] | None = None,
                        ) -> tuple[bool, str]:
     if not 2 <= len(legs) <= max_legs:
         return False, f"調課必須包含 2 至 {max_legs} 堂課"
@@ -904,14 +923,22 @@ def validate_move_legs(legs: list[dict], occurrences: list[dict], absences: set,
     source_map, occupied_teachers, occupied_classes = occupancy or _occupancy_index(occurrences)
     if len(source_ids) != len(legs) or any(source_id not in source_map for source_id in source_ids):
         return False, "課堂來源已改變，請重新分析"
-    if any(source_map[source_id]["locked"] for source_id in source_ids):
+    if len({source_map[source_id]["version_id"] for source_id in source_ids}) != 1:
+        return False, "不同課表版本的課堂不能互調"
+    allowed_locked_ids = allowed_locked_ids or set()
+    if any(source_map[source_id]["locked"] and source_id not in allowed_locked_ids for source_id in source_ids):
         return False, "已確認的課堂已鎖定；請先撤銷原調動"
+    if any(schedule_slot_started(source_map[source_id]["date"], source_map[source_id]["period"],
+                                 now, period_starts) for source_id in source_ids):
+        return False, "來源課堂已開始或已過去"
 
     teacher_destinations: set[tuple[int, date, int]] = set()
     class_destinations: set[tuple[str, date, int]] = set()
     for leg in legs:
         destination_date = date.fromisoformat(leg["to_date"])
         destination_period = int(leg["to_period"])
+        if schedule_slot_started(destination_date, destination_period, now, period_starts):
+            return False, "目的節次已開始或已過去"
         if destination_date.weekday() >= 5 or (closures and destination_date in closures):
             return False, "不能把課堂移到非上課日"
         class_key = (leg["class_code"], destination_date, destination_period)
@@ -1030,7 +1057,9 @@ def choose_global(option_groups: list[list[dict]]) -> dict[int, dict]:
     return best
 
 
-def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
+def analyze_absences(db: Session, absence_cases: list[AbsenceCase], *,
+                     now: datetime | None = None,
+                     period_starts: dict[int, str] | None = None) -> dict:
     """Analyse one date's absence cases together so recommendations cannot conflict."""
     if not absence_cases:
         raise ValueError("至少需要一個缺席個案")
@@ -1077,6 +1106,7 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
                 classes_by_teacher.setdefault(int(teacher), set()).add(row.class_code)
 
     option_groups: list[list[dict]] = []
+    blocking_reasons: list[str | None] = []
     for target in targets:
         absent_professor_id = target["_absent_professor_id"]
         if any(
@@ -1085,7 +1115,17 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
             for teacher_id in target["teachers"]
         ):
             option_groups.append([])
+            blocking_reasons.append(None)
             continue
+        if schedule_slot_started(target["date"], target["period"], now, period_starts):
+            option_groups.append([])
+            blocking_reasons.append("started")
+            continue
+        repairable_target = (
+            not target["locked"]
+            or bool(target.get("adjustment_id")) and target.get("source") in REPAIRABLE_SWAP_KINDS
+        )
+        allowed_locked_ids = {target["occurrence_id"]} if repairable_target else set()
         same_class = [
             occ for occ in occurrences
             if occ["class_code"] == target["class_code"] and occ["lesson_id"] is not None
@@ -1103,7 +1143,10 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
                     _leg(target, other["date"], other["period"]),
                     _leg(other, target["date"], target["period"]),
                 ]
-                ok, _ = validate_move_legs(legs, occurrences, absences, closures, occupancy=occupancy)
+                ok, _ = validate_move_legs(
+                    legs, occurrences, absences, closures, occupancy=occupancy,
+                    allowed_locked_ids=allowed_locked_ids, now=now, period_starts=period_starts,
+                )
                 if ok:
                     label = "同日直接互調" if day == start else f"與 {day.isoformat()} 直接互調"
                     candidate = _candidate("direct_swap", target, legs, start, label)
@@ -1129,7 +1172,8 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
                         for source, destination in zip(cycle, cycle[1:] + cycle[:1])
                     ]
                     ok, _ = validate_move_legs(
-                        legs, occurrences, absences, closures, max_cycle_lessons, occupancy
+                        legs, occurrences, absences, closures, max_cycle_lessons, occupancy,
+                        allowed_locked_ids, now, period_starts,
                     )
                     if ok:
                         label = (f"同班 {cycle_length} 堂連鎖互調" if day == start else
@@ -1149,7 +1193,7 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
         ))
 
         # Emergency only when no valid swap exists: same subject, but not a teacher of this class.
-        if not candidates and not target["locked"]:
+        if not candidates and repairable_target:
             for teacher_id, teacher_name in sorted(all_professors.items(), key=lambda item: item[1]):
                 if teacher_id == absent_professor_id:
                     continue
@@ -1186,6 +1230,7 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
             ))
 
         option_groups.append(candidates[:30])
+        blocking_reasons.append(None)
 
     selected = choose_global(option_groups)
     tasks = []
@@ -1201,6 +1246,7 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
             "recommended": serialize_candidate(recommended, all_professors),
             "alternatives": [serialize_candidate(candidate, all_professors) for candidate in alternatives],
             "status": "recommended" if index in selected else "unresolved",
+            "blocking_reason": blocking_reasons[index],
         })
     return {
         "absence_case_id": absence_cases[0].id if len(absence_cases) == 1 else None,
@@ -1213,8 +1259,9 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase]) -> dict:
     }
 
 
-def analyze_absence(db: Session, absence: AbsenceCase) -> dict:
-    return analyze_absences(db, [absence])
+def analyze_absence(db: Session, absence: AbsenceCase, *, now: datetime | None = None,
+                    period_starts: dict[int, str] | None = None) -> dict:
+    return analyze_absences(db, [absence], now=now, period_starts=period_starts)
 
 
 def serialize_occurrence(occurrence: dict, professor_names: dict[int, str]) -> dict:

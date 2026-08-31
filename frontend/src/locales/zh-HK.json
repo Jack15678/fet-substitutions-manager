@@ -18,7 +18,7 @@
     "errors": { "title": "錯誤", "connection": "無法連接伺服器", "server": "伺服器內部錯誤", "unexpected": "發生未預期的錯誤" },
     "nav": {
       "prevDay": "前一日", "nextDay": "下一日", "selectDate": "選擇日期", "today": "今天", "returnToday": "返回今天", "menu": "選單", "settings": "系統設定",
-      "profile": "個人資料", "logout": "登出", "course": "所選日期的學年", "courseNone": "不屬於任何學年", "language": "介面語言"
+      "profile": "個人資料", "help": "使用說明", "logout": "登出", "course": "所選日期的學年", "courseNone": "不屬於任何學年", "language": "介面語言"
     },
     "pages": { "workbench": "調課工作台", "records": "調課記錄", "statistics": "統計", "settings": "配置", "import": "課表匯入" },
     "permissions": {
@@ -117,7 +117,7 @@
     "manual": "人工互調", "period": "第 {period} 節", "createdBy": "建立者：{user}", "noAdjustment": "尚未確認任何調課安排。",
     "previous": "上一頁", "next": "下一頁", "page": "第 {page}／{pages} 頁，共 {total} 項", "resume": "繼續處理",
     "statuses": { "open": "待處理", "resolved": "已安排", "cancelled": "已取消", "confirmed": "已確認", "reverted": "已撤銷" }, "needsReview": "需覆核",
-    "editRemovesAdjustments": "修改缺席後，原有調課方案會失效並被刪除。繼續？", "deleteAbsenceConfirm": "完整刪除此缺席及其所有調課記錄？", "deleteAdjustmentConfirm": "完整刪除此調課記錄並回復基礎課表？",
+    "confirmedIdentityLocked": "這項缺席已有已確認安排，不能更改老師或日期；缺席節次及原因仍可修改。", "deleteAbsenceConfirm": "完整刪除此缺席及其所有調課記錄？", "revertAdjustment": "撤銷安排", "revertAdjustmentConfirm": "撤銷這項尚未開始的安排？歷史記錄會保留。", "cannotRevertStarted": "相關節次已開始、已過去或已有後續安排，不能直接撤銷。", "executionStates": { "pending": "尚未開始", "partial": "部分已執行", "completed": "已執行" },
     "kinds": { "direct_swap": "直接互調", "three_cycle": "同班連鎖互調", "emergency_cover": "同科緊急代課", "co_teacher_solo": "原任老師單獨上課", "manual_swap": "人工互調", "manual_three_cycle": "人工三堂連鎖" }
   },
   "leave": {
@@ -129,12 +129,12 @@
     "eyebrow": "學校代課推薦系統", "title": "調課工作台",
     "revision": "課表版本 {revision}",
     "steps": { "absence": "缺席老師", "recommendations": "查看並人工確認建議", "effective": "調課安排" },
-    "teacher": "缺席老師", "teachers": "缺席老師（可多選）", "selectTeacher": "選擇老師", "selectTeachers": "選擇一位或多位老師", "date": "日期", "absenceDate": "缺席日期", "absentPeriods": "缺席節次", "allDay": "全天缺席", "analyzeAll": "分析全部課堂", "checkingDate": "正在核對日期……", "invalidDate": "所選日期未有課表資料", "absenceReason": "缺席原因", "selectAbsenceReason": "請選擇缺席原因（必填）", "absenceReasonRequired": "請先選擇缺席原因", "absenceReasonMissing": "未填寫", "absenceReasons": { "sick": "病假", "personal": "事假", "official": "公假", "training": "培訓", "other": "其他" }, "otherReasonPlaceholder": "可留空",
-    "addAbsence": "新增缺席", "addAbsenceHint": "每次最多新增 3 位老師；每位老師可使用不同日期及節次。", "currentAbsences": "本次缺席", "newAbsenceRecord": "未選擇老師", "addAnotherTeacher": "再加入一位老師", "absenceLimit": "已加入 {count}／3 位", "removeAbsenceRecord": "移除此記錄", "noPeriodsSelected": "尚未選擇節次", "createAndAnalyze": "新增並分析", "analysisDates": "缺席分析日期",
+    "teacher": "缺席老師", "teachers": "缺席老師（可多選）", "selectTeacher": "選擇老師", "selectTeachers": "選擇一位或多位老師", "date": "日期", "absenceDate": "缺席日期", "absentPeriods": "缺席節次", "allDay": "全天缺席", "analyzeAll": "分析全部課堂", "checkingDate": "正在核對日期……", "invalidDate": "所選日期未有課表資料", "absenceReason": "缺席原因", "selectAbsenceReason": "請選擇缺席原因（必填）", "absenceReasonRequired": "請先選擇缺席原因", "absenceReasonMissing": "未填寫", "absenceReasons": { "sick": "病假", "follow_up": "復診", "team_training": "帶隊訓練", "other": "其他", "personal": "事假", "official": "公假", "training": "培訓" }, "otherReasonPlaceholder": "可留空",
+    "addAbsence": "新增缺席", "addAbsenceHint": "每次最多新增 3 位老師；每位老師可使用不同日期及節次。", "currentAbsences": "本次缺席", "newAbsenceRecord": "未選擇老師", "addAnotherTeacher": "再加入一位老師", "absenceLimit": "已加入 {count}／3 位", "removeAbsenceRecord": "移除此記錄", "noPeriodsSelected": "尚未選擇節次", "createAndAnalyze": "新增並分析", "analysisDates": "缺席分析日期", "existingPeriod": "已記錄", "existingAbsenceNotice": "已有 {periods} 缺席；此處只可追加節次，如需刪減請到調課記錄修改。",
     "counts": "已解決 {resolved} · 未解決 {unresolved}", "cancelAbsence": "取消已新增缺席",
     "analysisEmpty": "按「新增缺席」登記老師、日期和節次，系統會分析全部受影響課堂。", "noTasks": "所選節次已沒有需要處理的課堂。",
     "originalTeacher": "原任：{teachers}", "recommendable": "可處理", "unresolved": "未解決", "candidates": "可選方案", "specialCourseLater": "特殊課跨日，已降低優先級", "breaksConsecutiveLesson": "會拆散原有連課",
-    "confirmArrangement": "確認這個安排", "verifyTimetables": "核對涉及老師的課表", "verifyTitle": "核對涉及老師的課表", "verifyHint": "以下按老師分色顯示現行課表；變更課堂會逐格列出原安排及新安排。", "adjusted": "調整", "noCandidate": "系統沒有可直接確認的方案，請進入人工安排。", "useManualInstead": "系統建議均不合適，人工安排", "originalArrangement": "原", "newArrangement": "現",
+    "confirmArrangement": "確認這個安排", "verifyTimetables": "核對涉及老師的課表", "verifyTitle": "核對涉及老師的課表", "verifyHint": "以下按老師分色顯示現行課表；變更課堂會逐格列出原安排及新安排。", "adjusted": "調整", "noCandidate": "系統沒有可直接確認的方案，請進入人工安排。", "startedLesson": "這堂課的當前有效節次已開始或已過去，不能再自動調課，請轉人工處理。", "useManualInstead": "系統建議均不合適，人工安排", "originalArrangement": "原", "newArrangement": "現",
     "manualArrangement": "人工安排", "arrangeThisLesson": "人工安排此課堂", "manualEyebrow": "人工安排", "manualQueue": "可人工安排的課堂", "manualQueueHint": "先選擇一堂課堂", "manualQueueCount": "共有 {count} 堂", "manualEmptyTitle": "沒有可人工安排的課堂", "manualEmptyHint": "目前沒有課堂需要人工安排。",
     "manualStep": "步驟 {step}", "chooseCoverTeacher": "選擇代課老師", "candidateRule": "已排除撞課及缺席老師，前後節空堂者優先", "noManualCandidate": "目前沒有可在該節代課的老師。", "coverCount": "已代課 {count} 次", "sameSubject": "同科", "adjacentAllFree": "相鄰節次均空堂", "adjacentPartlyFree": "相鄰節次部分空堂", "adjacentAllBusy": "相鄰節次有課", "availableToCover": "可代課", "freePeriod": "空堂", "unavailable": "不可用",
     "coTeacherAvailableTitle": "仍有 {teachers} 在場", "coTeacherAvailableHint": "管理員可確認由在場原任老師繼續上課，不另安排代課。", "confirmCoTeacherOnly": "確認由原任老師上課",
@@ -170,9 +170,10 @@
     "severity": "級別", "weekdayPeriod": "星期／節次", "classWorkbook": "班別表", "teacherWorkbook": "教師表", "review": "需核對", "decision": "管理員決定", "selectReview": "選取", "selectAllReviews": "全選需核對項目", "clearSelection": "清除選擇", "selectedReviews": "已選 {count} 項", "bulkUseClassWorkbook": "批量採用班別表", "bulkUseTeacherWorkbook": "批量採用教師表", "bulkIgnoreExtraTeacher": "批量忽略額外教師", "bulkAddCoTeacher": "批量加入為共同教師", "bulkLeftDecision": "批量套用左側決定", "bulkRightDecision": "批量套用右側決定", "confirmSelected": "確認所選決定", "confirmThisDecision": "確認此項", "confirmedDecision": "已確認", "progressSaved": "已確認 {confirmed}／{total} 項；尚有 {remaining} 項未處理，課表尚未生效。", "allDecisionsConfirmed": "全部核對決定已確認，現在可以啟用課表。", "useClassWorkbook": "採用班別表", "useTeacherWorkbook": "採用教師表", "ignoreExtraTeacher": "忽略額外教師", "addCoTeacher": "加入為共同教師", "fixSource": "請修正 Excel",
     "perfectMatch": "兩份課表完全吻合，可以啟用。", "activated": "課表已設定於 {start} 至 {end} 適用。",
     "versionsTitle": "已上傳課表版本", "versionsHint": "日期範圍可修改，但必須保留所有相關記錄；有記錄的版本不可刪除。課堂內容修改請匯入新版本。",
-    "startDate": "開始適用", "endDate": "適用至", "ongoing": "以後", "files": "來源檔案", "scale": "課表資料", "linkedRecords": "相關記錄", "status": "狀態", "actions": "操作",
+    "dateRange": "適用日期", "startDate": "開始適用", "endDate": "適用至", "ongoing": "以後", "files": "來源檔案", "scale": "課表資料", "linkedRecords": "相關記錄", "status": "狀態", "actions": "操作",
     "scaleValue": "{lessons} 堂／{teachers} 位教師", "specialCount": "特殊課程 {count} 項（按此調整）", "recordValue": "{absences} 個缺席／{adjustments} 個調課", "locked": "不可刪除", "available": "未被使用", "current": "目前使用", "noVersions": "尚未上傳課表版本。",
-    "versionUpdated": "課表版本日期已更新。", "versionDeleted": "未使用的課表版本已刪除。", "deleteConfirm": "刪除從 {date} 開始適用的課表版本？此操作無法復原。",
+    "unsaved": "尚未儲存", "saveChanges": "儲存修改", "cancelChanges": "取消修改", "unsavedLeave": "課表版本仍有尚未儲存的修改，確定要離開嗎？",
+    "versionUpdated": "課表已儲存為 {start} 至 {end} 適用。", "versionDeleted": "未使用的課表版本已刪除。", "deleteConfirm": "刪除從 {date} 開始適用的課表版本？此操作無法復原。",
     "weekdays": { "0": "星期一", "1": "星期二", "2": "星期三", "3": "星期四", "4": "星期五" }
   }
 }

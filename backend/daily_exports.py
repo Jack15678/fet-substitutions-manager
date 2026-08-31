@@ -44,10 +44,13 @@ DEFAULT_PERIOD_TIMES = [
 WEEKDAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 ABSENCE_REASONS = {
     "sick": "病假",
+    "follow_up": "復診",
+    "team_training": "帶隊訓練",
+    "other": "其他",
+    # Legacy values retained for existing records.
     "personal": "事假",
     "official": "公假",
     "training": "培訓",
-    "other": "其他",
 }
 
 
@@ -187,20 +190,38 @@ def daily_export_data(db, day) -> list[dict]:
             }
             remark_teacher_ids = {teacher_id, *actual_teacher_ids}
             remarks = []
+            original_remarks = []
             for leg, adjustment in confirmed_legs:
+                if adjustment.kind == "emergency_cover":
+                    if (leg.to_period == period and leg.to_date == day
+                            and leg.class_code in class_codes and leg.replacement_teacher_id):
+                        replacement_id = int(leg.replacement_teacher_id)
+                        remarks.append(
+                            f"{names.get(replacement_id, str(replacement_id))}"
+                            f"代上{leg.class_code}{leg.subject}"
+                        )
+                    continue
                 if adjustment.id not in related_adjustment_ids:
                     continue
                 for value in json.loads(leg.teachers_json or "[]"):
-                    if int(value) in remark_teacher_ids:
+                    teacher = int(value)
+                    if teacher == teacher_id:
+                        original_remarks.append(
+                            (f"{leg.to_date:%m/%d}" if leg.to_date != day else "") +
+                            f"第{leg.to_period}節"
+                            f"{names.get(teacher, str(teacher))}上{leg.class_code}{leg.subject}"
+                        )
+                    elif teacher in remark_teacher_ids:
                         remarks.append(
-                            f"{leg.from_date:%m-%d}-{names.get(int(value), str(value))}-上{leg.class_code}{leg.subject}"
+                            f"{names.get(teacher, str(teacher))}"
+                            f"調上{leg.class_code}{leg.subject}"
                         )
             rows.append({
                 "period": period,
                 "class_code": _unique(class_codes),
                 "subject": _unique(lesson.subject for lesson in originals),
                 "substitute_teacher": _unique(names.get(value, str(value)) for value in actual_teacher_ids),
-                "remark": "，".join(dict.fromkeys(remarks)),
+                "remark": "，".join(dict.fromkeys(remarks + original_remarks)),
             })
         absence = cases_by_teacher[teacher_id]
         result.append({
@@ -265,7 +286,7 @@ def build_daily_xlsx(entries: list[dict], period_times: list[dict]) -> bytes:
         sheet.merge_cells("D4:G4")
         sheet["D4"] = f"原因：{entry['reason_label']}"
         sheet.merge_cells("A5:B5")
-        headers = {"A5": "節次", "C5": "班別", "D5": "科目", "E5": "代課教員", "F5": "簽署", "G5": "附註"}
+        headers = {"A5": "節次", "C5": "班別", "D5": "原科目", "E5": "代課老師", "F5": "簽署", "G5": "附註"}
         for cell, value in headers.items():
             sheet[cell] = value
 
@@ -314,7 +335,7 @@ def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
     title = ParagraphStyle("daily-title", fontName=font, fontSize=15.5, leading=17, alignment=TA_CENTER)
     info = ParagraphStyle("daily-info", fontName=font, fontSize=12, leading=14, alignment=TA_LEFT)
     note = ParagraphStyle(
-        "daily-note", fontName=font, fontSize=15.5, leading=15.5, alignment=TA_CENTER, wordWrap="CJK"
+        "daily-note", fontName=font, fontSize=12, leading=12, alignment=TA_CENTER, wordWrap="CJK"
     )
     for index, entry in enumerate(entries):
         day = entry["date"]
@@ -331,7 +352,7 @@ def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
         ]
         rows_by_period = {row["period"]: row for row in entry["rows"]}
         table_data = [
-            ["節次", "", "班別", "科目", "代課教員", "簽署", "附註"],
+            ["節次", "", "班別", "原科目", "代課老師", "簽署", "附註"],
             ["班主任課", "", "", "", "", "", ""],
         ]
         row_heights = [7.5 * mm, 7.5 * mm]

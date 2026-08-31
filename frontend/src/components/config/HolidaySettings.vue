@@ -12,14 +12,15 @@
       <button type="button" :class="{ active: mode === 'calendar' }" @click="mode = 'calendar'">{{ $t('settings.holidays.calendarMethod') }}</button>
     </div>
 
-    <div v-if="mode === 'text'" class="text-import">
+    <Transition name="motion-fade" mode="out-in">
+    <div v-if="mode === 'text'" key="text" class="text-import">
       <label>{{ $t('settings.holidays.textLabel') }}
         <textarea v-model="textDates" rows="7" :placeholder="$t('settings.holidays.textPlaceholder')"></textarea>
       </label>
       <Button :label="$t('settings.holidays.importDates')" icon="pi pi-download" outlined @click="importTextDates" />
     </div>
 
-    <div v-else class="year-calendar">
+    <div v-else key="calendar" class="year-calendar">
       <article v-for="month in months" :key="month.key" class="month-card">
         <h4>{{ month.label }}</h4>
         <div class="month-grid weekday-row"><span v-for="day in weekdayLabels" :key="day">{{ day }}</span></div>
@@ -37,8 +38,9 @@
         </div>
       </article>
     </div>
+    </Transition>
 
-    <p v-if="message" :class="['feedback', { error: hasError }]" :role="hasError ? 'alert' : undefined">{{ message }}</p>
+    <Transition name="motion-fade"><p v-if="message" :class="['feedback', { error: hasError }]" :role="hasError ? 'alert' : undefined">{{ message }}</p></Transition>
     <div class="save-row">
       <span>{{ $t('settings.holidays.selected', { count: selectedDates.size }) }}</span>
       <Button :label="$t('settings.holidays.clear')" text severity="secondary" @click="clearDates" />
@@ -168,7 +170,7 @@ label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font
 input, textarea { min-height: 2.5rem; padding: .55rem .65rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
 textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .mode-switch { display: inline-flex; width: fit-content; padding: .2rem; border-radius: 8px; background: var(--surface-soft); }
-.mode-switch button { padding: .48rem .75rem; border: 0; border-radius: 6px; background: transparent; color: var(--text-color-secondary); cursor: pointer; font-weight: 650; }
+.mode-switch button { padding: .48rem .75rem; border: 0; border-radius: 6px; background: transparent; color: var(--text-color-secondary); cursor: pointer; font-weight: 650; transition: background-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease); }
 .mode-switch button.active { background: #fff; color: var(--primary-color-dark); box-shadow: 0 1px 3px rgba(28, 45, 78, .12); }
 .text-import { display: grid; gap: .75rem; }
 .text-import .p-button { justify-self: end; }
@@ -177,7 +179,8 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regu
 .month-card h4 { margin-bottom: .5rem; text-align: center; font-size: var(--font-data); }
 .month-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: .18rem; }
 .weekday-row { margin-bottom: .2rem; color: var(--text-color-secondary); font-size: var(--font-supporting); text-align: center; }
-.month-grid button { aspect-ratio: 1; border: 0; border-radius: 5px; background: transparent; color: var(--text-color-primary); cursor: pointer; }
+.month-grid button { aspect-ratio: 1; border: 0; border-radius: 5px; background: transparent; color: var(--text-color-primary); cursor: pointer; transition: background-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease); }
+.month-grid button:active { transform: scale(.9); }
 .month-grid button:hover { background: var(--surface-soft); }
 .month-grid button.weekend { color: #9a6670; }
 .month-grid button.selected { background: var(--primary-color); color: #fff; font-weight: 700; }

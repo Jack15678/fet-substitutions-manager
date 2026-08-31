@@ -27,35 +27,45 @@
         <div><h3>{{ $t('importCenter.versionsTitle') }}</h3><p class="muted">{{ $t('importCenter.versionsHint') }}</p></div>
       </div>
       <div class="table-wrap">
-        <table>
-          <thead><tr><th>{{ $t('importCenter.startDate') }}</th><th>{{ $t('importCenter.endDate') }}</th><th>{{ $t('importCenter.files') }}</th><th>{{ $t('importCenter.scale') }}</th><th>{{ $t('importCenter.linkedRecords') }}</th><th>{{ $t('importCenter.status') }}</th><th>{{ $t('importCenter.actions') }}</th></tr></thead>
-          <tbody>
-            <tr v-for="version in versions" :key="version.id">
-              <td><input v-model="version.draft_effective_from" type="date" :disabled="!can('timetable.manage')" /></td>
-              <td><input v-model="version.draft_effective_to" type="date" :disabled="!can('timetable.manage')" /></td>
-              <td><div class="file-list"><span>{{ version.class_filename }}</span><span>{{ version.teacher_filename }}</span></div></td>
-              <td>
+        <table class="versions-table">
+          <thead><tr><th>{{ $t('importCenter.dateRange') }}</th><th>{{ $t('importCenter.files') }}</th><th>{{ $t('importCenter.scale') }}</th><th>{{ $t('importCenter.linkedRecords') }}</th><th>{{ $t('importCenter.status') }}</th><th>{{ $t('importCenter.actions') }}</th></tr></thead>
+          <TransitionGroup name="motion-list" tag="tbody">
+            <tr v-for="version in versions" :key="version.id" :class="{ 'version-dirty': versionChanged(version) }">
+              <td class="version-range-cell">
+                <div class="version-range-editor">
+                  <label><span>{{ $t('importCenter.startDate') }}</span><input v-model="version.draft_effective_from" type="date" :disabled="!can('timetable.manage')" @input="message = ''" /></label>
+                  <label><span>{{ $t('importCenter.endDate') }}</span><input v-model="version.draft_effective_to" type="date" :disabled="!can('timetable.manage')" @input="message = ''" /></label>
+                  <div v-if="can('timetable.manage') && versionChanged(version)" class="version-date-actions">
+                    <span class="status unsaved">{{ $t('importCenter.unsaved') }}</span>
+                    <Button :label="$t('importCenter.saveChanges')" size="small" :loading="busy === `version-${version.id}`" :disabled="!version.draft_effective_from || !version.draft_effective_to" @click="saveVersion(version)" />
+                    <Button :label="$t('importCenter.cancelChanges')" size="small" text :disabled="busy === `version-${version.id}`" @click="resetVersion(version)" />
+                  </div>
+                </div>
+              </td>
+              <td :data-label="$t('importCenter.files')"><div class="file-list"><span>{{ version.class_filename }}</span><span>{{ version.teacher_filename }}</span></div></td>
+              <td :data-label="$t('importCenter.scale')">
                 {{ $t('importCenter.scaleValue', { lessons: version.lessons, teachers: version.teachers }) }}
                 <details class="version-specials">
                   <summary>{{ $t('importCenter.specialCount', { count: version.draft_special_subjects.length }) }}</summary>
                   <div>
                     <label v-for="subject in version.subjects" :key="subject" :class="{ selected: version.draft_special_subjects.includes(subject) }">
-                      <input v-model="version.draft_special_subjects" type="checkbox" :value="subject" :disabled="!can('timetable.manage')" />{{ subject }}
+                      <input v-model="version.draft_special_subjects" type="checkbox" :value="subject" :disabled="!can('timetable.manage')" @change="message = ''" />{{ subject }}
                     </label>
                   </div>
                 </details>
               </td>
-              <td>{{ $t('importCenter.recordValue', { absences: version.absence_records, adjustments: version.adjustment_records }) }}</td>
-              <td><span :class="['status', version.locked ? 'locked' : 'available']">{{ version.locked ? $t('importCenter.locked') : $t('importCenter.available') }}</span><span v-if="version.is_current" class="status current">{{ $t('importCenter.current') }}</span></td>
-              <td><div v-if="can('timetable.manage')" class="version-actions"><Button :label="$t('common.save')" size="small" :loading="busy === `version-${version.id}`" :disabled="!version.draft_effective_from || !version.draft_effective_to || !versionChanged(version)" @click="saveVersion(version)" /><Button :label="$t('common.delete')" size="small" severity="danger" outlined :disabled="version.locked" @click="removeVersion(version)" /></div></td>
+              <td :data-label="$t('importCenter.linkedRecords')">{{ $t('importCenter.recordValue', { absences: version.absence_records, adjustments: version.adjustment_records }) }}</td>
+              <td :data-label="$t('importCenter.status')"><span :class="['status', version.locked ? 'locked' : 'available']">{{ version.locked ? $t('importCenter.locked') : $t('importCenter.available') }}</span><span v-if="version.is_current" class="status current">{{ $t('importCenter.current') }}</span></td>
+              <td :data-label="$t('importCenter.actions')"><Button v-if="can('timetable.manage')" :label="$t('common.delete')" size="small" severity="danger" outlined :disabled="version.locked" @click="removeVersion(version)" /></td>
             </tr>
-            <tr v-if="!versions.length"><td colspan="7" class="empty-row">{{ $t('importCenter.noVersions') }}</td></tr>
-          </tbody>
+            <tr v-if="!versions.length"><td colspan="6" class="empty-row">{{ $t('importCenter.noVersions') }}</td></tr>
+          </TransitionGroup>
         </table>
       </div>
     </section>
 
-    <template v-if="preview">
+    <Transition name="motion-fade">
+    <div v-if="preview" class="preview-stack">
       <section class="summary-grid">
         <div><strong>{{ preview.classes }}</strong><span>{{ $t('importCenter.classes') }}</span></div>
         <div><strong>{{ preview.teachers }}</strong><span>{{ $t('importCenter.teachers') }}</span></div>
@@ -80,9 +90,9 @@
             </label>
           </div>
         </fieldset>
-        <ul v-if="preview.warnings.length" class="warnings">
+        <TransitionGroup v-if="preview.warnings.length" name="motion-list" tag="ul" class="warnings">
           <li v-for="warning in preview.warnings" :key="warning">{{ warning }}</li>
-        </ul>
+        </TransitionGroup>
         <p v-if="hasErrors" class="notice danger">{{ $t('importCenter.errorsBlock') }}</p>
         <p v-else-if="hasUnresolvedReviews" class="notice warning">{{ $t('importCenter.reviewsProgress', { confirmed: confirmedReviewCount, total: reviewIds.length, remaining: unresolvedReviewCount }) }}</p>
         <div v-if="can('timetable.upload') && reviewIds.length" class="bulk-actions">
@@ -96,7 +106,7 @@
         <div class="table-wrap">
           <table>
             <thead><tr><th>{{ $t('importCenter.selectReview') }}</th><th>{{ $t('importCenter.severity') }}</th><th>{{ $t('importCenter.weekdayPeriod') }}</th><th>{{ $t('rescheduling.class') }}</th><th>{{ $t('rescheduling.subject') }}</th><th>{{ $t('rescheduling.teacherColumn') }}</th><th>{{ $t('importCenter.classWorkbook') }}</th><th>{{ $t('importCenter.teacherWorkbook') }}</th><th>{{ $t('importCenter.decision') }}</th></tr></thead>
-            <tbody>
+            <TransitionGroup name="motion-list" tag="tbody">
               <tr v-for="(issue, index) in preview.issues" :key="issue.resolution_id || index">
                 <td><input v-if="can('timetable.upload') && issue.severity === 'review'" v-model="selectedReviewIds" type="checkbox" :value="resolutionId(issue)" /></td>
                 <td><span :class="['status', issue.severity]">{{ issue.severity === 'error' ? $t('common.error') : $t('importCenter.review') }}</span></td>
@@ -125,18 +135,19 @@
                 </td>
               </tr>
               <tr v-if="!preview.issues.length"><td colspan="9" class="empty-row">{{ $t('importCenter.perfectMatch') }}</td></tr>
-            </tbody>
+            </TransitionGroup>
           </table>
         </div>
       </section>
-    </template>
+    </div>
+    </Transition>
 
-    <p v-if="message" class="notice success">{{ message }}</p>
+    <Transition name="motion-fade"><p v-if="message" class="notice success">{{ message }}</p></Transition>
   </section>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Button from 'primevue/button'
@@ -191,6 +202,22 @@ const sameItems = (left, right) => left.length === right.length && left.every(it
 const versionChanged = (version) => version.draft_effective_from !== version.effective_from
   || version.draft_effective_to !== version.effective_to
   || !sameItems(version.draft_special_subjects, version.special_subjects)
+const hasUnsavedVersions = computed(() => versions.value.some(versionChanged))
+
+const resetVersion = (version) => {
+  version.draft_effective_from = version.effective_from
+  version.draft_effective_to = version.effective_to || ''
+  version.draft_special_subjects = [...version.special_subjects]
+}
+const resetAllVersions = () => versions.value.forEach(resetVersion)
+
+const handleBeforeUnload = (event) => {
+  if (!hasUnsavedVersions.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+defineExpose({ hasUnsavedChanges: () => hasUnsavedVersions.value, resetUnsavedChanges: resetAllVersions })
 
 const toggleAllReviews = (event) => {
   selectedReviewIds.value = event.target.checked ? [...reviewIds.value] : []
@@ -237,7 +264,9 @@ const saveVersion = async (version) => {
       effective_from: version.draft_effective_from, effective_to: version.draft_effective_to,
       special_subjects: version.draft_special_subjects
     })
-    message.value = t('importCenter.versionUpdated')
+    message.value = t('importCenter.versionUpdated', {
+      start: version.draft_effective_from, end: version.draft_effective_to
+    })
     await loadCurrent()
   } finally { busy.value = '' }
 }
@@ -299,7 +328,11 @@ const discardPreview = async () => {
 
 const weekdayLabel = (weekday) => t(`importCenter.weekdays.${weekday}`, `${weekday}`)
 
-onMounted(loadCurrent)
+onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+  loadCurrent()
+})
+onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnload))
 </script>
 
 <style scoped>
@@ -315,7 +348,8 @@ onMounted(loadCurrent)
 .special-subjects > div { display: flex; flex-wrap: wrap; gap: .45rem; }
 .special-subjects label { display: flex; align-items: center; gap: .35rem; padding: .42rem .6rem; border: 1px solid var(--border-color); border-radius: 7px; cursor: pointer; font-size: var(--font-ui); }
 .special-subjects label.selected { border-color: #d3aa52; background: #fff6db; color: #72500b; }
-.panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
+.panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: var(--radius-lg); background: var(--card-background); box-shadow: var(--shadow-panel); }
+.preview-stack { display: grid; gap: 1.25rem; }
 .panel h3 { margin: 0 0 .9rem; }
 .result-heading h3 { margin: 0; }
 .import-grid { display: grid; grid-template-columns: .7fr 1fr 1fr .62fr .62fr auto; align-items: end; gap: .8rem; }
@@ -344,7 +378,12 @@ tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: #fbfcfe; }
 .file-list { display: flex; flex-direction: column; gap: .2rem; max-width: 260px; }
 .file-list span { overflow: hidden; text-overflow: ellipsis; }
-.version-actions { display: flex; gap: .4rem; }
+.version-range-cell { min-width: 430px; }
+.version-range-editor { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .55rem; }
+.version-range-editor label { display: grid; gap: .25rem; color: var(--text-color-secondary); font-size: var(--font-supporting); font-weight: 650; }
+.version-range-editor input { width: 165px; }
+.version-date-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; width: 100%; }
+.version-dirty .version-range-cell { background: #fffaf0; box-shadow: inset 3px 0 #d3aa52; }
 .version-specials { margin-top: .35rem; }
 .version-specials summary { color: var(--primary-color-dark); cursor: pointer; font-size: var(--font-ui); font-weight: 650; }
 .version-specials > div { display: flex; max-width: 420px; flex-wrap: wrap; gap: .3rem; padding-top: .45rem; white-space: normal; }
@@ -369,6 +408,13 @@ tbody tr:hover { background: #fbfcfe; }
 @media (max-width: 1000px) {
   .import-grid { grid-template-columns: 1fr 1fr; }
   .import-grid .p-button { grid-column: 1 / -1; }
+  .versions-table, .versions-table tbody { display: block; }
+  .versions-table thead { display: none; }
+  .versions-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem 1rem; padding: 1rem; border-bottom: 1px solid var(--border-color); }
+  .versions-table td { display: block; padding: 0; border: 0; white-space: normal; }
+  .versions-table td:not(.version-range-cell)::before { content: attr(data-label); display: block; margin-bottom: .25rem; color: var(--text-color-secondary); font-size: var(--font-supporting); font-weight: 700; }
+  .versions-table .version-range-cell { grid-column: 1 / -1; min-width: 0; padding: .7rem; }
+  .versions-table .empty-row { grid-column: 1 / -1; }
 }
 
 @media (max-width: 600px) {
@@ -380,5 +426,8 @@ tbody tr:hover { background: #fbfcfe; }
   .summary-grid div:nth-child(4) { border-top: 1px solid var(--border-color); }
   .result-actions { width: 100%; }
   .result-actions .p-button { flex: 1; }
+  .versions-table tr { grid-template-columns: 1fr; }
+  .versions-table .version-range-cell, .versions-table .empty-row { grid-column: auto; }
+  .version-range-editor label, .version-range-editor input { width: 100%; }
 }
 </style>

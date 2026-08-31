@@ -63,7 +63,9 @@
             />
           </div>
 
-          <p v-if="loginError" class="login-error">{{ loginError }}</p>
+          <Transition name="motion-fade">
+            <p v-if="loginError" class="login-error">{{ loginError }}</p>
+          </Transition>
 
           <Button
             type="submit"
@@ -79,10 +81,6 @@
 
     <div v-else :class="['app-shell', { 'is-mobile': isMobile }]">
       <header v-if="!isMobile" class="navbar">
-        <div class="navbar-brand">
-          <h1 class="logo">{{ $t('app.title') }}</h1>
-        </div>
-
         <div class="navbar-right">
           <DisplayPreferences
             id-prefix="navbar-display"
@@ -96,6 +94,12 @@
               <option value="en">EN</option>
             </select>
           </div>
+          <Button
+            :label="$t('app.nav.help')"
+            class="p-button-text p-button-plain nav-action"
+            v-tooltip.bottom="$t('app.nav.help')"
+            @click="openManual"
+          />
           <Button
             v-if="isAdmin"
             :label="$t('app.nav.settings')"
@@ -137,22 +141,22 @@
       <aside v-if="!isMobile" class="sidebar">
         <div class="sidebar-brand">
           <span class="school-mark" aria-hidden="true"><img src="/school-logo.png" alt="" /></span>
-          <span>{{ $t('brand.schoolShort') }}</span>
+          <h1>{{ $t('brand.schoolShort') }}</h1>
         </div>
         <nav class="sidebar-nav" :aria-label="$t('app.nav.menu')">
-          <button v-if="can('workbench.view')" class="sidebar-link" :class="{ active: paginaActiva === 'workbench' }" :aria-current="paginaActiva === 'workbench' ? 'page' : undefined" @click="paginaActiva = 'workbench'">
+          <button v-if="can('workbench.view')" class="sidebar-link" :class="{ active: paginaActiva === 'workbench' }" :aria-current="paginaActiva === 'workbench' ? 'page' : undefined" @click="navigateTo('workbench')">
             <span>{{ $t('app.pages.workbench') }}</span>
           </button>
-          <button v-if="can('records.view')" class="sidebar-link" :class="{ active: paginaActiva === 'records' }" :aria-current="paginaActiva === 'records' ? 'page' : undefined" @click="paginaActiva = 'records'">
+          <button v-if="can('records.view')" class="sidebar-link" :class="{ active: paginaActiva === 'records' }" :aria-current="paginaActiva === 'records' ? 'page' : undefined" @click="navigateTo('records')">
             <span>{{ $t('app.pages.records') }}</span>
           </button>
-          <button v-if="can('statistics.view')" class="sidebar-link" :class="{ active: paginaActiva === 'statistics' }" :aria-current="paginaActiva === 'statistics' ? 'page' : undefined" @click="paginaActiva = 'statistics'">
+          <button v-if="can('statistics.view')" class="sidebar-link" :class="{ active: paginaActiva === 'statistics' }" :aria-current="paginaActiva === 'statistics' ? 'page' : undefined" @click="navigateTo('statistics')">
             <span>{{ $t('app.pages.statistics') }}</span>
           </button>
-          <button v-if="isAdmin" class="sidebar-link" :class="{ active: paginaActiva === 'settings' }" :aria-current="paginaActiva === 'settings' ? 'page' : undefined" @click="paginaActiva = 'settings'">
+          <button v-if="isAdmin" class="sidebar-link" :class="{ active: paginaActiva === 'settings' }" :aria-current="paginaActiva === 'settings' ? 'page' : undefined" @click="navigateTo('settings')">
             <span>{{ $t('app.pages.settings') }}</span>
           </button>
-          <button v-if="can('timetable.upload') || can('timetable.manage')" class="sidebar-link" :class="{ active: paginaActiva === 'import' }" :aria-current="paginaActiva === 'import' ? 'page' : undefined" @click="paginaActiva = 'import'">
+          <button v-if="can('timetable.upload') || can('timetable.manage')" class="sidebar-link" :class="{ active: paginaActiva === 'import' }" :aria-current="paginaActiva === 'import' ? 'page' : undefined" @click="navigateTo('import')">
             <span>{{ $t('app.pages.import') }}</span>
           </button>
         </nav>
@@ -166,21 +170,25 @@
               <span class="date-weekday">{{ todayWeekdayLabel }}</span>
             </div>
           </div>
-          <DailyExportActions
-            v-if="paginaActiva === 'workbench' && can('exports.download')"
-            :date="dataSeleccionada"
-          />
+          <Transition name="motion-fade">
+            <DailyExportActions
+              v-if="paginaActiva === 'workbench' && can('exports.download')"
+              :date="dataSeleccionada"
+            />
+          </Transition>
         </div>
 
         <!-- La demo és pública i compartida: qui hi entra ha de saber que el que
              escrigui el veuran altres visitants i que s'esborra cada nit. -->
-        <div v-if="esDemo" class="demo-avis">
-          <i class="pi pi-info-circle" aria-hidden="true"></i>
-          <span>
-            <strong>{{ $t('config.system.demoBannerTitle') }}.</strong>
-            {{ $t('config.system.demoBannerText') }}
-          </span>
-        </div>
+        <Transition name="motion-fade">
+          <div v-if="esDemo" class="demo-avis">
+            <i class="pi pi-info-circle" aria-hidden="true"></i>
+            <span>
+              <strong>{{ $t('config.system.demoBannerTitle') }}.</strong>
+              {{ $t('config.system.demoBannerText') }}
+            </span>
+          </div>
+        </Transition>
 
         <main class="main-content">
           <section v-if="!availablePages.length" class="permission-empty" role="status">
@@ -198,7 +206,7 @@
           <RecordsView v-if="can('records.view') && paginaActiva === 'records'" :can="can" @resume-absence="resumeAbsence" />
           <StatisticsView v-if="can('statistics.view') && paginaActiva === 'statistics'" :dataGlobal="dataSeleccionada" />
           <SettingsView v-if="isAdmin && paginaActiva === 'settings'" />
-          <TimetableImportView v-if="can('timetable.upload') || can('timetable.manage')" v-show="paginaActiva === 'import'" :can="can" />
+          <TimetableImportView v-if="can('timetable.upload') || can('timetable.manage')" v-show="paginaActiva === 'import'" ref="timetableImportView" :can="can" />
         </main>
 
         <footer class="footer">
@@ -228,17 +236,22 @@
         class="mobile-menu-dialog"
       >
         <div class="mobile-menu">
-          <Button v-if="can('workbench.view')" class="p-button-text" :label="$t('app.pages.workbench')" @click="paginaActiva = 'workbench'; mostrarMenuMobil = false" />
-          <Button v-if="can('records.view')" class="p-button-text" :label="$t('app.pages.records')" @click="paginaActiva = 'records'; mostrarMenuMobil = false" />
-          <Button v-if="can('statistics.view')" class="p-button-text" :label="$t('app.pages.statistics')" @click="paginaActiva = 'statistics'; mostrarMenuMobil = false" />
-          <Button v-if="isAdmin" class="p-button-text" :label="$t('app.pages.settings')" @click="paginaActiva = 'settings'; mostrarMenuMobil = false" />
-          <Button v-if="can('timetable.upload') || can('timetable.manage')" class="p-button-text" :label="$t('app.pages.import')" @click="paginaActiva = 'import'; mostrarMenuMobil = false" />
+          <Button v-if="can('workbench.view')" class="p-button-text" :label="$t('app.pages.workbench')" @click="navigateTo('workbench'); mostrarMenuMobil = false" />
+          <Button v-if="can('records.view')" class="p-button-text" :label="$t('app.pages.records')" @click="navigateTo('records'); mostrarMenuMobil = false" />
+          <Button v-if="can('statistics.view')" class="p-button-text" :label="$t('app.pages.statistics')" @click="navigateTo('statistics'); mostrarMenuMobil = false" />
+          <Button v-if="isAdmin" class="p-button-text" :label="$t('app.pages.settings')" @click="navigateTo('settings'); mostrarMenuMobil = false" />
+          <Button v-if="can('timetable.upload') || can('timetable.manage')" class="p-button-text" :label="$t('app.pages.import')" @click="navigateTo('import'); mostrarMenuMobil = false" />
           <hr />
           <DisplayPreferences
             id-prefix="mobile-display"
             v-model:size="displaySize"
             v-model:font="displayFont"
             inline
+          />
+          <Button
+            class="p-button-text"
+            :label="$t('app.nav.help')"
+            @click="openManual(); mostrarMenuMobil = false"
           />
           <Button
             v-if="isAdmin"
@@ -263,7 +276,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, computed, watch, defineAsyncComponent } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch, defineAsyncComponent, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Toast from 'primevue/toast'
@@ -329,6 +342,25 @@ watch([displaySize, displayFont], ([size, font]) => {
 
 const autenticat = ref(false)
 const paginaActiva = ref('workbench')
+const timetableImportView = ref(null)
+const canLeaveImport = () => {
+  if (paginaActiva.value !== 'import' || !timetableImportView.value?.hasUnsavedChanges()) return true
+  if (!window.confirm(t('importCenter.unsavedLeave'))) return false
+  timetableImportView.value.resetUnsavedChanges()
+  return true
+}
+const navigateTo = (page) => {
+  if (!page || page === paginaActiva.value) return
+  if (!canLeaveImport()) return
+  if (!document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    paginaActiva.value = page
+    return
+  }
+  document.startViewTransition(async () => {
+    paginaActiva.value = page
+    await nextTick()
+  })
+}
 const reschedulingView = ref(null)
 const hongKongToday = () => {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en', {
@@ -336,7 +368,9 @@ const hongKongToday = () => {
   }).formatToParts().filter(part => part.type !== 'literal').map(part => [part.type, part.value]))
   return new Date(Number(parts.year), Number(parts.month) - 1, Number(parts.day), 12)
 }
-const dataSeleccionada = hongKongToday()
+const dataSeleccionada = import.meta.env.VITE_TEST_DATE
+  ? new Date(`${import.meta.env.VITE_TEST_DATE}T12:00:00`)
+  : hongKongToday()
 const mostrarConfiguracio = ref(false)
 const mostrarPerfil = ref(false)
 const mostrarMenuMobil = ref(false)
@@ -350,6 +384,8 @@ const isMobile = ref(false)
 let mediaQuery = null
 const userProfile = ref(null)
 const isAdmin = computed(() => ['admin', 'super_admin'].includes(userProfile.value?.role || ''))
+const manualUrl = computed(() => isAdmin.value ? '/manuals/admin.html' : '/manuals/user.html')
+const openManual = () => window.open(manualUrl.value, '_blank', 'noopener,noreferrer')
 const can = (permission) => hasPermission(userProfile.value, permission)
 const availablePages = computed(() => [
   can('workbench.view') && 'workbench',
@@ -482,6 +518,7 @@ const ferLogin = async () => {
 }
 
 const ferLogout = () => {
+  if (!canLeaveImport()) return
   netejarToken()
   loginPass.value = ''
 }
@@ -496,33 +533,41 @@ const obrirPerfil = () => {
 
 const resumeAbsence = (record) => {
   if (!can('absence.create')) return
-  paginaActiva.value = 'workbench'
+  navigateTo('workbench')
   reschedulingView.value?.resumeAbsence(record)
 }
 </script>
 
 <style>
 :root {
-  --app-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --app-font-family: "Microsoft JhengHei UI", "PingFang TC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-supporting: .875rem;
   --font-ui: .9375rem;
   --font-data: 1rem;
   --font-critical: 1.0625rem;
-  --primary-color: #193f66;
-  --primary-color-dark: #0c2948;
-  --primary-color-light: #e7eff7;
+  --primary-color: #244f73;
+  --primary-color-dark: #123553;
+  --primary-color-light: #e8f0f5;
   --primary-color-text: #ffffff;
-  --highlight-bg: #edf3f8;
-  --highlight-text-color: #173d62;
-  --text-color-primary: #15263a;
-  --text-color-secondary: #5d6a7d;
-  --background-light: #f3f6f9;
+  --highlight-bg: #edf3f6;
+  --highlight-text-color: #183e5c;
+  --text-color-primary: #172b3d;
+  --text-color-secondary: #617080;
+  --background-light: #f4f6f7;
   --card-background: #ffffff;
-  --border-color: #d8e0e9;
-  --surface-soft: #f7f9fb;
-  --sidebar-background: #0c2948;
-  --sidebar-active: #254c75;
-  --focus-ring: 0 0 0 3px rgba(25, 63, 102, 0.2);
+  --border-color: #dce3e7;
+  --border-strong: #c8d3da;
+  --surface-soft: #f5f7f8;
+  --sidebar-background: #123553;
+  --sidebar-active: rgba(255, 255, 255, .12);
+  --focus-ring: 0 0 0 3px rgba(36, 79, 115, 0.2);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --shadow-panel: 0 1px 2px rgba(18, 53, 83, .035), 0 12px 32px rgba(18, 53, 83, .045);
+  --motion-fast: 160ms;
+  --motion-base: 240ms;
+  --motion-ease: cubic-bezier(.2, .75, .2, 1);
 }
 
 html[data-text-size="large"] {
@@ -553,6 +598,8 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
+
+html { scroll-behavior: smooth; }
 
 small { font-size: var(--font-supporting); }
 
@@ -745,17 +792,19 @@ input.p-inputtext.p-inputtext-sm {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #edf2f7;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, .95), transparent 34rem),
+    #edf1f3;
   padding: 2rem;
 }
 
 .login-card {
   width: min(430px, 100%);
   background: var(--card-background);
-  border-radius: 6px;
-  padding: 2.25rem;
-  box-shadow: 0 18px 48px rgba(12, 41, 72, 0.1);
-  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 2.4rem;
+  box-shadow: 0 24px 70px rgba(18, 53, 83, .11), inset 0 0 0 1px rgba(18, 53, 83, .07);
+  border: 0;
 }
 
 .language-control{display:flex;align-items:center;gap:.45rem}.language-control label{font-size:var(--font-ui)}.language-control select,.mobile-header-actions select{border:1px solid #d7dce7;border-radius:4px;background:#fff;color:#243047;padding:.35rem .5rem}.login-language{color:var(--text-color-secondary)}.navbar-language select{border-color:var(--border-color)}.sr-only{position:absolute;left:0;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.mobile-header-actions{display:flex;align-items:center;gap:.35rem}
@@ -852,8 +901,8 @@ input.p-inputtext.p-inputtext-sm {
 .app-shell {
   min-height: 100dvh;
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  grid-template-rows: minmax(72px, auto) minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-rows: minmax(64px, auto) minmax(0, 1fr);
 }
 
 .navbar {
@@ -862,23 +911,17 @@ input.p-inputtext.p-inputtext-sm {
   position: sticky;
   top: 0;
   z-index: 20;
-  min-height: 72px;
-  background: var(--card-background);
+  min-height: 64px;
+  background: rgba(255, 255, 255, .92);
+  backdrop-filter: blur(14px);
   color: var(--text-color-primary);
   padding: .75rem 2rem;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 1.5rem;
   flex-wrap: wrap;
-}
-
-.navbar-brand {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 1rem;
 }
 
 .logo {
@@ -944,14 +987,15 @@ input.p-inputtext.p-inputtext-sm {
   background: var(--sidebar-background);
   color: #fff;
   border-right: 0;
+  box-shadow: 10px 0 34px rgba(18, 53, 83, .08);
 }
 
 .sidebar-brand {
   display: flex;
   align-items: center;
   gap: .75rem;
-  min-height: 88px;
-  padding: 1rem 1.1rem;
+  min-height: 64px;
+  padding: .7rem 1rem;
   border-bottom: 1px solid rgba(255, 255, 255, .13);
   color: #fff;
   font-size: var(--font-ui);
@@ -959,11 +1003,14 @@ input.p-inputtext.p-inputtext-sm {
   line-height: 1.25;
 }
 
+.sidebar-brand h1 { margin: 0; color: inherit; font-size: var(--font-ui); font-weight: 700; line-height: 1.25; }
+.sidebar-brand .school-mark { width: 38px; height: 38px; flex-basis: 38px; }
+
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding: 1rem .8rem;
+  gap: .3rem;
+  padding: 1rem .7rem;
 }
 
 .sidebar-link {
@@ -971,9 +1018,8 @@ input.p-inputtext.p-inputtext-sm {
   align-items: center;
   width: 100%;
   padding: 0.78rem 1rem;
-  border: 0;
-  border-left: 3px solid transparent;
-  border-radius: 3px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   background: transparent;
   color: rgba(255, 255, 255, .72);
   font: inherit;
@@ -981,25 +1027,27 @@ input.p-inputtext.p-inputtext-sm {
   font-weight: 600;
   text-align: left;
   cursor: pointer;
-  transition: color .15s ease, background-color .15s ease;
+  transition: color var(--motion-fast) ease, background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, transform var(--motion-fast) var(--motion-ease);
 }
 
 .sidebar-link:hover {
   color: #fff;
   background: rgba(255, 255, 255, .07);
+  transform: translateX(2px);
 }
 
 .sidebar-link.active {
   color: #fff;
-  border-left-color: #9bbad5;
+  border-color: rgba(255, 255, 255, .1);
   background: var(--sidebar-active);
+  box-shadow: inset 3px 0 0 #a9c5d7;
 }
 
 .app-workspace {
   grid-column: 2;
   grid-row: 2;
   min-width: 0;
-  min-height: calc(100dvh - 72px);
+  min-height: calc(100dvh - 64px);
   display: flex;
   flex-direction: column;
 }
@@ -1010,9 +1058,9 @@ input.p-inputtext.p-inputtext-sm {
   justify-content: space-between;
   gap: 1rem;
   width: 100%;
-  max-width: 1400px;
+  max-width: 1240px;
   margin: 0 auto;
-  padding: 1.35rem 2rem 0;
+  padding: 1.2rem 2rem 0;
 }
 
 .date-navigator {
@@ -1044,8 +1092,8 @@ input.p-inputtext.p-inputtext-sm {
 
 /* PrimeVue TabView unificat (diàlegs + scheduler) */
 .app-tabview .p-tabview-nav {
-  background: #f8fafc;
-  border-bottom: 2px solid #e2e8f0;
+  background: var(--surface-background);
+  border-bottom: 1px solid var(--border-color);
   padding: 0.2rem 0.5rem 0;
   gap: 0.2rem;
   align-items: stretch;
@@ -1063,28 +1111,28 @@ input.p-inputtext.p-inputtext-sm {
   text-align: center;
   font-size: var(--font-ui);
   font-weight: 600;
-  color: #64748b;
+  color: var(--text-color-secondary);
   background: transparent;
   border: 1px solid transparent;
   border-bottom: none;
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
   padding: 0.72rem 1rem;
   min-height: 3.2rem;
   line-height: 1.12;
-  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition: background-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease);
 }
 
 .app-tabview .p-tabview-nav li:not(.p-highlight) .p-tabview-nav-link:hover {
-  color: #334155;
-  background: #eef2ff;
-  border-color: #dbeafe;
+  color: var(--primary-color-dark);
+  background: var(--primary-light);
+  border-color: var(--border-strong);
 }
 
 .app-tabview .p-tabview-nav li.p-highlight .p-tabview-nav-link {
-  color: #1d4ed8;
+  color: var(--primary-color-dark);
   background: #ffffff;
-  border-color: #bfdbfe;
-  box-shadow: 0 -1px 0 #dbeafe inset;
+  border-color: var(--border-strong);
+  box-shadow: 0 -1px 0 var(--primary-light) inset;
 }
 
 .app-tabview .p-tabview-panels {
@@ -1096,9 +1144,10 @@ input.p-inputtext.p-inputtext-sm {
 .main-content {
   flex: 1;
   padding: 1.5rem 2rem 3rem;
-  max-width: 1400px;
+  max-width: 1240px;
   margin: 0 auto;
   width: 100%;
+  view-transition-name: app-page;
 }
 
 /* Informatiu, no d'error: la demo funciona correctament, però convé saber
@@ -1107,7 +1156,7 @@ input.p-inputtext.p-inputtext-sm {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  max-width: 1400px;
+  max-width: 1240px;
   margin: 1rem auto 0;
   padding: 0.6rem 0.9rem;
   width: calc(100% - 4rem);
@@ -1155,8 +1204,8 @@ input.p-inputtext.p-inputtext-sm {
 
 /* Millores per PrimeVue */
 .p-button {
-  border-radius: 4px;
-  transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) var(--motion-ease);
   padding: 0.65rem 1rem;
   font-size: var(--font-ui);
   min-width: unset;
@@ -1170,9 +1219,10 @@ input.p-inputtext.p-inputtext-sm {
 .p-button:not(.p-button-text, .p-button-outlined, .p-button-link, .p-button-success, .p-button-danger, .p-button-warning, .p-button-secondary, .p-button-info, .p-button-help):hover {
   border-color: var(--primary-color-dark);
   background: var(--primary-color-dark);
+  box-shadow: 0 5px 14px rgba(18, 53, 83, .16);
 }
 
-.p-button:active { transform: translateY(1px); }
+.p-button:active { transform: translateY(1px) scale(.985); }
 
 /* Override per botons amb outline */
 .p-button.p-button-outlined {
@@ -1188,14 +1238,51 @@ input.p-inputtext.p-inputtext-sm {
 .p-datatable {
   box-shadow: none;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   overflow: hidden;
+}
+
+.motion-fade-enter-active,
+.motion-fade-leave-active,
+.motion-list-enter-active,
+.motion-list-leave-active,
+.motion-list-move {
+  transition: opacity var(--motion-base) var(--motion-ease), transform var(--motion-base) var(--motion-ease);
+}
+
+.motion-fade-enter-from,
+.motion-fade-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.motion-list-enter-from {
+  opacity: 0;
+  transform: translateY(9px) scale(.99);
+}
+
+.motion-list-leave-to {
+  opacity: 0;
+  transform: translateY(-5px) scale(.99);
+}
+
+.motion-list-leave-active { position: absolute; }
+
+::view-transition-old(app-page) { animation: app-page-out 120ms ease both; }
+::view-transition-new(app-page) { animation: app-page-in var(--motion-base) var(--motion-ease) both; }
+
+@keyframes app-page-out {
+  to { opacity: 0; transform: translateY(-4px); }
+}
+
+@keyframes app-page-in {
+  from { opacity: 0; transform: translateY(8px); }
 }
 
 /* Responsive shell */
 @media (max-width: 992px) {
   .app-shell {
-    grid-template-columns: 210px minmax(0, 1fr);
+    grid-template-columns: 200px minmax(0, 1fr);
   }
 
   .navbar {
@@ -1340,5 +1427,18 @@ html[data-text-size="extra-large"] .p-datepicker-trigger.p-button { width: 3.25r
 @media (max-width: 1100px) {
   html[data-text-size="extra-large"] .main-content { padding: .75rem .5rem 1.25rem; }
   html[data-text-size="extra-large"] .content-toolbar { padding: .65rem .5rem 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 </style>

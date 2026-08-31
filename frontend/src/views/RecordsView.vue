@@ -23,12 +23,13 @@
         <span>{{ $t('records.resultHint') }}</span>
       </div>
 
-      <div v-if="loading" class="empty-state">{{ $t('common.loading') }}</div>
+      <Transition name="motion-fade" mode="out-in">
+      <div v-if="loading" key="loading" class="empty-state">{{ $t('common.loading') }}</div>
       <div v-else-if="!records.items.length" class="empty-state">{{ $t('records.empty') }}</div>
       <div v-else class="records-table-wrap">
         <table class="records-table">
           <thead><tr><th>{{ $t('records.columns.date') }}</th><th>{{ $t('records.columns.teacher') }}</th><th>{{ $t('records.columns.periods') }}</th><th>{{ $t('records.columns.arrangements') }}</th><th>{{ $t('records.columns.status') }}</th><th><span class="sr-only">{{ $t('common.actions') }}</span></th></tr></thead>
-          <tbody>
+          <TransitionGroup name="motion-list" tag="tbody">
             <tr v-for="record in records.items" :key="record.id">
               <td><strong>{{ formatDate(record.date) }}</strong></td>
               <td>{{ record.teacher_name || $t('records.manual') }}</td>
@@ -37,9 +38,10 @@
               <td><span :class="['status', record.needs_review ? 'needs-review' : record.status]">{{ record.needs_review ? $t('records.needsReview') : statusLabel(record.status) }}</span></td>
               <td class="row-action"><Button :label="$t('records.view')" text size="small" @click="openDetail(record)" /></td>
             </tr>
-          </tbody>
+          </TransitionGroup>
         </table>
       </div>
+      </Transition>
 
       <div v-if="records.total" class="pagination">
         <Button :label="$t('records.previous')" text :disabled="records.page <= 1" @click="loadRecords(records.page - 1)" />
@@ -95,27 +97,30 @@
                 <i class="pi pi-file" aria-hidden="true"></i>
                 <strong>{{ arrangementSummary(selectedRecord) }}</strong>
                 <p class="muted">{{ $t('records.noAdjustment') }}</p>
-                <Button v-if="can('absence.create') && selectedRecord.record_type === 'absence' && selectedRecord.status === 'open'" :label="$t('records.resume')" @click="resumeSelected" />
               </div>
-              <div v-else class="adjustment-list">
+              <TransitionGroup v-else name="motion-list" tag="div" class="adjustment-list">
                 <article v-for="adjustment in selectedRecord.adjustments" :key="adjustment.id" class="adjustment">
                   <div class="adjustment-heading">
-                    <div><strong>{{ kindLabel(adjustment.kind) }}</strong><small>#{{ adjustment.id }}</small></div>
+                    <div><strong>{{ kindLabel(adjustment.kind) }}</strong><small>#{{ adjustment.id }} · {{ executionStateLabel(adjustment.execution_state) }}</small></div>
                     <span :class="['status', adjustment.needs_review ? 'needs-review' : adjustment.status]">{{ adjustment.needs_review ? $t('records.needsReview') : statusLabel(adjustment.status) }}</span>
                   </div>
                   <div v-for="(leg, index) in adjustment.legs" :key="index" class="leg">
                     <span><strong>{{ leg.class_code }} · {{ leg.subject }}</strong><small>{{ joinItems(leg.teacher_names) }}</small></span>
                     <b>{{ leg.from_date }} {{ $t('records.period', { period: leg.from_period }) }} → {{ leg.to_date }} {{ $t('records.period', { period: leg.to_period }) }}</b>
                   </div>
-                  <div v-if="can('records.manage')" class="adjustment-actions"><Button :label="$t('common.delete')" text size="small" severity="danger" @click="removeAdjustment(adjustment)" /></div>
+                  <div v-if="can('records.manage')" class="adjustment-actions">
+                    <Button v-if="adjustment.can_revert" :label="$t('records.revertAdjustment')" text size="small" severity="danger" @click="removeAdjustment(adjustment)" />
+                    <small v-else-if="adjustment.status === 'confirmed'">{{ $t('records.cannotRevertStarted') }}</small>
+                  </div>
                 </article>
-              </div>
+              </TransitionGroup>
             </section>
           </div>
 
-          <div v-if="can('records.manage') && selectedRecord.record_type === 'absence' && editingAbsenceId !== selectedRecord.entity_id" class="admin-actions">
-            <Button :label="$t('records.editAbsence')" outlined @click="editAbsence(selectedRecord)" />
-            <Button :label="$t('common.delete')" severity="danger" text @click="removeAbsence(selectedRecord)" />
+          <div v-if="selectedRecord.record_type === 'absence' && editingAbsenceId !== selectedRecord.entity_id && (can('records.manage') || (can('absence.create') && selectedRecord.status === 'open'))" class="admin-actions">
+            <Button v-if="can('absence.create') && selectedRecord.status === 'open'" :label="$t('records.resume')" @click="resumeSelected" />
+            <Button v-if="can('records.manage')" :label="$t('records.editAbsence')" outlined @click="editAbsence(selectedRecord)" />
+            <Button v-if="can('records.manage')" :label="$t('common.delete')" severity="danger" text @click="removeAbsence(selectedRecord)" />
           </div>
         </div>
       </template>
@@ -140,7 +145,7 @@ const detailVisible = ref(false)
 const selectedRecord = ref(null)
 const absenceTeachers = ref([])
 const editingAbsenceId = ref(null)
-const absenceReasonTypes = ['sick', 'personal', 'official', 'training', 'other']
+const absenceReasonTypes = ['sick', 'follow_up', 'team_training', 'other']
 const absenceEdit = reactive({ professor_id: null, data: '', periods: [], reason_type: '', reason_detail: '' })
 
 const formatDate = (value) => new Intl.DateTimeFormat(locale.value === 'en' ? 'en-HK' : 'zh-HK', {
@@ -148,6 +153,7 @@ const formatDate = (value) => new Intl.DateTimeFormat(locale.value === 'en' ? 'e
 }).format(new Date(`${value}T12:00:00`))
 const statusLabel = (value) => t(`records.statuses.${value}`, value)
 const kindLabel = (value) => t(`records.kinds.${value}`, value)
+const executionStateLabel = (value) => t(`records.executionStates.${value}`, value)
 const joinItems = (items) => items.join(locale.value === 'en' ? ', ' : '、')
 const periodsLabel = (record) => record.periods.length === 9
   ? t('rescheduling.allDay')
@@ -201,12 +207,12 @@ const editAbsence = async (record) => {
   })
 }
 const saveAbsence = async (record) => {
-  const originalPeriods = record.periods.map(Number).sort((a, b) => a - b).join(',')
-  const editedPeriods = absenceEdit.periods.map(Number).sort((a, b) => a - b).join(',')
-  const scheduleChanged = Number(record.professor_id) !== Number(absenceEdit.professor_id)
+  const identityChanged = Number(record.professor_id) !== Number(absenceEdit.professor_id)
     || record.date !== absenceEdit.data
-    || originalPeriods !== editedPeriods
-  if (scheduleChanged && record.adjustments.length && !window.confirm(t('records.editRemovesAdjustments'))) return
+  if (identityChanged && record.adjustments.length) {
+    window.alert(t('records.confirmedIdentityLocked'))
+    return
+  }
   await axios.put(`/api/absence-cases/${record.entity_id}`, {
     professor_id: absenceEdit.professor_id,
     data: absenceEdit.data,
@@ -226,8 +232,8 @@ const removeAbsence = async (record) => {
   await loadRecords(records.value.page)
 }
 const removeAdjustment = async (adjustment) => {
-  if (!window.confirm(t('records.deleteAdjustmentConfirm'))) return
-  await axios.delete(`/api/adjustments/${adjustment.id}`)
+  if (!window.confirm(t('records.revertAdjustmentConfirm'))) return
+  await axios.post(`/api/adjustments/${adjustment.id}/revert`)
   await loadRecords(records.value.page)
 }
 
@@ -238,7 +244,7 @@ onMounted(loadRecords)
 .records-page { display: grid; gap: 1.25rem; color: var(--text-color-primary); }
 .page-heading h2 { margin: 0 0 .35rem; font-size: clamp(1.65rem, 3vw, 2.15rem); line-height: 1.15; letter-spacing: -.035em; }
 .page-heading p, .muted, .result-bar span, .detail-heading p, .detail-title span { color: var(--text-color-secondary); }
-.panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
+.panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: var(--radius-lg); background: var(--card-background); box-shadow: var(--shadow-panel); }
 .record-filters { display: grid; grid-template-columns: minmax(210px, 1.4fr) repeat(4, minmax(130px, .75fr)) auto; align-items: end; gap: .75rem; }
 .record-filters label { display: flex; min-width: 0; flex-direction: column; gap: .35rem; color: #344054; font-size: var(--font-ui); font-weight: 650; }
 .record-filters input, .record-filters select, .record-edit select, .record-edit input[type=date], .record-edit input[type=text] { width: 100%; min-height: 2.5rem; padding: .55rem .65rem; border: 1px solid #cfd6df; border-radius: 6px; background: #fff; color: var(--text-color-primary); }
@@ -255,7 +261,7 @@ onMounted(loadRecords)
 .status.resolved, .status.confirmed { background: #e4f5e9; color: #216a42; }
 .status.open { background: #fff4d6; color: #84590e; }
 .status.needs-review { background: #fff0d5; color: #8a4f08; }
-.empty-state { display: grid; min-height: 170px; place-items: center; border-radius: 8px; background: var(--surface-soft); color: var(--text-color-secondary); }
+.empty-state { display: grid; min-height: 140px; place-items: center; border: 1px dashed var(--border-strong); border-radius: var(--radius-md); background: rgba(245, 247, 248, .72); color: var(--text-color-secondary); }
 .pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; color: var(--text-color-secondary); font-size: var(--font-ui); }
 :global(.records-sidebar .p-sidebar-header) { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border-color); }
 :global(.records-sidebar .p-sidebar-content) { display: flex; flex-direction: column; padding: 0; background: #f7f9fb; }

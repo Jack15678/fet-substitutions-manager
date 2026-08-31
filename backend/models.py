@@ -2,7 +2,7 @@
 Models SQLAlchemy per a la base de dades SQLite
 """
 
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Text, Date, Index
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Text, Date, Index, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -548,6 +548,10 @@ class AbsenceCase(Base):
     __table_args__ = (
         Index('idx_absence_case_date', 'data'),
         Index('idx_absence_case_teacher', 'professor_id', 'data'),
+        Index(
+            'uq_active_absence_teacher_date', 'professor_id', 'data', unique=True,
+            sqlite_where=text("status != 'cancelled'"),
+        ),
     )
 
 

@@ -1,5 +1,6 @@
 """Time rules for persisted audit timestamps and Hong Kong school dates."""
 from datetime import datetime, timedelta, timezone
+import os
 
 
 HONG_KONG = timezone(timedelta(hours=8), "HKT")
@@ -19,6 +20,9 @@ def utc_iso(value: datetime | None) -> str | None:
 
 
 def hong_kong_now() -> datetime:
+    if override := os.getenv("APP_TEST_NOW"):
+        value = datetime.fromisoformat(override)
+        return value.replace(tzinfo=HONG_KONG) if value.tzinfo is None else value.astimezone(HONG_KONG)
     return datetime.now(HONG_KONG)
 
 

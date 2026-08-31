@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from auth_utils import require_admin, require_any_permission, require_permission
 from dependencies import get_db
@@ -50,6 +51,7 @@ from rescheduling_service import (
     validate_move_legs,
     absence_keys,
     professor_ids_for_version,
+    schedule_slot_started,
     version_for_date,
 )
 from time_utils import hong_kong_now, hong_kong_today, utc_iso, utc_now
@@ -81,7 +83,7 @@ class AbsenceCreateRequest(BaseModel):
     professor_id: int
     data: date
     periods: list[int] = Field(min_length=1)
-    reason_type: Literal["sick", "personal", "official", "training", "other"]
+    reason_type: Literal["sick", "follow_up", "team_training", "other", "personal", "official", "training"]
     reason_detail: Optional[str] = None
 
     @model_validator(mode="after")
@@ -179,9 +181,37 @@ def _absence_reason_payload(absence: AbsenceCase) -> dict:
     return {"reason_type": absence.reason_type, "reason_detail": absence.reason_detail}
 
 
+def _period_starts(db: Session) -> dict[int, str]:
+    return {int(item["period"]): item["start"] for item in get_period_times(db)}
+
+
+def _analyze_current(db: Session, absences: list[AbsenceCase]) -> dict:
+    return analyze_absences(
+        db, absences, now=hong_kong_now(), period_starts=_period_starts(db)
+    )
+
+
+def _adjustment_execution_state(db: Session, legs: list[ScheduleAdjustmentLeg]) -> str:
+    now = hong_kong_now()
+    period_starts = _period_starts(db)
+    slots = {
+        (day, period)
+        for leg in legs
+        for day, period in ((leg.from_date, leg.from_period), (leg.to_date, leg.to_period))
+    }
+    started = sum(schedule_slot_started(day, period, now, period_starts) for day, period in slots)
+    if not started:
+        return "pending"
+    return "completed" if started == len(slots) else "partial"
+
+
 def _serialize_adjustment(db: Session, adjustment: ScheduleAdjustment) -> dict:
     professor_names = {row.id: row.nom for row in db.query(Professor).all()}
     legs = db.query(ScheduleAdjustmentLeg).filter_by(adjustment_id=adjustment.id).order_by(ScheduleAdjustmentLeg.id).all()
+    execution_state = _adjustment_execution_state(db, legs)
+    has_downstream = adjustment.status == "confirmed" and _has_confirmed_downstream_adjustment(
+        db, adjustment, legs
+    )
     return {
         "id": adjustment.id,
         "absence_case_id": adjustment.absence_case_id,
@@ -194,6 +224,8 @@ def _serialize_adjustment(db: Session, adjustment: ScheduleAdjustment) -> dict:
         "confirmed_at": utc_iso(adjustment.confirmed_at),
         "reverted_by": adjustment.reverted_by,
         "reverted_at": utc_iso(adjustment.reverted_at),
+        "execution_state": execution_state,
+        "can_revert": adjustment.status == "confirmed" and execution_state == "pending" and not has_downstream,
         "legs": [{
             "lesson_id": leg.lesson_id,
             "class_code": leg.class_code,
@@ -849,6 +881,22 @@ def _delete_adjustment_rows(db: Session, adjustment: ScheduleAdjustment) -> None
     db.delete(adjustment)
 
 
+def _has_confirmed_downstream_adjustment(
+    db: Session, adjustment: ScheduleAdjustment, legs: list[ScheduleAdjustmentLeg]
+) -> bool:
+    destinations = {(leg.lesson_id, leg.to_date, leg.to_period) for leg in legs}
+    later_legs = (
+        db.query(ScheduleAdjustmentLeg)
+        .join(ScheduleAdjustment, ScheduleAdjustmentLeg.adjustment_id == ScheduleAdjustment.id)
+        .filter(
+            ScheduleAdjustment.status == "confirmed",
+            ScheduleAdjustment.id > adjustment.id,
+        )
+        .all()
+    )
+    return any((leg.lesson_id, leg.from_date, leg.from_period) in destinations for leg in later_legs)
+
+
 def _can_manage_records(current_user) -> bool:
     # Direct service-level callers predate route dependencies and omit role;
     # authenticated ORM users always have it.
@@ -914,38 +962,39 @@ def create_absences_batch(
                     .filter_by(professor_id=item.professor_id, data=item.data)
                     .filter(AbsenceCase.status != "cancelled").first())
         if existing:
-            requested_periods = sorted(set(item.periods))
             can_manage_records = _ensure_absence_editable(current_user, existing)
             confirmed = (db.query(ScheduleAdjustment)
                          .filter_by(absence_case_id=existing.id, status="confirmed").count())
-            periods_changed = json.loads(existing.periods_json or "[]") != requested_periods
-            if confirmed and (periods_changed or not can_manage_records):
-                raise HTTPException(409, "已有確認的調課，請先撤銷後再修改缺席節次")
+            if confirmed and not can_manage_records:
+                raise HTTPException(409, "已有確認的調課，請由記錄管理員追加缺席節次")
         professor, periods = _validate_absence_request(db, item, allow_existing=True)
-        if professor.id not in _professors_with_lessons(db, item.data, periods):
+        existing_periods = set(json.loads(existing.periods_json or "[]")) if existing else set()
+        added_periods = sorted(set(periods) - existing_periods)
+        if (not existing or added_periods) and professor.id not in _professors_with_lessons(
+            db, item.data, added_periods or periods
+        ):
             raise HTTPException(400, f"{professor.nom} 在 {item.data.isoformat()} 所選節次沒有需要處理的課堂")
-        validated.append((item, professor, periods, existing))
+        validated.append((item, professor, sorted(existing_periods | set(periods)), added_periods, existing))
 
     selected_cases: list[AbsenceCase] = []
     created_ids: list[int] = []
     updated_ids: list[int] = []
-    for item, professor, periods, existing in validated:
+    for item, professor, periods, added_periods, existing in validated:
         if existing:
             periods_changed = json.loads(existing.periods_json or "[]") != periods
-            reason_changed = (
-                existing.reason_type != item.reason_type
-                or existing.reason_detail != item.reason_detail
-            )
+            reason_changed = not existing.reason_type
             if periods_changed or reason_changed:
                 existing.periods_json = json.dumps(periods)
-                existing.reason_type = item.reason_type
-                existing.reason_detail = item.reason_detail
+                if reason_changed:
+                    existing.reason_type = item.reason_type
+                    existing.reason_detail = item.reason_detail
                 if periods_changed:
                     existing.status = "open"
                 updated_ids.append(existing.id)
                 _audit(db, "update", "absence_case", existing.id, current_user.username, {
                     "teacher": professor.nom, "date": item.data.isoformat(),
-                    "periods": periods, **_absence_reason_payload(existing),
+                    "periods": periods, "added_periods": added_periods,
+                    **_absence_reason_payload(existing),
                 })
             selected_cases.append(existing)
             continue
@@ -958,7 +1007,11 @@ def create_absences_batch(
             created_by=current_user.username,
         )
         db.add(absence)
-        db.flush()
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "缺席紀錄剛被其他人更新，請重新提交")
         selected_cases.append(absence)
         created_ids.append(absence.id)
         _audit(db, "create", "absence_case", absence.id, current_user.username, {
@@ -970,7 +1023,7 @@ def create_absences_batch(
         db.commit()
 
     analyses = [
-        {"date": target_date.isoformat(), **analyze_absences(db, _active_absences_for_date(db, target_date))}
+        {"date": target_date.isoformat(), **_analyze_current(db, _active_absences_for_date(db, target_date))}
         for target_date in sorted({item.data for item in request.items})
     ]
     return {
@@ -1019,27 +1072,30 @@ def update_absence(
         raise HTTPException(404, "找不到缺席紀錄")
     can_manage_records = _ensure_absence_editable(current_user, absence)
     professor, periods = _validate_absence_request(db, request, absence.id)
-    schedule_changed = (
-        absence.professor_id != professor.id
-        or absence.data != request.data
-        or json.loads(absence.periods_json or "[]") != periods
-    )
-    if schedule_changed and not can_manage_records and db.query(ScheduleAdjustment).filter_by(
+    identity_changed = absence.professor_id != professor.id or absence.data != request.data
+    periods_changed = json.loads(absence.periods_json or "[]") != periods
+    schedule_changed = identity_changed or periods_changed
+    confirmed = db.query(ScheduleAdjustment).filter_by(
         absence_case_id=absence.id, status="confirmed"
-    ).count():
-        raise HTTPException(409, "已有鎖定的調課，請先撤銷調課")
+    ).count()
+    if identity_changed and confirmed:
+        raise HTTPException(409, "已有確認的調課，不能更改缺席老師或日期")
+    if schedule_changed and confirmed and not can_manage_records:
+        raise HTTPException(409, "已有確認的調課，請由記錄管理員修改缺席節次")
     removed_ids = []
     if schedule_changed:
-        adjustments = db.query(ScheduleAdjustment).filter_by(absence_case_id=absence.id).all()
-        removed_ids = [row.id for row in adjustments]
-        for adjustment in adjustments:
-            _delete_adjustment_rows(db, adjustment)
+        if not confirmed:
+            adjustments = db.query(ScheduleAdjustment).filter_by(absence_case_id=absence.id).all()
+            removed_ids = [row.id for row in adjustments]
+            for adjustment in adjustments:
+                _delete_adjustment_rows(db, adjustment)
         absence.professor_id = professor.id
         absence.data = request.data
         absence.periods_json = json.dumps(periods)
-        absence.status = "open"
     absence.reason_type = request.reason_type
     absence.reason_detail = request.reason_detail
+    db.flush()
+    absence.status = "open" if _analyze_current(db, [absence])["tasks"] else "resolved"
     revision = bump_schedule_revision(db) if schedule_changed else get_schedule_revision(db)
     _audit(db, "update", "absence_case", absence.id, current_user.username, {
         "teacher": professor.nom, "date": request.data.isoformat(), "periods": periods,
@@ -1105,7 +1161,7 @@ def analyze(
         absence_case_id=absence.id, status="confirmed"
     ).count():
         raise HTTPException(409, "已有鎖定的調課，請先撤銷調課")
-    return analyze_absences(db, _active_absences_for_date(db, absence.data))
+    return _analyze_current(db, _active_absences_for_date(db, absence.data))
 
 
 @router.delete("/api/absence-cases/{absence_id}")
@@ -1268,7 +1324,7 @@ def _manual_arrangements(db: Session) -> dict:
     tasks = []
     for target_date in open_dates:
         active_absences = _active_absences_for_date(db, target_date)
-        analysis = analyze_absences(db, active_absences)
+        analysis = _analyze_current(db, active_absences)
         occurrences = effective_occurrences(db, target_date, target_date)
         occurrence_map = {row["occurrence_id"]: row for row in occurrences}
         unavailable = absence_keys(db, target_date, target_date)
@@ -1320,7 +1376,7 @@ def confirm_manual_cover(
     if not absence or absence.status != "open":
         raise HTTPException(404, "找不到未處理的缺席紀錄")
     active_absences = _active_absences_for_date(db, absence.data)
-    analysis = analyze_absences(db, active_absences)
+    analysis = _analyze_current(db, active_absences)
     task = next((item for item in analysis["tasks"] if (
         item["absence_case_id"] == absence.id
         and item["target"]["occurrence_id"] == request.occurrence_id
@@ -1380,7 +1436,7 @@ def confirm_manual_cover(
     )
     db.flush()
     revision = bump_schedule_revision(db)
-    remaining = analyze_absences(db, active_absences)
+    remaining = _analyze_current(db, active_absences)
     pending_case_ids = {item["absence_case_id"] for item in remaining["tasks"]}
     for active_absence in active_absences:
         active_absence.status = "open" if active_absence.id in pending_case_ids else "resolved"
@@ -1402,14 +1458,14 @@ def confirm_adjustment(
     if not absence or absence.status == "cancelled":
         raise HTTPException(404, "找不到有效的缺席紀錄")
     active_absences = _active_absences_for_date(db, absence.data)
-    analysis = analyze_absences(db, active_absences)
+    analysis = _analyze_current(db, active_absences)
     candidate = candidate_from_analysis(analysis, request.candidate_id, absence.id)
     if not candidate:
         raise HTTPException(409, "這個建議已失效，請重新分析")
     adjustment = _save_candidate(db, candidate, absence.id, current_user.username, request.reason)
     db.flush()
     revision = bump_schedule_revision(db)
-    remaining = analyze_absences(db, active_absences)
+    remaining = _analyze_current(db, active_absences)
     pending_case_ids = {task["absence_case_id"] for task in remaining["tasks"]}
     for active_absence in active_absences:
         active_absence.status = "open" if active_absence.id in pending_case_ids else "resolved"
@@ -1449,7 +1505,10 @@ def manual_adjustment(
     if source_slots != destination_slots:
         raise HTTPException(400, "人工安排必須是 2 或 3 堂課的完整互調，不可只把課移到空格")
     closures = {row.data for row in db.query(SchoolClosure).all()}
-    ok, detail = validate_move_legs(legs, occurrences, absence_keys(db, start, end), closures)
+    ok, detail = validate_move_legs(
+        legs, occurrences, absence_keys(db, start, end), closures,
+        now=hong_kong_now(), period_starts=_period_starts(db),
+    )
     if not ok:
         raise HTTPException(409, detail)
     candidate = {"kind": "manual_swap" if len(legs) == 2 else "manual_three_cycle", "legs": legs,
@@ -1499,6 +1558,8 @@ def delete_adjustment(
     adjustment = db.get(ScheduleAdjustment, adjustment_id)
     if not adjustment:
         raise HTTPException(404, "找不到調課紀錄")
+    if adjustment.status == "confirmed":
+        raise HTTPException(409, "已確認的調課必須使用撤銷，以保留歷史記錄")
     absence_id = adjustment.absence_case_id
     detail = {"kind": adjustment.kind, "status": adjustment.status, "absence_case_id": absence_id}
     _delete_adjustment_rows(db, adjustment)
@@ -1733,6 +1794,11 @@ def revert_adjustment(
         raise HTTPException(404, "找不到調課紀錄")
     if adjustment.status != "confirmed":
         raise HTTPException(409, "這項調動已經撤銷")
+    legs = db.query(ScheduleAdjustmentLeg).filter_by(adjustment_id=adjustment.id).all()
+    if _adjustment_execution_state(db, legs) != "pending":
+        raise HTTPException(409, "調課涉及的節次已開始或已過去，不能撤銷")
+    if _has_confirmed_downstream_adjustment(db, adjustment, legs):
+        raise HTTPException(409, "此調課已有後續安排，請先撤銷最新安排")
     adjustment.status = "reverted"
     adjustment.locked = False
     adjustment.reverted_by = current_user.username

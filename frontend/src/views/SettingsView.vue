@@ -23,7 +23,7 @@
           <input v-model="item.end" type="time" required />
         </div>
         <div class="save-row">
-          <span v-if="saved">{{ $t('common.saved') }}</span>
+          <Transition name="motion-fade"><span v-if="saved">{{ $t('common.saved') }}</span></Transition>
           <Button type="submit" :label="$t('common.save')" icon="pi pi-save" :loading="busy" />
         </div>
       </form>
@@ -67,7 +67,7 @@ onMounted(async () => {
 .page-heading h2, h3 { margin: 0; }
 .page-heading h2 { font-size: clamp(1.65rem, 3vw, 2.15rem); letter-spacing: -.035em; }
 .page-heading p, .panel p { margin-top: .3rem; color: var(--text-color-secondary); }
-.panel { width: 100%; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
+.panel { width: 100%; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: var(--radius-lg); background: var(--card-background); box-shadow: var(--shadow-panel); }
 form { display: grid; gap: .45rem; margin-top: 1rem; }
 .period-row { display: grid; grid-template-columns: 82px 1fr auto 1fr; align-items: center; gap: .55rem; }
 .period-row b { font-size: var(--font-data); }

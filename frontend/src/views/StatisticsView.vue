@@ -13,19 +13,21 @@
           <Button type="submit" :label="$t('statistics.apply')" icon="pi pi-search" :loading="loading" />
         </form>
       </div>
-      <p v-if="error" class="field-error" role="alert">{{ error }}</p>
+      <Transition name="motion-fade"><p v-if="error" class="field-error" role="alert">{{ error }}</p></Transition>
+      <Transition name="motion-fade" mode="out-in">
       <div v-if="loading" class="empty-state">{{ $t('common.loading') }}</div>
       <div v-else class="table-wrap">
         <table>
           <thead><tr><th>{{ $t('statistics.teacher') }}</th><th v-for="month in statistics.months" :key="month">{{ monthLabel(month) }}</th><th>{{ $t('statistics.total') }}</th></tr></thead>
-          <tbody>
+          <TransitionGroup name="motion-list" tag="tbody">
             <tr v-for="teacher in statistics.teachers" :key="teacher.id">
               <th>{{ teacher.name }}</th><td v-for="month in statistics.months" :key="month">{{ teacher.monthly[month] }}</td><td class="total">{{ teacher.total }}</td>
             </tr>
             <tr v-if="!statistics.teachers.length"><td :colspan="statistics.months.length + 2" class="empty-row">{{ $t('common.noData') }}</td></tr>
-          </tbody>
+          </TransitionGroup>
         </table>
       </div>
+      </Transition>
     </section>
 
   </section>
@@ -75,7 +77,7 @@ onMounted(loadStatistics)
 .page-heading h2, h3 { margin: 0; }
 .page-heading h2 { font-size: clamp(1.65rem, 3vw, 2.15rem); letter-spacing: -.035em; }
 .page-heading p, .panel-title p { margin-top: .3rem; color: var(--text-color-secondary); }
-.panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background); }
+.panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: var(--radius-lg); background: var(--card-background); box-shadow: var(--shadow-panel); }
 .panel-title { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-end; margin-bottom: 1rem; }
 label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: var(--font-ui); font-weight: 650; }
 input { min-height: 2.5rem; padding: .55rem .65rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
