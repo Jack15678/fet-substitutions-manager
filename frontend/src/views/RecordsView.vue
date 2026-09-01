@@ -109,7 +109,7 @@
                     <b>{{ leg.from_date }} {{ $t('records.period', { period: leg.from_period }) }} → {{ leg.to_date }} {{ $t('records.period', { period: leg.to_period }) }}</b>
                   </div>
                   <div v-if="can('records.manage')" class="adjustment-actions">
-                    <Button v-if="adjustment.can_revert" :label="$t('records.revertAdjustment')" text size="small" severity="danger" @click="removeAdjustment(adjustment)" />
+                    <Button v-if="adjustment.can_revert" :label="$t(can('absence.create') ? 'records.reselectArrangement' : 'records.revertAdjustment')" text size="small" severity="danger" @click="removeAdjustment(adjustment, can('absence.create'))" />
                     <small v-else-if="adjustment.status === 'confirmed'">{{ $t('records.cannotRevertStarted') }}</small>
                   </div>
                 </article>
@@ -231,9 +231,10 @@ const removeAbsence = async (record) => {
   resetAbsenceEdit()
   await loadRecords(records.value.page)
 }
-const removeAdjustment = async (adjustment) => {
-  if (!window.confirm(t('records.revertAdjustmentConfirm'))) return
+const removeAdjustment = async (adjustment, reselect = false) => {
+  if (!window.confirm(t(reselect ? 'records.reselectArrangementConfirm' : 'records.revertAdjustmentConfirm'))) return
   await axios.post(`/api/adjustments/${adjustment.id}/revert`)
+  if (reselect) return resumeSelected()
   await loadRecords(records.value.page)
 }
 

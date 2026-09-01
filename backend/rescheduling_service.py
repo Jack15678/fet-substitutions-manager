@@ -667,6 +667,11 @@ def version_for_date(db: Session, target_date: date) -> TimetableVersion | None:
             .order_by(TimetableVersion.effective_from.desc(), TimetableVersion.id.desc()).first())
 
 
+def is_post_exam_version(version: TimetableVersion) -> bool:
+    # ponytail: normal class imports are .xls; persist a type column if they later accept .xlsx.
+    return version.class_filename.lower().endswith(".xlsx")
+
+
 def professor_ids_for_version(db: Session, version: TimetableVersion) -> set[int]:
     teacher_ids = {
         int(teacher)

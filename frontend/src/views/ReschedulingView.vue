@@ -266,10 +266,10 @@
           <div class="period-field">
             <div class="period-heading">
               <span>{{ $t('rescheduling.absentPeriods') }}</span>
-              <label class="all-day"><input type="checkbox" :checked="entryAllDay(activeAbsenceEntry)" :disabled="activeAbsenceEntry.existing_periods.length === 9" @change="setEntryAllDay(activeAbsenceEntry, $event.target.checked)" />{{ $t('rescheduling.allDay') }}</label>
+              <label class="all-day"><input type="checkbox" :checked="entryAllDay(activeAbsenceEntry)" :disabled="activeAbsenceEntry.existing_periods.length === activeAbsenceEntry.period_count" @change="setEntryAllDay(activeAbsenceEntry, $event.target.checked)" />{{ $t('rescheduling.allDay') }}</label>
             </div>
             <div class="periods">
-              <label v-for="period in 9" :key="period" :class="{ selected: activeAbsenceEntry.periods.includes(period), existing: activeAbsenceEntry.existing_periods.includes(period) }">
+              <label v-for="period in activeAbsenceEntry.period_count" :key="period" :class="{ selected: activeAbsenceEntry.periods.includes(period), existing: activeAbsenceEntry.existing_periods.includes(period) }">
                 <input v-model="activeAbsenceEntry.periods" type="checkbox" :value="period" :disabled="activeAbsenceEntry.existing_periods.includes(period)" />
                 <span>{{ $t('records.period', { period }) }}<small v-if="activeAbsenceEntry.existing_periods.includes(period)">{{ $t('rescheduling.existingPeriod') }}</small></span>
               </label>
@@ -295,7 +295,7 @@
           <h4>{{ teacher.name }}</h4>
           <div class="verification-wrap">
             <table class="verification-timetable">
-              <thead><tr><th>{{ $t('rescheduling.date') }}</th><th v-for="period in 9" :key="period">{{ $t('records.period', { period }) }}</th></tr></thead>
+              <thead><tr><th>{{ $t('rescheduling.date') }}</th><th v-for="period in teacher.period_count" :key="period">{{ $t('records.period', { period }) }}</th></tr></thead>
               <tbody>
                 <tr v-for="day in teacher.days" :key="day.date">
                   <th>{{ dateLabel(day.date) }}</th>
@@ -388,7 +388,7 @@
         </TransitionGroup>
           <div v-else class="mini-timetable-wrap">
             <table class="mini-timetable">
-              <thead><tr><th>{{ $t('rescheduling.class') }}</th><th v-for="period in 9" :key="period">{{ $t('records.period', { period }) }}</th></tr></thead>
+              <thead><tr><th>{{ $t('rescheduling.class') }}</th><th v-for="period in periodCount" :key="period">{{ $t('records.period', { period }) }}</th></tr></thead>
               <tbody>
                 <tr v-for="row in classTimetables" :key="row.classCode">
                   <th>{{ row.classCode }}</th>
@@ -473,6 +473,7 @@ const newAbsenceEntry = () => ({
   id: ++absenceEntryId,
   professor_id: null,
   data: iso(props.dataGlobal),
+  period_count: 9,
   periods: [],
   existing_case_id: null,
   existing_periods: [],
@@ -536,6 +537,7 @@ const canAttemptAnalyze = computed(() => absenceEntries.value.length > 0 && abse
 )))
 const canAnalyze = computed(() => canAttemptAnalyze.value && absenceEntries.value.every(entry => absenceReasonTypes.includes(entry.reason_type)))
 const activeAbsenceEntry = computed(() => absenceEntries.value.find(entry => entry.id === activeAbsenceEntryId.value))
+const periodCount = computed(() => effective.value.period_count || 9)
 const affectedGroups = computed(() => (effective.value.adjustments || []).map(adjustment => ({
   id: adjustment.id,
   source: adjustment.kind,
@@ -556,7 +558,7 @@ const affectedLessons = computed(() => affectedGroups.value.flatMap(group => gro
   }))))
 const classTimetables = computed(() => [...new Set(affectedLessons.value.map(lesson => lesson.class_code))].sort().map(classCode => ({
   classCode,
-  periods: Array.from({ length: 9 }, (_, index) => {
+  periods: Array.from({ length: periodCount.value }, (_, index) => {
     const period = index + 1
     return {
       period,
@@ -611,6 +613,7 @@ const loadAbsenceEntryContext = async (entry) => {
     ])
     if (entry.data !== requestedDate) return
     entry.active = Boolean(timetableResponse.data.active)
+    entry.period_count = timetableResponse.data.period_count || 9
     entry.teachers = teacherResponse.data
     entry.absences = absenceResponse.data
     if (!entry.teachers.some(teacher => teacher.id === entry.professor_id)) entry.professor_id = null
@@ -731,9 +734,9 @@ const removeAbsenceEntry = (id) => {
     activeAbsenceEntryId.value = absenceEntries.value[0]?.id || null
   }
 }
-const entryAllDay = (entry) => entry.periods.length === 9
+const entryAllDay = (entry) => entry.periods.length === entry.period_count
 const setEntryAllDay = (entry, checked) => {
-  entry.periods = checked ? Array.from({ length: 9 }, (_, index) => index + 1) : [...entry.existing_periods]
+  entry.periods = checked ? Array.from({ length: entry.period_count }, (_, index) => index + 1) : [...entry.existing_periods]
 }
 const entryTeacherName = (entry) => entry.teachers.find(teacher => teacher.id === entry.professor_id)?.name
 const entryPeriodSummary = (entry) => entry.periods.length
@@ -853,9 +856,9 @@ const verifyTask = async (task) => {
   try {
     const dates = [...new Set(candidate.legs.flatMap(leg => [leg.from_date, leg.to_date]))].sort()
     const responses = await Promise.all(dates.map(async day => [
-      day, (await axios.get('/api/effective-timetable', { params: { data: day } })).data.lessons || []
+      day, (await axios.get('/api/effective-timetable', { params: { data: day } })).data
     ]))
-    const lessonsByDate = Object.fromEntries(responses)
+    const timetablesByDate = Object.fromEntries(responses)
     const teacherNames = new Map()
     for (const leg of candidate.legs) {
       legTeacherIds(leg).forEach((id, index) => teacherNames.set(id, leg.teacher_names[index] || String(id)))
@@ -864,11 +867,12 @@ const verifyTask = async (task) => {
     verificationTimetables.value = [...teacherNames.entries()].map(([teacherId, name]) => ({
       id: teacherId,
       name,
+      period_count: Math.max(...dates.map(day => timetablesByDate[day].period_count || 9)),
       days: dates.map(day => ({
         date: day,
-        slots: Array.from({ length: 9 }, (_, index) => {
+        slots: Array.from({ length: timetablesByDate[day].period_count || 9 }, (_, index) => {
           const period = index + 1
-          const before = lessonsByDate[day]
+          const before = (timetablesByDate[day].lessons || [])
             .filter(lesson => Number(lesson.period) === period && lesson.teacher_ids.map(Number).includes(teacherId))
             .map(lesson => ({ ...lesson, key: lesson.occurrence_id }))
           const removals = candidate.legs.filter(leg => leg.from_date === day && Number(leg.from_period) === period

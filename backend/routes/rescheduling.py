@@ -47,6 +47,7 @@ from rescheduling_service import (
     effective_occurrences,
     get_max_cycle_lessons,
     get_schedule_revision,
+    is_post_exam_version,
     normalize_subject,
     validate_move_legs,
     absence_keys,
@@ -181,25 +182,24 @@ def _absence_reason_payload(absence: AbsenceCase) -> dict:
     return {"reason_type": absence.reason_type, "reason_detail": absence.reason_detail}
 
 
-def _period_starts(db: Session) -> dict[int, str]:
-    return {int(item["period"]): item["start"] for item in get_period_times(db)}
+def _period_starts(db: Session, day: date | None = None) -> dict[int, str]:
+    return {int(item["period"]): item["start"] for item in get_period_times(db, day)}
 
 
 def _analyze_current(db: Session, absences: list[AbsenceCase]) -> dict:
     return analyze_absences(
-        db, absences, now=hong_kong_now(), period_starts=_period_starts(db)
+        db, absences, now=hong_kong_now(), period_starts=_period_starts(db, absences[0].data)
     )
 
 
 def _adjustment_execution_state(db: Session, legs: list[ScheduleAdjustmentLeg]) -> str:
     now = hong_kong_now()
-    period_starts = _period_starts(db)
     slots = {
         (day, period)
         for leg in legs
         for day, period in ((leg.from_date, leg.from_period), (leg.to_date, leg.to_period))
     }
-    started = sum(schedule_slot_started(day, period, now, period_starts) for day, period in slots)
+    started = sum(schedule_slot_started(day, period, now, _period_starts(db, day)) for day, period in slots)
     if not started:
         return "pending"
     return "completed" if started == len(slots) else "partial"
@@ -288,11 +288,6 @@ def _overlapping_version(db: Session, start: date, end: date, exclude_id: int | 
     return query.first()
 
 
-def _is_post_exam_version(version: TimetableVersion) -> bool:
-    # ponytail: normal class imports are .xls; persist a type column if they later accept .xlsx.
-    return version.class_filename.lower().endswith(".xlsx")
-
-
 def _version_record_dates(db: Session, version: TimetableVersion) -> set[date]:
     dates = {row[0] for row in db.query(AbsenceCase.data)
              .filter(AbsenceCase.data >= version.effective_from).all()
@@ -335,11 +330,10 @@ def _mark_special_adjustments_for_review(db: Session, version: TimetableVersion,
     if not adjustment_ids:
         return 0
     now = hong_kong_now()
-    period_ends = {item["period"]: item["end"] for item in get_period_times(db)}
-
     def unfinished(day: date, period: int) -> bool:
         if day != now.date():
             return day > now.date()
+        period_ends = {item["period"]: item["end"] for item in get_period_times(db, day)}
         hour, minute = map(int, period_ends[int(period)].split(":"))
         return (now.hour, now.minute) < (hour, minute)
 
@@ -374,7 +368,7 @@ def list_timetable_versions(
             "effective_to": version.effective_to.isoformat() if version.effective_to else None,
             "class_filename": version.class_filename,
             "teacher_filename": version.teacher_filename,
-            "post_exam": _is_post_exam_version(version),
+            "post_exam": is_post_exam_version(version),
             "resolution_count": len(json.loads(version.resolutions_json or "{}")),
             "lessons": len(lessons),
             "subjects": sorted({lesson.subject for lesson in lessons}),
@@ -414,7 +408,7 @@ def update_timetable_version(
     specials_changed = requested_specials != current_specials
     if not dates_changed and not specials_changed:
         return {"success": True, "revision": get_schedule_revision(db)}
-    if (dates_changed and not _is_post_exam_version(version)
+    if (dates_changed and not is_post_exam_version(version)
             and _overlapping_version(db, request.effective_from, request.effective_to, version.id)):
         raise HTTPException(409, "課表適用日期與另一個版本重疊")
     if dates_changed:
@@ -662,7 +656,8 @@ def current_timetable(
         "effective_to": version.effective_to.isoformat() if version.effective_to else None,
         "class_filename": version.class_filename,
         "teacher_filename": version.teacher_filename,
-        "post_exam": _is_post_exam_version(version),
+        "post_exam": is_post_exam_version(version),
+        "period_count": len(get_period_times(db, query_date)),
         "lessons": db.query(TimetableLesson).filter_by(version_id=version.id).count(),
         "revision": get_schedule_revision(db),
     }
@@ -809,7 +804,7 @@ def export_daily_xlsx(
     entries = daily_export_data(db, data)
     if not entries:
         raise HTTPException(404, "所選日期沒有可匯出的調課／代課記錄")
-    content = build_daily_xlsx(entries, get_period_times(db))
+    content = build_daily_xlsx(entries, get_period_times(db, data))
     return StreamingResponse(
         BytesIO(content),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -826,7 +821,7 @@ def export_daily_pdf(
     entries = daily_export_data(db, data)
     if not entries:
         raise HTTPException(404, "所選日期沒有可匯出的調課／代課記錄")
-    content = build_daily_pdf(entries, get_period_times(db))
+    content = build_daily_pdf(entries, get_period_times(db, data))
     return StreamingResponse(
         BytesIO(content), media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="daily-substitution-{data.isoformat()}.pdf"'},
@@ -846,8 +841,9 @@ def _validate_absence_request(
     if not professor or request.professor_id not in professor_ids_for_version(db, version):
         raise HTTPException(404, "找不到教師")
     periods = sorted(set(request.periods))
-    if any(period < 1 or period > 9 for period in periods):
-        raise HTTPException(400, "節次必須介乎 1 至 9")
+    max_period = len(get_period_times(db, request.data))
+    if any(period < 1 or period > max_period for period in periods):
+        raise HTTPException(400, f"節次必須介乎 1 至 {max_period}")
     if request.data.weekday() >= 5 or db.get(SchoolClosure, request.data):
         raise HTTPException(400, "所選日期不是上課日")
     duplicate = (db.query(AbsenceCase)
@@ -1258,7 +1254,8 @@ def _manual_cover_candidates(
             busy_by_teacher.setdefault(int(teacher_id), {}).setdefault(occurrence["period"], []).append(occurrence)
 
     target_period = int(target["period"])
-    adjacent_periods = [period for period in (target_period - 1, target_period + 1) if 1 <= period <= 9]
+    max_period = len(get_period_times(db, absence.data))
+    adjacent_periods = [period for period in (target_period - 1, target_period + 1) if 1 <= period <= max_period]
     target_subject = normalize_subject(target["subject"])
     candidates = []
     for teacher_id, teacher_name in teachers.items():
@@ -1277,7 +1274,7 @@ def _manual_cover_candidates(
             occurrences, teacher_id, absence.data, target_period
         )
         slots = []
-        for period in range(1, 10):
+        for period in range(1, max_period + 1):
             lessons = busy_by_teacher.get(teacher_id, {}).get(period, [])
             unavailable = (teacher_id, absence.data, period) in absences
             slots.append({
@@ -1507,7 +1504,7 @@ def manual_adjustment(
     closures = {row.data for row in db.query(SchoolClosure).all()}
     ok, detail = validate_move_legs(
         legs, occurrences, absence_keys(db, start, end), closures,
-        now=hong_kong_now(), period_starts=_period_starts(db),
+        now=hong_kong_now(), period_starts=_period_starts(db, start),
     )
     if not ok:
         raise HTTPException(409, detail)
@@ -1822,6 +1819,7 @@ def get_effective_timetable(
     _current_user=Depends(require_permission("workbench.view")),
 ):
     professor_names = {row.id: row.nom for row in db.query(Professor).all()}
+    version = version_for_date(db, data)
     rows = effective_occurrences(db, data, data)
     if professor_id:
         rows = [row for row in rows if professor_id in row["teachers"]]
@@ -1865,6 +1863,8 @@ def get_effective_timetable(
         })
     return {
         "date": data.isoformat(),
+        "post_exam": bool(version and is_post_exam_version(version)),
+        "period_count": len(get_period_times(db, data)),
         "revision": get_schedule_revision(db),
         "lessons": lessons,
         "adjustments": [

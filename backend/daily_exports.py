@@ -27,7 +27,7 @@ from reportlab.platypus import (
 
 from models import AbsenceCase, Professor, ScheduleAdjustment, ScheduleAdjustmentLeg, TimetableLesson
 from repositories import ConfiguracioRepository
-from rescheduling_service import effective_occurrences, version_for_date
+from rescheduling_service import effective_occurrences, is_post_exam_version, version_for_date
 
 
 DEFAULT_PERIOD_TIMES = [
@@ -40,6 +40,13 @@ DEFAULT_PERIOD_TIMES = [
     {"period": 7, "start": "13:00", "end": "13:35"},
     {"period": 8, "start": "13:35", "end": "14:10"},
     {"period": 9, "start": "14:25", "end": "15:00"},
+]
+POST_EXAM_PERIOD_TIMES = [
+    {"period": 1, "start": "08:25", "end": "09:15"},
+    {"period": 2, "start": "09:15", "end": "10:05"},
+    {"period": 3, "start": "10:25", "end": "11:15"},
+    {"period": 4, "start": "11:15", "end": "12:05"},
+    {"period": 5, "start": "12:25", "end": "13:00"},
 ]
 WEEKDAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 ABSENCE_REASONS = {
@@ -76,13 +83,13 @@ def _pdf_font() -> str:
     raise RuntimeError("找不到可嵌入 PDF 的中文字型，請安裝文泉驛正黑或設定 CJK_FONT_PATH")
 
 
-def validate_period_times(items: list[dict]) -> list[dict]:
+def validate_period_times(items: list[dict], expected_periods: int = 9) -> list[dict]:
     normalized = sorted(
         ({"period": int(item["period"]), "start": item["start"], "end": item["end"]} for item in items),
         key=lambda item: item["period"],
     )
-    if [item["period"] for item in normalized] != list(range(1, 10)):
-        raise ValueError("必須完整設定第 1 至第 9 節")
+    if [item["period"] for item in normalized] != list(range(1, expected_periods + 1)):
+        raise ValueError(f"必須完整設定第 1 至第 {expected_periods} 節")
 
     previous_end = -1
     for item in normalized:
@@ -100,7 +107,10 @@ def validate_period_times(items: list[dict]) -> list[dict]:
     return normalized
 
 
-def get_period_times(db) -> list[dict]:
+def get_period_times(db, day=None) -> list[dict]:
+    version = version_for_date(db, day) if day is not None else None
+    if version and is_post_exam_version(version):
+        return [dict(item) for item in POST_EXAM_PERIOD_TIMES]
     raw = ConfiguracioRepository.get(db, "rescheduling_period_times")
     if raw:
         try:
@@ -152,6 +162,7 @@ def daily_export_data(db, day) -> list[dict]:
         )
 
     version = version_for_date(db, day)
+    period_count = len(get_period_times(db, day))
     base_lessons = db.query(TimetableLesson).filter_by(
         version_id=version.id, weekday=day.weekday()
     ).all() if version else []
@@ -170,7 +181,7 @@ def daily_export_data(db, day) -> list[dict]:
 
     for teacher_id, absent_periods in periods_by_teacher.items():
         rows = []
-        for period in range(1, 10):
+        for period in range(1, period_count + 1):
             originals = [
                 lesson for lesson in base_lessons
                 if lesson.period == period and teacher_id in json.loads(lesson.teachers_json or "[]")
@@ -249,8 +260,25 @@ def _safe_sheet_name(name: str, used: set[str]) -> str:
     return candidate
 
 
+def _export_times(period_times: list[dict]) -> dict[int, dict]:
+    if len(period_times) not in {5, 9}:
+        raise ValueError("匯出節次必須完整設定為 5 節或 9 節")
+    return {item["period"]: item for item in validate_period_times(period_times, len(period_times))}
+
+
 def build_daily_xlsx(entries: list[dict], period_times: list[dict]) -> bytes:
-    times = {item["period"]: item for item in validate_period_times(period_times)}
+    times = _export_times(period_times)
+    break_labels = {2: "一息", 4: "二息"} if len(times) == 5 else {3: "一息", 6: "午膳", 8: "二息"}
+    row_map = {}
+    break_rows = []
+    next_row = 7
+    for period in times:
+        row_map[period] = next_row
+        next_row += 1
+        if period in break_labels:
+            break_rows.append((next_row, break_labels[period]))
+            next_row += 1
+    last_row = next_row - 1
     workbook = Workbook()
     workbook.remove(workbook.active)
     used_names: set[str] = set()
@@ -290,10 +318,9 @@ def build_daily_xlsx(entries: list[dict], period_times: list[dict]) -> bytes:
         for cell, value in headers.items():
             sheet[cell] = value
 
-        row_map = {1: 7, 2: 8, 3: 9, 4: 11, 5: 12, 6: 13, 7: 15, 8: 16, 9: 18}
         sheet.merge_cells("A6:B6")
         sheet["A6"] = "班主任課"
-        for row, label in ((10, "一息"), (14, "午膳"), (17, "二息")):
+        for row, label in break_rows:
             sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=7)
             sheet.cell(row, 1, label)
             for column in range(1, 8):
@@ -306,18 +333,18 @@ def build_daily_xlsx(entries: list[dict], period_times: list[dict]) -> bytes:
             for column, value in enumerate(values, start=1):
                 sheet.cell(row, column, value)
 
-        for row in range(1, 19):
+        for row in range(1, last_row + 1):
             sheet.row_dimensions[row].height = 24 if row > 4 else 22
             for column in range(1, 8):
                 cell = sheet.cell(row, column)
                 cell.font = title_font if row in (1, 2) else body_font
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        for row in range(5, 19):
+        for row in range(5, last_row + 1):
             for column in range(1, 8):
                 sheet.cell(row, column).border = border
         sheet["A4"].alignment = Alignment(horizontal="left", vertical="center")
         sheet["D4"].alignment = Alignment(horizontal="left", vertical="center")
-        sheet.print_area = "A1:G18"
+        sheet.print_area = f"A1:G{last_row}"
 
     output = BytesIO()
     workbook.save(output)
@@ -325,7 +352,8 @@ def build_daily_xlsx(entries: list[dict], period_times: list[dict]) -> bytes:
 
 
 def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
-    times = {item["period"]: item for item in validate_period_times(period_times)}
+    times = _export_times(period_times)
+    break_labels = {2: "一息", 4: "二息"} if len(times) == 5 else {3: "一息", 6: "午膳", 8: "二息"}
     font = _pdf_font()
     output = BytesIO()
     canvas = Canvas(output, pagesize=A4)
@@ -357,7 +385,7 @@ def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
         ]
         row_heights = [7.5 * mm, 7.5 * mm]
         spans = [("SPAN", (0, 0), (1, 0)), ("SPAN", (0, 1), (1, 1))]
-        for period in range(1, 10):
+        for period in times:
             row = rows_by_period[period]
             timing = times[period]
             table_data.append([
@@ -370,8 +398,8 @@ def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
                 Paragraph(escape(row["remark"]), note) if row["remark"] else "",
             ])
             row_heights.append((12 if row["remark"] else 7) * mm)
-            if period in (3, 6, 8):
-                label = {3: "一息", 6: "午膳", 8: "二息"}[period]
+            if period in break_labels:
+                label = break_labels[period]
                 table_data.append([label, "", "", "", "", "", ""])
                 row_heights.append(6 * mm)
                 spans.append(("SPAN", (0, len(table_data) - 1), (-1, len(table_data) - 1)))

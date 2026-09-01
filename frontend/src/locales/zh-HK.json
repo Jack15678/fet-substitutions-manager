@@ -117,7 +117,7 @@
     "manual": "人工互調", "period": "第 {period} 節", "createdBy": "建立者：{user}", "noAdjustment": "尚未確認任何調課安排。",
     "previous": "上一頁", "next": "下一頁", "page": "第 {page}／{pages} 頁，共 {total} 項", "resume": "繼續處理",
     "statuses": { "open": "待處理", "resolved": "已安排", "cancelled": "已取消", "confirmed": "已確認", "reverted": "已撤銷" }, "needsReview": "需覆核",
-    "confirmedIdentityLocked": "這項缺席已有已確認安排，不能更改老師或日期；缺席節次及原因仍可修改。", "deleteAbsenceConfirm": "完整刪除此缺席及其所有調課記錄？", "revertAdjustment": "撤銷安排", "revertAdjustmentConfirm": "撤銷這項尚未開始的安排？歷史記錄會保留。", "cannotRevertStarted": "相關節次已開始、已過去或已有後續安排，不能直接撤銷。", "executionStates": { "pending": "尚未開始", "partial": "部分已執行", "completed": "已執行" },
+    "confirmedIdentityLocked": "這項缺席已有已確認安排，不能更改老師或日期；缺席節次及原因仍可修改。", "deleteAbsenceConfirm": "完整刪除此缺席及其所有調課記錄？", "reselectArrangement": "重新挑選方案", "reselectArrangementConfirm": "重新挑選這項尚未開始的安排？原安排會撤銷並保留歷史記錄。", "revertAdjustment": "撤銷安排", "revertAdjustmentConfirm": "撤銷這項尚未開始的安排？歷史記錄會保留。", "cannotRevertStarted": "相關節次已開始、已過去或已有後續安排，不能直接撤銷。", "executionStates": { "pending": "尚未開始", "partial": "部分已執行", "completed": "已執行" },
     "kinds": { "direct_swap": "直接互調", "three_cycle": "同班連鎖互調", "emergency_cover": "同科緊急代課", "co_teacher_solo": "原任老師單獨上課", "manual_swap": "人工互調", "manual_three_cycle": "人工三堂連鎖" }
   },
   "leave": {
@@ -152,7 +152,7 @@
   },
   "settings": {
     "title": "配置", "description": "管理假期、調課及導出所使用的設定。",
-    "periodTitle": "調課與節次設定", "periodHint": "設定自動分析的連鎖上限，以及 Excel／PDF 共用的第 1 至第 9 節時間。",
+    "periodTitle": "調課與節次設定", "periodHint": "設定自動分析的連鎖上限，以及正常課表 Excel／PDF 共用的第 1 至第 9 節時間；試後課表使用其 5 節專用時間。",
     "maxCycleLessons": "自動分析最大連鎖堂數", "maxCycleHint": "可設為 2 至 5；設為 2 時只建議直接互調。",
     "holidays": {
       "title": "假期匯入", "hint": "選擇年份後，可輸入日期或在全年日曆點選假期；兩種方式共用同一份清單。", "year": "年份",

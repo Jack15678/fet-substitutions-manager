@@ -1753,6 +1753,57 @@ class ReschedulingTests(unittest.TestCase):
         self.assertEqual(workbook["劉慧妍"]["G7"].value, "吳淑君代上2B數學")
         self.assertTrue(build_daily_pdf(entries, get_period_times(self.db)).startswith(b"%PDF"))
 
+    def test_post_exam_day_uses_five_periods_in_forms_and_timetable(self):
+        teacher = Professor(nom="試後老師", actiu=True)
+        version = TimetableVersion(
+            effective_from=date(2025, 12, 8), effective_to=date(2025, 12, 31),
+            class_filename="試後班別表.xlsx", teacher_filename="試後教師表.xlsx", active=True,
+        )
+        self.db.add_all([teacher, version])
+        self.db.flush()
+        self.db.add(TimetableLesson(
+            version_id=version.id, weekday=3, period=4, class_code="2B", subject="數學",
+            teachers_json=json.dumps([teacher.id]),
+        ))
+        self.db.commit()
+        day = date(2025, 12, 11)
+
+        with self.assertRaises(HTTPException) as invalid_period:
+            create_absences_batch(
+                AbsenceBatchCreateRequest(items=[AbsenceCreateRequest(
+                    professor_id=teacher.id, data=day, periods=[6], reason_type="sick",
+                )]),
+                self.db,
+                SimpleNamespace(username="admin"),
+            )
+        self.assertEqual(invalid_period.exception.status_code, 400)
+
+        absence = AbsenceCase(
+            professor_id=teacher.id, data=day, periods_json="[4]", reason_type="sick",
+            status="resolved",
+        )
+        self.db.add(absence)
+        self.db.commit()
+
+        periods = get_period_times(self.db, day)
+        self.assertEqual(
+            [(item["period"], item["start"], item["end"]) for item in periods],
+            [(1, "08:25", "09:15"), (2, "09:15", "10:05"),
+             (3, "10:25", "11:15"), (4, "11:15", "12:05"),
+             (5, "12:25", "13:00")],
+        )
+        entries = daily_export_data(self.db, day)
+        self.assertEqual([row["period"] for row in entries[0]["rows"]], [1, 2, 3, 4, 5])
+        workbook = load_workbook(BytesIO(build_daily_xlsx(entries, periods)))
+        sheet = workbook["試後老師"]
+        self.assertEqual((sheet["B7"].value, sheet["B13"].value), ("08:25-09:15", "12:25-13:00"))
+        self.assertEqual((sheet["A9"].value, sheet["A12"].value), ("一息", "二息"))
+        self.assertEqual(sheet.max_row, 13)
+        self.assertTrue(build_daily_pdf(entries, periods).startswith(b"%PDF"))
+        effective = get_effective_timetable(day, db=self.db)
+        self.assertTrue(effective["post_exam"])
+        self.assertEqual(effective["period_count"], 5)
+
     def test_statistics_daily_exports_and_complete_cycle_payload(self):
         absent, swap_teacher, cycle_teacher, cover_teacher = [
             Professor(nom=name, actiu=True) for name in ("甲老師", "乙老師", "丁老師", "丙老師")

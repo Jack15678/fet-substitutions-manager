@@ -1770,7 +1770,7 @@
     "next": "Next",
     "page": "Page {page} of {pages}, {total} items", "resume": "Continue handling",
     "statuses": { "open": "Pending", "resolved": "Arranged", "cancelled": "Cancelled", "confirmed": "Confirmed", "reverted": "Reverted" }, "needsReview": "Needs review",
-    "confirmedIdentityLocked": "This absence has confirmed arrangements, so its teacher and date cannot be changed. Periods and reason can still be edited.", "deleteAbsenceConfirm": "Permanently delete this absence and all its adjustments?", "revertAdjustment": "Revert arrangement", "revertAdjustmentConfirm": "Revert this arrangement before it starts? Its history will be retained.", "cannotRevertStarted": "A related period has started, passed, or has a later arrangement, so this cannot be reverted directly.", "executionStates": { "pending": "Not started", "partial": "Partly executed", "completed": "Executed" },
+    "confirmedIdentityLocked": "This absence has confirmed arrangements, so its teacher and date cannot be changed. Periods and reason can still be edited.", "deleteAbsenceConfirm": "Permanently delete this absence and all its adjustments?", "reselectArrangement": "Choose another option", "reselectArrangementConfirm": "Choose another option for this arrangement before it starts? The current arrangement will be reverted and kept in the history.", "revertAdjustment": "Revert arrangement", "revertAdjustmentConfirm": "Revert this arrangement before it starts? Its history will be retained.", "cannotRevertStarted": "A related period has started, passed, or has a later arrangement, so this cannot be reverted directly.", "executionStates": { "pending": "Not started", "partial": "Partly executed", "completed": "Executed" },
     "kinds": { "direct_swap": "Direct swap", "three_cycle": "Same-class cycle", "emergency_cover": "Emergency subject cover", "co_teacher_solo": "Remaining teacher continues", "manual_swap": "Manual swap", "manual_three_cycle": "Manual three-lesson cycle" }
   },
   "leave": {
@@ -1808,7 +1808,7 @@
   },
   "settings": {
     "title": "Configuration", "description": "Manage holiday, rescheduling and export settings.",
-    "periodTitle": "Rescheduling and period settings", "periodHint": "Set the automatic cycle limit and the period times shared by Excel and PDF.",
+    "periodTitle": "Rescheduling and period settings", "periodHint": "Set the automatic cycle limit and the nine normal-timetable period times shared by Excel and PDF. Post-exam timetables use their dedicated five-period times.",
     "maxCycleLessons": "Maximum automatic cycle length", "maxCycleHint": "Choose 2 to 5. A value of 2 allows direct swaps only.",
     "holidays": {
       "title": "Holiday import", "hint": "Select a calendar year, then enter dates or click holidays on its full-year calendar. Both methods edit the same list.", "year": "Year",
