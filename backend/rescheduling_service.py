@@ -358,9 +358,9 @@ def parse_post_exam_teacher_workbook(content: bytes) -> tuple[list[dict], list[s
         if teacher:
             columns.append((column, teacher))
     names = [teacher for _, teacher in columns]
-    if len(names) != 51 or len(set(names)) != 51:
+    if not names or len(set(names)) != len(names):
         workbook.close()
-        raise ValueError("試後教師表必須橫向列出 51 位不同教師的完整姓名")
+        raise ValueError("試後教師表必須橫向列出教師的完整姓名，且不可重複")
     period_rows = _matrix_period_rows(sheet, header_row, "試後教師表")
     slots: list[dict] = []
     for period, (_, row) in enumerate(period_rows, start=1):

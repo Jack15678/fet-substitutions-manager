@@ -711,7 +711,8 @@ class ReschedulingTests(unittest.TestCase):
         teacher_sheet = teacher_workbook.active
         teacher_sheet.title = "教師試後時間表"
         teachers = ["丁依敏", *[f"測試教師{index}" for index in range(2, 52)]]
-        teacher_sheet.append(["教師", *[f"{index}\n{name}" for index, name in enumerate(teachers, 1)]])
+        teacher_sheet.append(["編號", *range(1, 52)])
+        teacher_sheet.append(["教師", *teachers])
         teacher_sheet.append(["8:10-8:25", *([""] * 51)])
         for time, subject in periods[:2]:
             teacher_sheet.append([time, subject, *([""] * 50)])
