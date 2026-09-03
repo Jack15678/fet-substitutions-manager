@@ -206,7 +206,7 @@
           <RecordsView v-if="can('records.view') && paginaActiva === 'records'" :can="can" @resume-absence="resumeAbsence" />
           <StatisticsView v-if="can('statistics.view') && paginaActiva === 'statistics'" :dataGlobal="dataSeleccionada" />
           <SettingsView v-if="isAdmin && paginaActiva === 'settings'" />
-          <TimetableImportView v-if="can('timetable.upload') || can('timetable.manage')" v-show="paginaActiva === 'import'" ref="timetableImportView" :can="can" />
+          <TimetableImportView v-if="can('timetable.upload') || can('timetable.manage')" v-show="paginaActiva === 'import'" ref="timetableImportView" :can="can" :is-admin="isAdmin" />
         </main>
 
         <footer class="footer">

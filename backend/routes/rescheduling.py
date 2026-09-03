@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from auth_utils import require_admin, require_any_permission, require_permission
+from calendar_import import parse_calendar_docx
 from dependencies import get_db
 from models import (
     AbsenceCase,
@@ -63,11 +64,17 @@ router = APIRouter(tags=["調課推薦"])
 MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 
 
+class CalendarClosureInput(BaseModel):
+    date: date
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
 class ActivateTimetableRequest(BaseModel):
     effective_from: date
     effective_to: date
     resolutions: dict[str, Literal["class", "teacher"]] = Field(default_factory=dict)
     special_subjects: list[str] = Field(default_factory=list)
+    calendar_closures: list[CalendarClosureInput] = Field(default_factory=list)
 
 
 class UpdateTimetableRequest(BaseModel):
@@ -464,6 +471,7 @@ def delete_timetable_version(
 async def preview_import(
     class_workbook: UploadFile = File(...),
     teacher_workbook: UploadFile = File(...),
+    calendar_docx: Optional[UploadFile] = File(None),
     schedule_type: str = Form("normal"),
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("timetable.upload")),
@@ -475,16 +483,30 @@ async def preview_import(
         raise HTTPException(400, f"班別時間表必須是 {class_extension}")
     if not (teacher_workbook.filename or "").lower().endswith(".xlsx"):
         raise HTTPException(400, "教師時間表必須是 .xlsx（請使用非值日版本）")
+    if calendar_docx and not (calendar_docx.filename or "").lower().endswith(".docx"):
+        raise HTTPException(400, "校曆必須是 .docx")
+    if calendar_docx and getattr(current_user, "role", None) not in {"admin", "super_admin"}:
+        raise HTTPException(403, "只有管理員可匯入校曆假期")
     class_content = await class_workbook.read(MAX_UPLOAD_BYTES + 1)
     teacher_content = await teacher_workbook.read(MAX_UPLOAD_BYTES + 1)
     if len(class_content) > MAX_UPLOAD_BYTES or len(teacher_content) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "課表檔案不可超過 12 MB")
+    calendar_content = await calendar_docx.read(MAX_UPLOAD_BYTES + 1) if calendar_docx else None
+    if calendar_content is not None and len(calendar_content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "校曆檔案不可超過 12 MB")
     try:
         payload = build_import_preview(
             class_content, teacher_content, post_exam=schedule_type == "post_exam"
         )
     except Exception as exc:
         raise HTTPException(400, f"無法讀取課表：{exc}") from exc
+    calendar = None
+    if calendar_content is not None:
+        try:
+            calendar = parse_calendar_docx(calendar_content)
+        except Exception as exc:
+            raise HTTPException(400, f"無法讀取校曆：{exc}") from exc
+        payload["calendar"] = calendar
     preview_id = uuid.uuid4().hex
     db.add(TimetableImportPreview(
         id=preview_id,
@@ -493,10 +515,20 @@ async def preview_import(
         teacher_filename=teacher_workbook.filename,
         created_by=current_user.username,
     ))
-    _audit(db, "preview_import", "timetable_preview", preview_id, current_user.username, payload["summary"])
+    audit_detail = dict(payload["summary"])
+    if calendar:
+        audit_detail["calendar"] = {
+            "school_year": calendar.get("school_year"),
+            "calendar_start": calendar.get("calendar_start"),
+            "calendar_end": calendar.get("calendar_end"),
+            "closures": len(calendar.get("closures", [])),
+            "warnings": len(calendar.get("warnings", [])),
+        }
+    _audit(db, "preview_import", "timetable_preview", preview_id, current_user.username, audit_detail)
     db.commit()
     return {"preview_id": preview_id, **payload["summary"], "warnings": payload["warnings"],
             "issues": payload["issues"],
+            "calendar": calendar,
             "post_exam": payload.get("format") == "post_exam",
             "subjects": sorted({lesson["subject"] for lesson in payload["lessons"]})}
 
@@ -512,6 +544,23 @@ def activate_import(
     if not preview:
         raise HTTPException(404, "找不到匯入預覽，請重新選擇檔案")
     payload = json.loads(preview.payload)
+    calendar_closures = {
+        item.date: (item.note or "").strip() or None
+        for item in request.calendar_closures
+    }
+    calendar = payload.get("calendar")
+    if calendar_closures:
+        if getattr(current_user, "role", None) not in {"admin", "super_admin"}:
+            raise HTTPException(403, "只有管理員可匯入校曆假期")
+        if not calendar:
+            raise HTTPException(400, "此預覽沒有校曆資料")
+        try:
+            calendar_start = date.fromisoformat(calendar["calendar_start"])
+            calendar_end = date.fromisoformat(calendar["calendar_end"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(409, "校曆預覽資料無效，請重新上傳") from exc
+        if any(day < calendar_start or day > calendar_end for day in calendar_closures):
+            raise HTTPException(400, "假期日期必須位於校曆涵蓋範圍內")
     if any(issue["severity"] == "error" for issue in payload["issues"]):
         raise HTTPException(409, "仍有必須在原 Excel 修正的錯誤")
     resolutions = payload.get("saved_resolutions", request.resolutions)
@@ -579,15 +628,37 @@ def activate_import(
             class_code=slot["class_code"],
             subject=slot["subject"],
         ))
+    created_closures = 0
+    for closure_date, note in sorted(calendar_closures.items()):
+        closure = db.get(SchoolClosure, closure_date)
+        if closure:
+            if not closure.note and note:
+                closure.note = note
+        else:
+            db.add(SchoolClosure(
+                data=closure_date, note=note, created_by=current_user.username,
+            ))
+            created_closures += 1
     db.delete(preview)
     _mark_latest_version_active(db)
     revision = bump_schedule_revision(db)
+    audit_detail = {
+        **payload["summary"], "resolutions": resolutions,
+        "special_subjects": sorted(special_subjects),
+    }
+    if calendar:
+        audit_detail["calendar"] = {
+            "school_year": calendar.get("school_year"),
+            "selected_closures": len(calendar_closures),
+            "created_closures": created_closures,
+            "dates": [value.isoformat() for value in sorted(calendar_closures)],
+        }
     _audit(db, "activate_import", "timetable_version", version.id, current_user.username,
-           {**payload["summary"], "resolutions": resolutions,
-            "special_subjects": sorted(special_subjects)})
+           audit_detail)
     db.commit()
     return {"version_id": version.id, "revision": revision, **payload["summary"],
-             "warnings": payload["warnings"], "issues": payload.get("issues", [])}
+             "warnings": payload["warnings"], "issues": payload.get("issues", []),
+             "calendar_closures": len(calendar_closures)}
 
 
 @router.delete("/api/timetables/import/{preview_id}")

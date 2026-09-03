@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -9,7 +10,7 @@ from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
@@ -64,6 +65,7 @@ from routes.rescheduling import (  # noqa: E402
     list_manual_arrangements,
     list_timetable_versions,
     purge_absence,
+    preview_import,
     replace_closures,
     revert_adjustment,
     save_import_resolutions,
@@ -1038,6 +1040,126 @@ class ReschedulingTests(unittest.TestCase):
             )
         self.assertEqual(protected_period.exception.status_code, 409)
         self.assertIn("先撤銷", protected_period.exception.detail)
+
+    @patch("routes.rescheduling.parse_calendar_docx")
+    @patch("routes.rescheduling.build_import_preview")
+    def test_import_preview_can_include_optional_calendar(
+        self, timetable_parser, calendar_parser,
+    ):
+        timetable_parser.return_value = {
+            "format": "normal", "lessons": [], "teacher_slots": [], "teachers": [],
+            "summary": {
+                "classes": 0, "teachers": 0, "lessons": 0,
+                "teacher_slots": 0, "blocked_lessons": 0, "issues": 0,
+            },
+            "warnings": [], "issues": [],
+        }
+        calendar_parser.return_value = {
+            "school_year": "2025-2026",
+            "calendar_start": "2025-09-01",
+            "calendar_end": "2026-08-31",
+            "suggested_ranges": {},
+            "closures": [{"date": "2025-10-01", "note": "國慶日假期", "kind": "holiday"}],
+            "groups": [], "review_days": [], "summary": {"closures": 1}, "warnings": [],
+        }
+
+        with self.assertRaises(HTTPException) as forbidden:
+            asyncio.run(preview_import(
+                class_workbook=UploadFile(BytesIO(b"class"), filename="classes.xls"),
+                teacher_workbook=UploadFile(BytesIO(b"teacher"), filename="teachers.xlsx"),
+                calendar_docx=UploadFile(BytesIO(b"calendar"), filename="calendar.docx"),
+                schedule_type="normal",
+                db=self.db,
+                current_user=SimpleNamespace(username="uploader", role="user"),
+            ))
+        self.assertEqual(forbidden.exception.status_code, 403)
+        calendar_parser.assert_not_called()
+
+        result = asyncio.run(preview_import(
+            class_workbook=UploadFile(BytesIO(b"class"), filename="classes.xls"),
+            teacher_workbook=UploadFile(BytesIO(b"teacher"), filename="teachers.xlsx"),
+            calendar_docx=UploadFile(BytesIO(b"calendar"), filename="calendar.docx"),
+            schedule_type="normal",
+            db=self.db,
+            current_user=SimpleNamespace(username="admin", role="admin"),
+        ))
+
+        calendar_parser.assert_called_once_with(b"calendar")
+        self.assertEqual(result["calendar"], calendar_parser.return_value)
+        saved = json.loads(self.db.get(TimetableImportPreview, result["preview_id"]).payload)
+        self.assertEqual(saved["calendar"], calendar_parser.return_value)
+        audit = self.db.query(ScheduleAudit).filter_by(action="preview_import").one()
+        self.assertEqual(json.loads(audit.detail_json)["calendar"]["closures"], 1)
+
+    def test_activation_merges_calendar_closures_and_requires_admin(self):
+        payload = {
+            "format": "normal", "lessons": [], "teacher_slots": [], "teachers": [],
+            "summary": {
+                "classes": 0, "teachers": 0, "lessons": 0,
+                "teacher_slots": 0, "blocked_lessons": 0, "issues": 0,
+            },
+            "warnings": [], "issues": [],
+            "calendar": {
+                "school_year": "2025-2026",
+                "calendar_start": "2025-09-01",
+                "calendar_end": "2026-08-31",
+            },
+        }
+        preview = TimetableImportPreview(
+            id="calendar-preview", payload=json.dumps(payload, ensure_ascii=False),
+            class_filename="classes.xls", teacher_filename="teachers.xlsx", created_by="uploader",
+        )
+        self.db.add_all([
+            preview,
+            SchoolClosure(
+                data=date(2025, 9, 15), note="原有手動假期", created_by="manual-admin",
+            ),
+            SchoolClosure(
+                data=date(2025, 10, 1), note="舊註解", created_by="manual-admin",
+            ),
+        ])
+        self.db.commit()
+        request = ActivateTimetableRequest(
+            effective_from=date(2025, 9, 1),
+            effective_to=date(2026, 7, 10),
+            calendar_closures=[
+                {"date": "2025-10-01", "note": "國慶日假期"},
+                {"date": "2025-12-25", "note": "聖誕節假期"},
+            ],
+        )
+
+        with self.assertRaises(HTTPException) as forbidden:
+            activate_import(
+                preview.id, request, self.db,
+                SimpleNamespace(username="scheduler", role="user"),
+            )
+        self.assertEqual(forbidden.exception.status_code, 403)
+        self.assertIsNotNone(self.db.get(TimetableImportPreview, preview.id))
+
+        outside = request.model_copy(update={
+            "calendar_closures": [request.calendar_closures[0].model_copy(update={
+                "date": date(2025, 8, 31),
+            })],
+        })
+        with self.assertRaises(HTTPException) as invalid_date:
+            activate_import(
+                preview.id, outside, self.db,
+                SimpleNamespace(username="admin", role="admin"),
+            )
+        self.assertEqual(invalid_date.exception.status_code, 400)
+
+        result = activate_import(
+            preview.id, request, self.db,
+            SimpleNamespace(username="admin", role="admin"),
+        )
+
+        self.assertEqual(result["calendar_closures"], 2)
+        self.assertEqual(self.db.get(SchoolClosure, date(2025, 9, 15)).note, "原有手動假期")
+        updated = self.db.get(SchoolClosure, date(2025, 10, 1))
+        self.assertEqual((updated.note, updated.created_by), ("舊註解", "manual-admin"))
+        self.assertEqual(self.db.get(SchoolClosure, date(2025, 12, 25)).note, "聖誕節假期")
+        audit = self.db.query(ScheduleAudit).filter_by(action="activate_import").one()
+        self.assertEqual(json.loads(audit.detail_json)["calendar"]["created_closures"], 1)
 
     @patch("rescheduling_service.parse_class_workbook")
     @patch("rescheduling_service.parse_teacher_workbook")

@@ -10,13 +10,14 @@
 
     <section class="panel">
       <h3>{{ $t('importCenter.baseTitle') }}</h3>
-      <div v-if="can('timetable.upload')" class="import-grid">
-        <label>{{ $t('importCenter.scheduleType') }}<select v-model="scheduleType" :disabled="Boolean(preview)" @change="classFile = null; teacherFile = null; uploadInputKey += 1"><option value="normal">{{ $t('importCenter.normalType') }}</option><option value="post_exam">{{ $t('importCenter.postExamType') }}</option></select></label>
+      <div v-if="can('timetable.upload')" class="import-grid" :class="{ 'has-calendar': isAdmin }">
+        <label>{{ $t('importCenter.scheduleType') }}<select v-model="scheduleType" :disabled="Boolean(preview)" @change="classFile = null; teacherFile = null; calendarFile = null; uploadInputKey += 1"><option value="normal">{{ $t('importCenter.normalType') }}</option><option value="post_exam">{{ $t('importCenter.postExamType') }}</option></select></label>
         <label>{{ $t(scheduleType === 'post_exam' ? 'importCenter.postExamClassFile' : 'importCenter.classFile') }}<input :key="`class-${uploadInputKey}`" type="file" :accept="scheduleType === 'post_exam' ? '.xlsx' : '.xls'" @change="classFile = $event.target.files[0]" /></label>
         <label>{{ $t('importCenter.teacherFile') }}<input :key="`teacher-${uploadInputKey}`" type="file" accept=".xlsx" @change="teacherFile = $event.target.files[0]" /></label>
+        <label v-if="isAdmin">{{ $t('importCenter.calendarFile') }}<input :key="`calendar-${uploadInputKey}`" type="file" accept=".docx" @change="calendarFile = $event.target.files[0]" /></label>
         <label>{{ $t('importCenter.effectiveFrom') }}<input v-model="effectiveFrom" type="date" /></label>
         <label>{{ $t('importCenter.effectiveTo') }}<input v-model="effectiveTo" type="date" /></label>
-        <Button :label="$t('importCenter.check')" icon="pi pi-search" class="progress-fill-button" :class="{ 'is-progressing': busy === 'preview' }" :loading="busy === 'preview'" :disabled="!filesReady || !effectiveFrom || !effectiveTo" @click="previewImport" />
+        <Button :label="$t('importCenter.check')" icon="pi pi-search" class="progress-fill-button" :class="{ 'is-progressing': busy === 'preview' }" :loading="busy === 'preview'" :disabled="!filesReady || (!calendarFile && (!effectiveFrom || !effectiveTo))" @click="previewImport" />
       </div>
       <p v-if="timetable.active" class="muted">{{ $t('importCenter.currentFiles', { date: timetable.query_date, classFile: timetable.class_filename, teacherFile: timetable.teacher_filename }) }}</p>
       <p v-else class="notice warning">{{ $t('importCenter.noCurrent') }}</p>
@@ -78,8 +79,16 @@
           <div><h3>{{ $t('importCenter.resultTitle') }}</h3><p class="muted">{{ $t('importCenter.resultHint') }}</p></div>
           <div class="result-actions">
             <Button v-if="can('timetable.upload')" :label="$t('importCenter.cancelUpload')" severity="danger" text :loading="busy === 'discard'" @click="discardPreview" />
-            <Button v-if="can('timetable.manage')" :label="$t('importCenter.activate')" icon="pi pi-check" severity="success" :loading="busy === 'activate'" :disabled="hasErrors || hasUnresolvedReviews || !effectiveFrom || !effectiveTo" @click="activateImport" />
+            <Button v-if="can('timetable.manage')" :label="$t('importCenter.activate')" icon="pi pi-check" severity="success" :loading="busy === 'activate'" :disabled="hasErrors || hasUnresolvedReviews || calendarNeedsReview || !effectiveFrom || !effectiveTo" @click="activateImport" />
           </div>
+        </div>
+        <div v-if="preview.calendar" :class="['calendar-review-status', { confirmed: calendarSelection }]">
+          <i :class="calendarSelection ? 'pi pi-check-circle' : 'pi pi-calendar'" aria-hidden="true"></i>
+          <div>
+            <strong>{{ $t('importCenter.calendar.reviewStatusTitle') }}</strong>
+            <span>{{ calendarSelection ? $t('importCenter.calendar.reviewConfirmed', { count: calendarSelection.calendar_closures.length }) : $t('importCenter.calendar.reviewRequired') }}</span>
+          </div>
+          <Button :label="$t(calendarSelection ? 'importCenter.calendar.reviewAgain' : 'importCenter.calendar.reviewNow')" size="small" outlined @click="calendarDialogVisible = true" />
         </div>
         <fieldset class="special-subjects">
           <legend>{{ $t('importCenter.specialSubjects') }}</legend>
@@ -142,6 +151,17 @@
     </div>
     </Transition>
 
+    <CalendarImportPreviewDialog
+      v-if="preview?.calendar"
+      :visible="calendarDialogVisible"
+      :calendar="preview.calendar"
+      :effective-from="effectiveFrom"
+      :effective-to="effectiveTo"
+      :initial-phase="scheduleType === 'normal' ? 'full_year' : 'custom'"
+      @cancel="calendarDialogVisible = false"
+      @confirm="confirmCalendar"
+    />
+
     <Transition name="motion-fade"><p v-if="message" class="notice success">{{ message }}</p></Transition>
   </section>
 </template>
@@ -151,18 +171,22 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Button from 'primevue/button'
+import CalendarImportPreviewDialog from '../components/CalendarImportPreviewDialog.vue'
 
 const { t } = useI18n()
-defineProps({ can: { type: Function, required: true } })
+defineProps({ can: { type: Function, required: true }, isAdmin: { type: Boolean, default: false } })
 
 const timetable = ref({ active: false })
 const versions = ref([])
 const scheduleType = ref('normal')
 const classFile = ref(null)
 const teacherFile = ref(null)
+const calendarFile = ref(null)
 const effectiveFrom = ref('')
 const effectiveTo = ref('')
 const preview = ref(null)
+const calendarDialogVisible = ref(false)
+const calendarSelection = ref(null)
 const busy = ref('')
 const message = ref('')
 const resolutions = ref({})
@@ -175,6 +199,7 @@ const reviewIds = computed(() => (preview.value?.issues || [])
   .filter(issue => issue.severity === 'review')
   .map(resolutionId))
 const filesReady = computed(() => Boolean(classFile.value && teacherFile.value))
+const calendarNeedsReview = computed(() => Boolean(preview.value?.calendar && !calendarSelection.value))
 const allReviewsSelected = computed(() => reviewIds.value.length > 0 && selectedReviewIds.value.length === reviewIds.value.length)
 const hasErrors = computed(() => preview.value?.issues.some(issue => issue.severity === 'error'))
 const isResolutionConfirmed = (issue) => Boolean(savedResolutions.value[resolutionId(issue)])
@@ -285,7 +310,10 @@ const previewImport = async () => {
     form.append('schedule_type', scheduleType.value)
     form.append('class_workbook', classFile.value)
     form.append('teacher_workbook', teacherFile.value)
+    if (calendarFile.value) form.append('calendar_docx', calendarFile.value)
     preview.value = (await axios.post('/api/timetables/import/preview', form)).data
+    calendarSelection.value = null
+    calendarDialogVisible.value = Boolean(preview.value.calendar)
     specialSubjects.value = preview.value.subjects.filter(subject => /體育|視藝|美術|中默|英默|默書|默寫|聽寫|P\.?E\.?/i.test(subject))
     resolutions.value = {}
     savedResolutions.value = {}
@@ -298,7 +326,8 @@ const activateImport = async () => {
   try {
     await axios.post(`/api/timetables/import/${preview.value.preview_id}/activate`, {
       effective_from: effectiveFrom.value, effective_to: effectiveTo.value,
-      resolutions: resolutions.value, special_subjects: specialSubjects.value
+      resolutions: resolutions.value, special_subjects: specialSubjects.value,
+      calendar_closures: calendarSelection.value?.calendar_closures || []
     })
     message.value = t('importCenter.activated', { start: effectiveFrom.value, end: effectiveTo.value })
     preview.value = null
@@ -306,6 +335,8 @@ const activateImport = async () => {
     savedResolutions.value = {}
     selectedReviewIds.value = []
     specialSubjects.value = []
+    calendarSelection.value = null
+    calendarDialogVisible.value = false
     await loadCurrent()
   } finally { busy.value = '' }
 }
@@ -317,16 +348,25 @@ const discardPreview = async () => {
     preview.value = null
     classFile.value = null
     teacherFile.value = null
+    calendarFile.value = null
     resolutions.value = {}
     savedResolutions.value = {}
     selectedReviewIds.value = []
     specialSubjects.value = []
+    calendarSelection.value = null
+    calendarDialogVisible.value = false
     uploadInputKey.value += 1
     message.value = t('importCenter.uploadCancelled')
   } finally { busy.value = '' }
 }
 
 const weekdayLabel = (weekday) => t(`importCenter.weekdays.${weekday}`, `${weekday}`)
+const confirmCalendar = (selection) => {
+  calendarSelection.value = selection
+  effectiveFrom.value = selection.effective_from
+  effectiveTo.value = selection.effective_to
+  calendarDialogVisible.value = false
+}
 
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload)
@@ -353,6 +393,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .panel h3 { margin: 0 0 .9rem; }
 .result-heading h3 { margin: 0; }
 .import-grid { display: grid; grid-template-columns: .7fr 1fr 1fr .62fr .62fr auto; align-items: end; gap: .8rem; }
+.import-grid.has-calendar { grid-template-columns: .65fr repeat(3, 1fr) .65fr .65fr auto; }
 .import-grid label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: var(--font-ui); font-weight: 650; }
 input { width: 100%; min-height: 2.55rem; padding: .6rem .7rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
 input:hover { border-color: #aeb8c5; }
@@ -366,6 +407,11 @@ input[type=checkbox] { width: auto; min-height: auto; accent-color: var(--primar
 .summary-grid span { color: var(--text-color-secondary); font-size: var(--font-ui); }
 .summary-grid .alert { background: #fff8e8; color: #84590e; }
 .warnings { margin: .9rem 0; padding-left: 1.2rem; color: #87591d; }
+.calendar-review-status { display: flex; align-items: center; gap: .7rem; margin: 1rem 0; padding: .75rem .85rem; border: 1px solid #e6c77a; border-radius: 9px; background: #fff8e8; color: #7d5717; }
+.calendar-review-status.confirmed { border-color: #a9d8b6; background: #ebf8ef; color: #216a42; }
+.calendar-review-status > i { font-size: 1.2rem; }
+.calendar-review-status > div { display: grid; gap: .1rem; margin-right: auto; }
+.calendar-review-status span { font-size: var(--font-supporting); }
 .bulk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; margin-top: .9rem; padding: .7rem .8rem; border: 1px solid var(--border-color); border-radius: 9px; background: var(--surface-soft); }
 .bulk-actions label { display: inline-flex; align-items: center; gap: .4rem; color: #344054; font-size: var(--font-ui); font-weight: 650; cursor: pointer; }
 .bulk-actions label input { width: auto; min-height: auto; margin: 0; }
@@ -426,6 +472,9 @@ tbody tr:hover { background: #fbfcfe; }
   .summary-grid div:nth-child(4) { border-top: 1px solid var(--border-color); }
   .result-actions { width: 100%; }
   .result-actions .p-button { flex: 1; }
+  .calendar-review-status { align-items: flex-start; flex-wrap: wrap; }
+  .calendar-review-status > div { width: calc(100% - 2rem); }
+  .calendar-review-status .p-button { width: 100%; }
   .versions-table tr { grid-template-columns: 1fr; }
   .versions-table .version-range-cell, .versions-table .empty-row { grid-column: auto; }
   .version-range-editor label, .version-range-editor input { width: 100%; }
