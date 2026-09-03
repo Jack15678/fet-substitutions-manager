@@ -113,6 +113,8 @@ class ReschedulingTests(unittest.TestCase):
 
     def test_absence_reason_contract_and_legacy_migration(self):
         self.assertEqual(_absence_reason(None, None), "")
+        self.assertEqual(_absence_reason("other", None), "")
+        self.assertEqual(_absence_reason("other", "家庭安排"), "家庭安排")
         with self.assertRaises(ValidationError):
             AbsenceCreateRequest(professor_id=1, data=date(2026, 8, 10), periods=[1])
         with self.assertRaises(ValidationError):
@@ -1942,7 +1944,7 @@ class ReschedulingTests(unittest.TestCase):
         entries = daily_export_data(self.db, date(2026, 8, 10))
         self.assertEqual(entries[0]["reason_type"], "other")
         self.assertEqual(entries[0]["reason_detail"], "家庭安排")
-        self.assertEqual(entries[0]["reason_label"], "其他：家庭安排")
+        self.assertEqual(entries[0]["reason_label"], "家庭安排")
         self.assertEqual(entries[0]["rows"][0]["subject"], "中文")
         self.assertEqual(entries[0]["rows"][0]["substitute_teacher"], "乙老師")
         self.assertEqual(entries[0]["rows"][0]["remark"], "乙老師調上1A英文，第3節甲老師上1A中文")
@@ -1950,7 +1952,7 @@ class ReschedulingTests(unittest.TestCase):
         workbook = load_workbook(BytesIO(build_daily_xlsx(entries, periods)))
         self.assertEqual(workbook.sheetnames, ["甲老師"])
         self.assertEqual(workbook["甲老師"]["A1"].value, "2026 年")
-        self.assertEqual(workbook["甲老師"]["D4"].value, "原因：其他：家庭安排")
+        self.assertEqual(workbook["甲老師"]["D4"].value, "原因：家庭安排")
         self.assertEqual(workbook["甲老師"]["D5"].value, "原科目")
         self.assertEqual(workbook["甲老師"]["E5"].value, "代課老師")
         self.assertEqual(workbook["甲老師"]["E7"].value, "乙老師")

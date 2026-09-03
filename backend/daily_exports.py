@@ -139,8 +139,10 @@ def _unique(values) -> str:
 def _absence_reason(reason_type: str | None, reason_detail: str | None) -> str:
     if not reason_type:
         return ""
+    if reason_type == "other":
+        return reason_detail or ""
     label = ABSENCE_REASONS.get(reason_type, "未填寫")
-    return f"{label}：{reason_detail}" if reason_type == "other" and reason_detail else label
+    return label
 
 
 def daily_export_data(db, day) -> list[dict]:
