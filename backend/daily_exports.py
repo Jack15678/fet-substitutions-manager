@@ -375,17 +375,19 @@ def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
     canvas = Canvas(output, pagesize=A4)
     page_width, page_height = A4
     margin = 5 * mm
-    half_height = (page_height - 2 * margin) / 2
     frame_width = page_width - 2 * margin
     frame_padding = 2 * mm
     inner_width = frame_width - 2 * frame_padding
-    half_inner_height = half_height - 2 * frame_padding
+    content_top = page_height - margin - frame_padding
+    content_bottom = margin + frame_padding
+    form_gap = 4 * mm
     title = ParagraphStyle("daily-title", fontName=font, fontSize=15.5, leading=17, alignment=TA_CENTER)
     info = ParagraphStyle("daily-info", fontName=font, fontSize=12, leading=14, alignment=TA_LEFT)
     note = ParagraphStyle(
         "daily-note", fontName=font, fontSize=12, leading=12, alignment=TA_CENTER, wordWrap="CJK"
     )
-    half_slot = 0
+    cursor_top = content_top
+    forms_on_page = 0
     for entry in entries:
         day = entry["date"]
         form = [
@@ -420,7 +422,9 @@ def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
                 remark,
             ])
             row_heights.append(
-                max(7 * mm, remark.wrap(88 * mm - 12, page_height)[1] + 2) if remark else 7 * mm
+                max(7 * mm, remark.wrap(88 * mm - 12, page_height)[1] + 2)
+                if remark else 7 * mm if any((row["class_code"], row["subject"], row["substitute_teacher"]))
+                else 6 * mm
             )
             if period in break_labels:
                 label = break_labels[period]
@@ -449,16 +453,18 @@ def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
                 style.append(("BACKGROUND", command[1], command[2], colors.HexColor("#D9D9D9")))
         table.setStyle(TableStyle(style))
         form.append(table)
-        full_page = sum(item.wrap(inner_width, page_height)[1] for item in form) > half_inner_height
-        if full_page and half_slot:
+        form_height = sum(item.wrap(inner_width, page_height)[1] for item in form)
+        if form_height > content_top - content_bottom:
+            raise RuntimeError("每日 PDF 表格超出頁面範圍")
+        if forms_on_page and (forms_on_page == 2 or form_height > cursor_top - content_bottom):
             canvas.showPage()
-            half_slot = 0
-        frame_height = page_height - 2 * margin if full_page else half_height
+            cursor_top = content_top
+            forms_on_page = 0
         frame = Frame(
             margin,
-            margin if full_page or half_slot else margin + half_height,
+            margin,
             frame_width,
-            frame_height,
+            cursor_top - margin + frame_padding,
             leftPadding=frame_padding,
             rightPadding=frame_padding,
             topPadding=frame_padding,
@@ -467,12 +473,13 @@ def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
         frame.addFromList(form, canvas)
         if form:
             raise RuntimeError("每日 PDF 表格超出頁面範圍")
-        if full_page or half_slot:
+        cursor_top -= form_height + form_gap
+        forms_on_page += 1
+        if forms_on_page == 2:
             canvas.showPage()
-            half_slot = 0
-        else:
-            half_slot = 1
-    if half_slot:
+            cursor_top = content_top
+            forms_on_page = 0
+    if forms_on_page:
         canvas.showPage()
     canvas.save()
     return output.getvalue()

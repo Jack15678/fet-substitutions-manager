@@ -1967,6 +1967,10 @@ class ReschedulingTests(unittest.TestCase):
             row["remark"] = "陳老師調上6A中文，06/11第2節李老師上6A常識"
         pdf = build_daily_pdf([long_entry], periods)
         self.assertEqual(len(re.findall(rb"/Type\s*/Page(?!s)", pdf)), 1)
+        for row in long_entry["rows"][:7]:
+            row["remark"] *= 2
+        pdf = build_daily_pdf([long_entry, deepcopy(long_entry)], periods)
+        self.assertEqual(len(re.findall(rb"/Type\s*/Page(?!s)", pdf)), 2)
         with patch("routes.rescheduling.daily_export_data", return_value=pdf_entries):
             response = export_daily_pdf(
                 date(2026, 8, 10), self.db, SimpleNamespace(username="admin")
