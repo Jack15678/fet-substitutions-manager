@@ -32,7 +32,7 @@ from models import (  # noqa: E402
     TimetableTeacherSlot,
     TimetableVersion,
 )
-from daily_exports import build_daily_pdf, build_daily_xlsx, daily_export_data, get_period_times, save_period_times, validate_period_times  # noqa: E402
+from daily_exports import _absence_reason, build_daily_pdf, build_daily_xlsx, daily_export_data, get_period_times, save_period_times, validate_period_times  # noqa: E402
 from database import _ensure_absence_case_columns  # noqa: E402
 from openpyxl import Workbook as OpenpyxlWorkbook, load_workbook  # noqa: E402
 from repositories import CursRepository  # noqa: E402
@@ -112,6 +112,7 @@ class ReschedulingTests(unittest.TestCase):
             self.assertEqual(raised.exception.status_code, 404)
 
     def test_absence_reason_contract_and_legacy_migration(self):
+        self.assertEqual(_absence_reason(None, None), "")
         with self.assertRaises(ValidationError):
             AbsenceCreateRequest(professor_id=1, data=date(2026, 8, 10), periods=[1])
         with self.assertRaises(ValidationError):
