@@ -186,6 +186,9 @@ def daily_export_data(db, day) -> list[dict]:
                 lesson for lesson in base_lessons
                 if lesson.period == period and teacher_id in json.loads(lesson.teachers_json or "[]")
             ] if period in absent_periods else []
+            original_teacher_ids = {
+                int(value) for lesson in originals for value in json.loads(lesson.teachers_json or "[]")
+            }
             class_codes = [lesson.class_code for lesson in originals]
             actual = [
                 occurrence for occurrence in effective
@@ -231,7 +234,10 @@ def daily_export_data(db, day) -> list[dict]:
                 "period": period,
                 "class_code": _unique(class_codes),
                 "subject": _unique(lesson.subject for lesson in originals),
-                "substitute_teacher": _unique(names.get(value, str(value)) for value in actual_teacher_ids),
+                "substitute_teacher": _unique(
+                    names.get(value, str(value)) for value in actual_teacher_ids
+                    if value not in original_teacher_ids
+                ),
                 "remark": "，".join(dict.fromkeys(remarks + original_remarks)),
             })
         absence = cases_by_teacher[teacher_id]

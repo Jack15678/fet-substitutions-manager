@@ -1716,16 +1716,17 @@ class ReschedulingTests(unittest.TestCase):
 
     def test_emergency_cover_has_single_formatted_export_remark(self):
         absent = Professor(nom="劉慧妍", actiu=True)
+        co_teacher = Professor(nom="李雅妍", actiu=True)
         replacement = Professor(nom="吳淑君", actiu=True)
         version = TimetableVersion(
             effective_from=date(2026, 8, 1), effective_to=date(2027, 7, 31),
             class_filename="classes.xls", teacher_filename="teachers.xlsx", active=True,
         )
-        self.db.add_all([absent, replacement, version])
+        self.db.add_all([absent, co_teacher, replacement, version])
         self.db.flush()
         lesson = TimetableLesson(
             version_id=version.id, weekday=0, period=1, class_code="2B", subject="數學",
-            teachers_json=json.dumps([absent.id]),
+            teachers_json=json.dumps([absent.id, co_teacher.id]),
         )
         absence = AbsenceCase(
             professor_id=absent.id, data=date(2026, 8, 10), periods_json="[1]",
