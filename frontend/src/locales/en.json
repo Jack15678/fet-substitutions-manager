@@ -1811,9 +1811,8 @@
     "periodTitle": "Rescheduling and period settings", "periodHint": "Set the automatic cycle limit and the nine normal-timetable period times shared by Excel and PDF. Post-exam timetables use their dedicated five-period times.",
     "maxCycleLessons": "Maximum automatic cycle length", "maxCycleHint": "Choose 2 to 5. A value of 2 allows direct swaps only.",
     "holidays": {
-      "title": "Holiday import", "hint": "Select a calendar year, then enter dates or click holidays on its full-year calendar. Both methods edit the same list.", "year": "Year",
-      "method": "Holiday entry method", "textMethod": "Enter dates", "calendarMethod": "Full-year calendar", "textLabel": "Holiday dates (YYYY/MM/DD)", "textPlaceholder": "2026/01/01\n2026/02/19", "importDates": "Import dates",
-      "invalidDate": "“{date}” is invalid. Use YYYY/MM/DD.", "outOfRange": "“{date}” is outside the selected calendar year.", "imported": "Added {count} dates. Save to apply them.", "selected": "{count} days selected", "clear": "Clear this year", "saved": "Holidays saved.", "loadError": "Could not load holidays.", "saveError": "Could not save holidays.",
+      "title": "Holiday import", "hint": "Click a date to select it, or click it again to deselect it. Holiday names are optional.", "year": "Year",
+      "selected": "{count} days selected", "selectedHolidays": "Selected holidays", "noSelectedHolidays": "No holidays selected.", "holidayNamePlaceholder": "Holiday name (optional)", "clear": "Clear this year", "saved": "Holidays saved.", "loadError": "Could not load holidays.", "saveError": "Could not save holidays.",
       "weekdays": { "0": "Mon", "1": "Tue", "2": "Wed", "3": "Thu", "4": "Fri", "5": "Sat", "6": "Sun" }
     }
   },

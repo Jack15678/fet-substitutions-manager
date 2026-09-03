@@ -51,7 +51,7 @@ POST_EXAM_PERIOD_TIMES = [
 WEEKDAYS = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 ABSENCE_REASONS = {
     "sick": "病假",
-    "follow_up": "復診",
+    "follow_up": "覆診",
     "team_training": "帶隊訓練",
     "other": "其他",
     # Legacy values retained for existing records.

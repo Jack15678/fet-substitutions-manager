@@ -7,38 +7,35 @@
       </label>
     </div>
 
-    <div class="mode-switch" role="group" :aria-label="$t('settings.holidays.method')">
-      <button type="button" :class="{ active: mode === 'text' }" @click="mode = 'text'">{{ $t('settings.holidays.textMethod') }}</button>
-      <button type="button" :class="{ active: mode === 'calendar' }" @click="mode = 'calendar'">{{ $t('settings.holidays.calendarMethod') }}</button>
-    </div>
+    <div class="holiday-editor">
+      <div class="year-calendar">
+        <article v-for="month in months" :key="month.key" class="month-card">
+          <h4>{{ month.label }}</h4>
+          <div class="month-grid weekday-row"><span v-for="day in weekdayLabels" :key="day">{{ day }}</span></div>
+          <div class="month-grid">
+            <span v-for="blank in month.leading" :key="`blank-${blank}`"></span>
+            <button
+              v-for="day in month.days"
+              :key="day.iso"
+              type="button"
+              :class="{ selected: selectedDates.has(day.iso), weekend: day.weekend }"
+              :aria-pressed="selectedDates.has(day.iso)"
+              :aria-label="day.iso"
+              @click="toggleDate(day.iso)"
+            >{{ day.day }}</button>
+          </div>
+        </article>
+      </div>
 
-    <Transition name="motion-fade" mode="out-in">
-    <div v-if="mode === 'text'" key="text" class="text-import">
-      <label>{{ $t('settings.holidays.textLabel') }}
-        <textarea v-model="textDates" rows="7" :placeholder="$t('settings.holidays.textPlaceholder')"></textarea>
-      </label>
-      <Button :label="$t('settings.holidays.importDates')" icon="pi pi-download" outlined @click="importTextDates" />
+      <aside class="holiday-notes">
+        <h4>{{ $t('settings.holidays.selectedHolidays') }}</h4>
+        <p v-if="!selectedDatesSorted.length">{{ $t('settings.holidays.noSelectedHolidays') }}</p>
+        <label v-for="date in selectedDatesSorted" :key="date">
+          <span>{{ date.replaceAll('-', '/') }}</span>
+          <input v-model="closureNotes[date]" type="text" :placeholder="$t('settings.holidays.holidayNamePlaceholder')" />
+        </label>
+      </aside>
     </div>
-
-    <div v-else key="calendar" class="year-calendar">
-      <article v-for="month in months" :key="month.key" class="month-card">
-        <h4>{{ month.label }}</h4>
-        <div class="month-grid weekday-row"><span v-for="day in weekdayLabels" :key="day">{{ day }}</span></div>
-        <div class="month-grid">
-          <span v-for="blank in month.leading" :key="`blank-${blank}`"></span>
-          <button
-            v-for="day in month.days"
-            :key="day.iso"
-            type="button"
-            :class="{ selected: selectedDates.has(day.iso), weekend: day.weekend }"
-            :aria-pressed="selectedDates.has(day.iso)"
-            :aria-label="day.iso"
-            @click="toggleDate(day.iso)"
-          >{{ day.day }}</button>
-        </div>
-      </article>
-    </div>
-    </Transition>
 
     <Transition name="motion-fade"><p v-if="message" :class="['feedback', { error: hasError }]" :role="hasError ? 'alert' : undefined">{{ message }}</p></Transition>
     <div class="save-row">
@@ -57,19 +54,15 @@ import Button from 'primevue/button'
 
 const { t, locale } = useI18n()
 const year = ref(new Date().getFullYear())
-const mode = ref('text')
-const textDates = ref('')
 const selectedDates = ref(new Set())
+const closureNotes = ref({})
 const allClosures = ref([])
 const busy = ref(false)
 const message = ref('')
 const hasError = ref(false)
 
 const weekdayLabels = computed(() => Array.from({ length: 7 }, (_, index) => t(`settings.holidays.weekdays.${index}`)))
-const toDate = (value) => {
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(year, month - 1, day, 12)
-}
+const selectedDatesSorted = computed(() => [...selectedDates.value].sort())
 const toIso = (value) => {
   const year = value.getFullYear()
   const month = String(value.getMonth() + 1).padStart(2, '0')
@@ -97,9 +90,9 @@ const months = computed(() => {
 })
 
 const loadYearDates = () => {
-  selectedDates.value = new Set(allClosures.value
-    .map(item => item.date)
-    .filter(value => value.startsWith(`${year.value}-`)))
+  const closures = allClosures.value.filter(item => item.date.startsWith(`${year.value}-`))
+  selectedDates.value = new Set(closures.map(item => item.date))
+  closureNotes.value = Object.fromEntries(closures.map(item => [item.date, item.note || '']))
   message.value = ''
 }
 watch(year, loadYearDates)
@@ -114,21 +107,6 @@ const clearDates = () => {
   selectedDates.value = new Set()
   message.value = ''
 }
-const importTextDates = () => {
-  const tokens = textDates.value.trim().split(/[\s,，;；]+/).filter(Boolean)
-  const next = new Set(selectedDates.value)
-  for (const token of tokens) {
-    const match = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(token)
-    if (!match) return showError(t('settings.holidays.invalidDate', { date: token }))
-    const iso = `${match[1]}-${match[2]}-${match[3]}`
-    if (toIso(toDate(iso)) !== iso) return showError(t('settings.holidays.invalidDate', { date: token }))
-    if (Number(match[1]) !== year.value) return showError(t('settings.holidays.outOfRange', { date: token }))
-    next.add(iso)
-  }
-  selectedDates.value = next
-  hasError.value = false
-  message.value = t('settings.holidays.imported', { count: tokens.length })
-}
 const showError = (value) => {
   hasError.value = true
   message.value = value
@@ -137,8 +115,7 @@ const save = async () => {
   busy.value = true
   message.value = ''
   try {
-    const notes = new Map(allClosures.value.map(item => [item.date, item.note]))
-    const closures = [...selectedDates.value].sort().map(data => ({ data, note: notes.get(data) || null }))
+    const closures = selectedDatesSorted.value.map(data => ({ data, note: closureNotes.value[data]?.trim() || null }))
     await axios.put('/api/calendar/closures', { year: year.value, closures })
     allClosures.value = [
       ...allClosures.value.filter(item => !item.date.startsWith(`${year.value}-`)),
@@ -167,13 +144,8 @@ onMounted(async () => {
 h3, h4 { margin: 0; }
 .section-heading p { margin: .3rem 0 0; color: var(--text-color-secondary); }
 label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: var(--font-ui); font-weight: 650; }
-input, textarea { min-height: 2.5rem; padding: .55rem .65rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
-textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-.mode-switch { display: inline-flex; width: fit-content; padding: .2rem; border-radius: 8px; background: var(--surface-soft); }
-.mode-switch button { padding: .48rem .75rem; border: 0; border-radius: 6px; background: transparent; color: var(--text-color-secondary); cursor: pointer; font-weight: 650; transition: background-color var(--motion-fast) var(--motion-ease), color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease); }
-.mode-switch button.active { background: #fff; color: var(--primary-color-dark); box-shadow: 0 1px 3px rgba(28, 45, 78, .12); }
-.text-import { display: grid; gap: .75rem; }
-.text-import .p-button { justify-self: end; }
+input { min-height: 2.5rem; padding: .55rem .65rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
+.holiday-editor { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 1rem; align-items: start; }
 .year-calendar { display: grid; grid-template-columns: repeat(3, minmax(210px, 1fr)); gap: .75rem; }
 .month-card { padding: .75rem; border: 1px solid var(--border-color); border-radius: 9px; }
 .month-card h4 { margin-bottom: .5rem; text-align: center; font-size: var(--font-data); }
@@ -184,9 +156,13 @@ textarea { width: 100%; resize: vertical; font-family: ui-monospace, SFMono-Regu
 .month-grid button:hover { background: var(--surface-soft); }
 .month-grid button.weekend { color: #9a6670; }
 .month-grid button.selected { background: var(--primary-color); color: #fff; font-weight: 700; }
+.holiday-notes { display: grid; gap: .75rem; padding: .9rem; border: 1px solid var(--border-color); border-radius: 9px; }
+.holiday-notes > p { margin: 0; color: var(--text-color-secondary); font-size: var(--font-ui); }
+.holiday-notes label span { font-variant-numeric: tabular-nums; }
 .feedback { margin: 0; color: #216a42; font-size: var(--font-ui); }
 .feedback.error { color: #9b3b30; }
 .save-row { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; color: var(--text-color-secondary); font-size: var(--font-ui); }
+@media (max-width: 1050px) { .holiday-editor { grid-template-columns: 1fr; } }
 @media (max-width: 800px) { .year-calendar { grid-template-columns: repeat(2, minmax(200px, 1fr)); } }
 @media (max-width: 560px) { .section-heading, .save-row { align-items: stretch; flex-direction: column; } .year-calendar { grid-template-columns: 1fr; } }
 </style>

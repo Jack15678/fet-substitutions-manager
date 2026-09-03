@@ -129,7 +129,7 @@
     "eyebrow": "學校代課推薦系統", "title": "調課工作台",
     "revision": "課表版本 {revision}",
     "steps": { "absence": "缺席老師", "recommendations": "查看並人工確認建議", "effective": "調課安排" },
-    "teacher": "缺席老師", "teachers": "缺席老師（可多選）", "selectTeacher": "選擇老師", "selectTeachers": "選擇一位或多位老師", "date": "日期", "absenceDate": "缺席日期", "absentPeriods": "缺席節次", "allDay": "全天缺席", "analyzeAll": "分析全部課堂", "checkingDate": "正在核對日期……", "invalidDate": "所選日期未有課表資料", "absenceReason": "缺席原因", "selectAbsenceReason": "請選擇缺席原因（必填）", "absenceReasonRequired": "請先選擇缺席原因", "absenceReasonMissing": "未填寫", "absenceReasons": { "sick": "病假", "follow_up": "復診", "team_training": "帶隊訓練", "other": "其他", "personal": "事假", "official": "公假", "training": "培訓" }, "otherReasonPlaceholder": "可留空",
+    "teacher": "缺席老師", "teachers": "缺席老師（可多選）", "selectTeacher": "選擇老師", "selectTeachers": "選擇一位或多位老師", "date": "日期", "absenceDate": "缺席日期", "absentPeriods": "缺席節次", "allDay": "全天缺席", "analyzeAll": "分析全部課堂", "checkingDate": "正在核對日期……", "invalidDate": "所選日期未有課表資料", "absenceReason": "缺席原因", "selectAbsenceReason": "請選擇缺席原因（必填）", "absenceReasonRequired": "請先選擇缺席原因", "absenceReasonMissing": "未填寫", "absenceReasons": { "sick": "病假", "follow_up": "覆診", "team_training": "帶隊訓練", "other": "其他", "personal": "事假", "official": "公假", "training": "培訓" }, "otherReasonPlaceholder": "可留空",
     "addAbsence": "新增缺席", "addAbsenceHint": "每次最多新增 3 位老師；每位老師可使用不同日期及節次。", "currentAbsences": "本次缺席", "newAbsenceRecord": "未選擇老師", "addAnotherTeacher": "再加入一位老師", "absenceLimit": "已加入 {count}／3 位", "removeAbsenceRecord": "移除此記錄", "noPeriodsSelected": "尚未選擇節次", "createAndAnalyze": "新增並分析", "analysisDates": "缺席分析日期", "existingPeriod": "已記錄", "existingAbsenceNotice": "已有 {periods} 缺席；此處只可追加節次，如需刪減請到調課記錄修改。",
     "counts": "已解決 {resolved} · 未解決 {unresolved}", "cancelAbsence": "取消已新增缺席",
     "analysisEmpty": "按「新增缺席」登記老師、日期和節次，系統會分析全部受影響課堂。", "noTasks": "所選節次已沒有需要處理的課堂。",
@@ -155,9 +155,8 @@
     "periodTitle": "調課與節次設定", "periodHint": "設定自動分析的連鎖上限，以及正常課表 Excel／PDF 共用的第 1 至第 9 節時間；試後課表使用其 5 節專用時間。",
     "maxCycleLessons": "自動分析最大連鎖堂數", "maxCycleHint": "可設為 2 至 5；設為 2 時只建議直接互調。",
     "holidays": {
-      "title": "假期匯入", "hint": "選擇年份後，可輸入日期或在全年日曆點選假期；兩種方式共用同一份清單。", "year": "年份",
-      "method": "假期設定方式", "textMethod": "輸入日期", "calendarMethod": "全年日曆", "textLabel": "假期日期（YYYY/MM/DD）", "textPlaceholder": "2026/01/01\n2026/02/19", "importDates": "匯入日期",
-      "invalidDate": "日期「{date}」格式無效，請使用 YYYY/MM/DD。", "outOfRange": "日期「{date}」不在所選年份內。", "imported": "已加入 {count} 個日期，儲存後生效。", "selected": "已選 {count} 日", "clear": "清除本年份", "saved": "假期已儲存。", "loadError": "載入假期失敗。", "saveError": "儲存假期失敗。",
+      "title": "假期匯入", "hint": "在全年日曆左鍵點選假期，再次點選可取消；假期名稱可以留空。", "year": "年份",
+      "selected": "已選 {count} 日", "selectedHolidays": "已選假期", "noSelectedHolidays": "尚未選取假期。", "holidayNamePlaceholder": "假期名稱（可留空）", "clear": "清除本年份", "saved": "假期已儲存。", "loadError": "載入假期失敗。", "saveError": "儲存假期失敗。",
       "weekdays": { "0": "一", "1": "二", "2": "三", "3": "四", "4": "五", "5": "六", "6": "日" }
     }
   },
