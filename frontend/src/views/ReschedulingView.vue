@@ -229,8 +229,8 @@
         <div v-if="activeAbsenceEntry" :key="activeAbsenceEntry.id" class="absence-detail-body">
           <div class="absence-entry-grid">
             <label>{{ $t('rescheduling.teacher') }}
-              <select v-model.number="activeAbsenceEntry.professor_id" :disabled="activeAbsenceEntry.loading || !activeAbsenceEntry.active" required @change="onAbsenceTeacherChange(activeAbsenceEntry)">
-                <option :value="null">{{ activeAbsenceEntry.loading ? $t('rescheduling.checkingDate') : activeAbsenceEntry.active ? $t('rescheduling.selectTeacher') : $t('rescheduling.invalidDate') }}</option>
+              <select v-model.number="activeAbsenceEntry.professor_id" :disabled="activeAbsenceEntry.loading || !activeAbsenceEntry.active || activeAbsenceEntry.closure" required @change="onAbsenceTeacherChange(activeAbsenceEntry)">
+                <option :value="null">{{ activeAbsenceEntry.loading ? $t('rescheduling.checkingDate') : activeAbsenceEntry.closure ? $t('rescheduling.holidayDate') : activeAbsenceEntry.active ? $t('rescheduling.selectTeacher') : $t('rescheduling.invalidDate') }}</option>
                 <option v-for="teacher in activeAbsenceEntry.teachers" :key="teacher.id" :value="teacher.id">{{ teacher.name }}</option>
               </select>
             </label>
@@ -259,7 +259,8 @@
               <input v-model="activeAbsenceEntry.reason_detail" type="text" maxlength="200" :placeholder="$t('rescheduling.otherReasonPlaceholder')" :disabled="Boolean(activeAbsenceEntry.existing_case_id && activeAbsenceEntry.existing_reason_type)" />
             </label>
           </div>
-          <p v-if="!activeAbsenceEntry.loading && activeAbsenceEntry.data && !activeAbsenceEntry.active" class="entry-error">{{ $t('rescheduling.invalidDate') }}</p>
+          <p v-if="!activeAbsenceEntry.loading && activeAbsenceEntry.closure" class="notice warning" role="status">{{ activeAbsenceEntry.closure.note ? $t('rescheduling.namedHolidayDate', { name: activeAbsenceEntry.closure.note }) : $t('rescheduling.holidayDate') }}</p>
+          <p v-else-if="!activeAbsenceEntry.loading && activeAbsenceEntry.data && !activeAbsenceEntry.active" class="entry-error">{{ $t('rescheduling.invalidDate') }}</p>
           <p v-if="activeAbsenceEntry.existing_case_id" class="existing-absence-notice">
             {{ $t('rescheduling.existingAbsenceNotice', { periods: existingPeriodSummary(activeAbsenceEntry) }) }}
           </p>
@@ -482,6 +483,7 @@ const newAbsenceEntry = () => ({
   reason_type: '',
   reason_detail: '',
   teachers: [],
+  closure: null,
   active: false,
   loading: false,
 })
@@ -532,7 +534,7 @@ const adjustmentTeacherNames = (source, leg) => {
   return leg.teacher_names
 }
 const canAttemptAnalyze = computed(() => absenceEntries.value.length > 0 && absenceEntries.value.every(entry => (
-  !entry.loading && entry.active && entry.professor_id && entry.data
+  !entry.loading && entry.active && !entry.closure && entry.professor_id && entry.data
   && entry.periods.some(period => !entry.existing_periods.includes(period))
 )))
 const canAnalyze = computed(() => canAttemptAnalyze.value && absenceEntries.value.every(entry => absenceReasonTypes.includes(entry.reason_type)))
@@ -598,6 +600,7 @@ const loadAbsenceEntryContext = async (entry) => {
   entry.loading = true
   entry.active = false
   entry.teachers = []
+  entry.closure = null
   entry.absences = []
   entry.periods = []
   entry.existing_case_id = null
@@ -606,15 +609,17 @@ const loadAbsenceEntryContext = async (entry) => {
   entry.reason_type = ''
   entry.reason_detail = ''
   try {
-    const [timetableResponse, teacherResponse, absenceResponse] = await Promise.all([
+    const [timetableResponse, teacherResponse, absenceResponse, closureResponse] = await Promise.all([
       axios.get('/api/timetables/current', { params: { data: requestedDate }, _silent: true }),
       axios.get('/api/rescheduling/teachers', { params: { data: requestedDate }, _silent: true }),
       axios.get('/api/absence-cases', { params: { data: requestedDate }, _silent: true }),
+      axios.get('/api/calendar/closures', { params: { year: Number(requestedDate.slice(0, 4)) }, _silent: true }),
     ])
     if (entry.data !== requestedDate) return
+    entry.closure = closureResponse.data.find(item => item.date === requestedDate) || null
     entry.active = Boolean(timetableResponse.data.active)
     entry.period_count = timetableResponse.data.period_count || 9
-    entry.teachers = teacherResponse.data
+    entry.teachers = entry.closure ? [] : teacherResponse.data
     entry.absences = absenceResponse.data
     if (!entry.teachers.some(teacher => teacher.id === entry.professor_id)) entry.professor_id = null
     applyExistingAbsence(entry)

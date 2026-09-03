@@ -220,9 +220,11 @@ def test_absence_creator_cannot_edit_others_or_bypass_confirmed_lock(absence_dat
         update_absence(owned.id, request, db, creator)
     assert locked.value.status_code == 409
 
-    assert update_absence(owned.id, request, db, manager)["success"] is True
+    with pytest.raises(rescheduling.HTTPException) as protected:
+        update_absence(owned.id, request, db, manager)
+    assert protected.value.status_code == 409
     assert db.get(ScheduleAdjustment, adjustment.id) is not None
-    assert owned.status == "open"
+    assert owned.status == "resolved"
 
 
 def test_only_creator_or_record_manager_can_withdraw_absence(absence_data):

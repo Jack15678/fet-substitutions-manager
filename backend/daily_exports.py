@@ -186,10 +186,18 @@ def daily_export_data(db, day) -> list[dict]:
                 lesson for lesson in base_lessons
                 if lesson.period == period and teacher_id in json.loads(lesson.teachers_json or "[]")
             ] if period in absent_periods else []
+            covered_moves = [
+                leg for leg, adjustment in confirmed_legs
+                if adjustment.kind in {"emergency_cover", "co_teacher_solo"}
+                and leg.from_date == day and leg.from_period == period
+                and leg.replaced_teacher_id == teacher_id
+            ] if period in absent_periods else []
+            covered_slots = {(leg.lesson_id, leg.from_date, leg.from_period) for leg in covered_moves}
+            scheduled = [*originals, *covered_moves]
             original_teacher_ids = {
-                int(value) for lesson in originals for value in json.loads(lesson.teachers_json or "[]")
+                int(value) for lesson in scheduled for value in json.loads(lesson.teachers_json or "[]")
             }
-            class_codes = [lesson.class_code for lesson in originals]
+            class_codes = [lesson.class_code for lesson in scheduled]
             actual = [
                 occurrence for occurrence in effective
                 if occurrence["period"] == period and occurrence["class_code"] in class_codes
@@ -220,8 +228,10 @@ def daily_export_data(db, day) -> list[dict]:
                 for value in json.loads(leg.teachers_json or "[]"):
                     teacher = int(value)
                     if teacher == teacher_id:
+                        if (leg.lesson_id, leg.to_date, leg.to_period) in covered_slots:
+                            continue
                         original_remarks.append(
-                            (f"{leg.to_date:%m/%d}" if leg.to_date != day else "") +
+                            (f"{leg.to_date:%d/%m}" if leg.to_date != day else "") +
                             f"第{leg.to_period}節"
                             f"{names.get(teacher, str(teacher))}上{leg.class_code}{leg.subject}"
                         )
@@ -233,7 +243,7 @@ def daily_export_data(db, day) -> list[dict]:
             rows.append({
                 "period": period,
                 "class_code": _unique(class_codes),
-                "subject": _unique(lesson.subject for lesson in originals),
+                "subject": _unique(lesson.subject for lesson in scheduled),
                 "substitute_teacher": _unique(
                     names.get(value, str(value)) for value in actual_teacher_ids
                     if value not in original_teacher_ids
@@ -366,12 +376,17 @@ def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
     page_width, page_height = A4
     margin = 5 * mm
     half_height = (page_height - 2 * margin) / 2
+    frame_width = page_width - 2 * margin
+    frame_padding = 2 * mm
+    inner_width = frame_width - 2 * frame_padding
+    half_inner_height = half_height - 2 * frame_padding
     title = ParagraphStyle("daily-title", fontName=font, fontSize=15.5, leading=17, alignment=TA_CENTER)
     info = ParagraphStyle("daily-info", fontName=font, fontSize=12, leading=14, alignment=TA_LEFT)
     note = ParagraphStyle(
         "daily-note", fontName=font, fontSize=12, leading=12, alignment=TA_CENTER, wordWrap="CJK"
     )
-    for index, entry in enumerate(entries):
+    half_slot = 0
+    for entry in entries:
         day = entry["date"]
         form = [
             Paragraph(f"{day.year} 年　調課／代課表（全日制）", title),
@@ -394,6 +409,7 @@ def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
         for period in times:
             row = rows_by_period[period]
             timing = times[period]
+            remark = Paragraph(escape(row["remark"]), note) if row["remark"] else ""
             table_data.append([
                 period,
                 f"{timing['start']}-{timing['end']}",
@@ -401,9 +417,11 @@ def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
                 row["subject"],
                 row["substitute_teacher"],
                 "",
-                Paragraph(escape(row["remark"]), note) if row["remark"] else "",
+                remark,
             ])
-            row_heights.append((12 if row["remark"] else 7) * mm)
+            row_heights.append(
+                max(7 * mm, remark.wrap(88 * mm - 12, page_height)[1] + 2) if remark else 7 * mm
+            )
             if period in break_labels:
                 label = break_labels[period]
                 table_data.append([label, "", "", "", "", "", ""])
@@ -431,20 +449,30 @@ def build_daily_pdf(entries: list[dict], period_times: list[dict]) -> bytes:
                 style.append(("BACKGROUND", command[1], command[2], colors.HexColor("#D9D9D9")))
         table.setStyle(TableStyle(style))
         form.append(table)
+        full_page = sum(item.wrap(inner_width, page_height)[1] for item in form) > half_inner_height
+        if full_page and half_slot:
+            canvas.showPage()
+            half_slot = 0
+        frame_height = page_height - 2 * margin if full_page else half_height
         frame = Frame(
             margin,
-            margin + half_height if index % 2 == 0 else margin,
-            page_width - 2 * margin,
-            half_height,
-            leftPadding=2 * mm,
-            rightPadding=2 * mm,
-            topPadding=2 * mm,
-            bottomPadding=2 * mm,
+            margin if full_page or half_slot else margin + half_height,
+            frame_width,
+            frame_height,
+            leftPadding=frame_padding,
+            rightPadding=frame_padding,
+            topPadding=frame_padding,
+            bottomPadding=frame_padding,
         )
         frame.addFromList(form, canvas)
         if form:
-            raise RuntimeError("每日 PDF 表格超出半頁範圍")
-        if index % 2 == 1 or index == len(entries) - 1:
+            raise RuntimeError("每日 PDF 表格超出頁面範圍")
+        if full_page or half_slot:
             canvas.showPage()
+            half_slot = 0
+        else:
+            half_slot = 1
+    if half_slot:
+        canvas.showPage()
     canvas.save()
     return output.getvalue()

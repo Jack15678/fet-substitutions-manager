@@ -1069,7 +1069,8 @@ def update_absence(
     can_manage_records = _ensure_absence_editable(current_user, absence)
     professor, periods = _validate_absence_request(db, request, absence.id)
     identity_changed = absence.professor_id != professor.id or absence.data != request.data
-    periods_changed = json.loads(absence.periods_json or "[]") != periods
+    existing_periods = set(json.loads(absence.periods_json or "[]"))
+    periods_changed = sorted(existing_periods) != periods
     schedule_changed = identity_changed or periods_changed
     confirmed = db.query(ScheduleAdjustment).filter_by(
         absence_case_id=absence.id, status="confirmed"
@@ -1078,6 +1079,24 @@ def update_absence(
         raise HTTPException(409, "已有確認的調課，不能更改缺席老師或日期")
     if schedule_changed and confirmed and not can_manage_records:
         raise HTTPException(409, "已有確認的調課，請由記錄管理員修改缺席節次")
+    if periods_changed and confirmed:
+        protected_periods = {
+            leg.from_period
+            for leg in (
+                db.query(ScheduleAdjustmentLeg)
+                .join(ScheduleAdjustment, ScheduleAdjustmentLeg.adjustment_id == ScheduleAdjustment.id)
+                .filter(
+                    ScheduleAdjustment.absence_case_id == absence.id,
+                    ScheduleAdjustment.status == "confirmed",
+                    ScheduleAdjustmentLeg.from_date == absence.data,
+                )
+                .all()
+            )
+            if leg.replaced_teacher_id == absence.professor_id
+            or absence.professor_id in json.loads(leg.teachers_json or "[]")
+        }
+        if (existing_periods - set(periods)) & protected_periods:
+            raise HTTPException(409, "已有確認安排的缺席節次不可移除，請先撤銷相關安排")
     removed_ids = []
     if schedule_changed:
         if not confirmed:
