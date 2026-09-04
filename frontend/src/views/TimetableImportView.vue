@@ -10,11 +10,11 @@
 
     <section class="panel">
       <h3>{{ $t('importCenter.baseTitle') }}</h3>
-      <div v-if="can('timetable.upload')" class="import-grid" :class="{ 'has-calendar': isAdmin }">
+      <div v-if="can('timetable.upload')" class="import-grid" :class="{ 'has-calendar': isAdmin && scheduleType !== 'post_exam' }">
         <label>{{ $t('importCenter.scheduleType') }}<select v-model="scheduleType" :disabled="Boolean(preview)" @change="classFile = null; teacherFile = null; calendarFile = null; uploadInputKey += 1"><option value="normal">{{ $t('importCenter.normalType') }}</option><option value="post_exam">{{ $t('importCenter.postExamType') }}</option></select></label>
         <label>{{ $t(scheduleType === 'post_exam' ? 'importCenter.postExamClassFile' : 'importCenter.classFile') }}<input :key="`class-${uploadInputKey}`" type="file" :accept="scheduleType === 'post_exam' ? '.xlsx' : '.xls'" @change="classFile = $event.target.files[0]" /></label>
         <label>{{ $t('importCenter.teacherFile') }}<input :key="`teacher-${uploadInputKey}`" type="file" accept=".xlsx" @change="teacherFile = $event.target.files[0]" /></label>
-        <label v-if="isAdmin">{{ $t('importCenter.calendarFile') }}<input :key="`calendar-${uploadInputKey}`" type="file" accept=".docx" @change="calendarFile = $event.target.files[0]" /></label>
+        <label v-if="isAdmin && scheduleType !== 'post_exam'">{{ $t('importCenter.calendarFile') }}<input :key="`calendar-${uploadInputKey}`" type="file" accept=".docx" @change="calendarFile = $event.target.files[0]" /></label>
         <label>{{ $t('importCenter.effectiveFrom') }}<input v-model="effectiveFrom" type="date" /></label>
         <label>{{ $t('importCenter.effectiveTo') }}<input v-model="effectiveTo" type="date" /></label>
         <Button :label="$t('importCenter.check')" icon="pi pi-search" class="progress-fill-button" :class="{ 'is-progressing': busy === 'preview' }" :loading="busy === 'preview'" :disabled="!filesReady || (!calendarFile && (!effectiveFrom || !effectiveTo))" @click="previewImport" />

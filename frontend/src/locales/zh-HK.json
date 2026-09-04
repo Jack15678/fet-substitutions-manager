@@ -156,7 +156,7 @@
     "maxCycleLessons": "自動分析最大連鎖堂數", "maxCycleHint": "可設為 2 至 5；設為 2 時只建議直接互調。",
     "holidays": {
       "title": "假期匯入", "hint": "在全年日曆左鍵點選假期，再次點選可取消；假期名稱可以留空。", "year": "年份",
-      "selected": "已選 {count} 日", "selectedHolidays": "已選假期", "noSelectedHolidays": "尚未選取假期。", "holidayNamePlaceholder": "假期名稱（可留空）", "clear": "清除本年份", "saved": "假期已儲存。", "loadError": "載入假期失敗。", "saveError": "儲存假期失敗。",
+      "selected": "已選 {count} 日", "selectedHolidays": "已選假期", "groupSummary": "{days} 日 · {groups} 段", "dayCount": "{count} 日", "editDates": "逐日編輯", "noSelectedHolidays": "尚未選取假期。", "holidayNamePlaceholder": "假期名稱（可留空）", "clear": "清除本年份", "saved": "假期已儲存。", "loadError": "載入假期失敗。", "saveError": "儲存假期失敗。",
       "weekdays": { "0": "一", "1": "二", "2": "三", "3": "四", "4": "五", "5": "六", "6": "日" }
     }
   },

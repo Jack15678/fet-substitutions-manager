@@ -1812,7 +1812,7 @@
     "maxCycleLessons": "Maximum automatic cycle length", "maxCycleHint": "Choose 2 to 5. A value of 2 allows direct swaps only.",
     "holidays": {
       "title": "Holiday import", "hint": "Click a date to select it, or click it again to deselect it. Holiday names are optional.", "year": "Year",
-      "selected": "{count} days selected", "selectedHolidays": "Selected holidays", "noSelectedHolidays": "No holidays selected.", "holidayNamePlaceholder": "Holiday name (optional)", "clear": "Clear this year", "saved": "Holidays saved.", "loadError": "Could not load holidays.", "saveError": "Could not save holidays.",
+      "selected": "{count} days selected", "selectedHolidays": "Selected holidays", "groupSummary": "{days} days · {groups} periods", "dayCount": "{count} days", "editDates": "Edit individual dates", "noSelectedHolidays": "No holidays selected.", "holidayNamePlaceholder": "Holiday name (optional)", "clear": "Clear this year", "saved": "Holidays saved.", "loadError": "Could not load holidays.", "saveError": "Could not save holidays.",
       "weekdays": { "0": "Mon", "1": "Tue", "2": "Wed", "3": "Thu", "4": "Fri", "5": "Sat", "6": "Sun" }
     }
   },

@@ -1,10 +1,11 @@
 <template>
   <Dialog
     :visible="visible"
+    class="calendar-review-dialog"
     modal
     :header="$t('importCenter.calendar.dialogTitle')"
-    :style="{ width: 'min(96vw, 960px)' }"
-    :content-style="{ maxHeight: '72vh', overflow: 'auto' }"
+    :style="{ width: 'min(96vw, 1120px)' }"
+    :content-style="{ maxHeight: '78vh', overflow: 'auto' }"
     @update:visible="onVisibilityChange"
   >
     <div class="calendar-preview">
@@ -52,7 +53,17 @@
           <table>
             <thead>
               <tr>
-                <th scope="col">{{ $t('importCenter.calendar.include') }}</th>
+                <th scope="col">
+                  <label class="select-all">
+                    <input
+                      type="checkbox"
+                      :checked="allGroupsIncluded"
+                      :indeterminate="someGroupsIncluded && !allGroupsIncluded"
+                      @change="toggleAllGroups"
+                    />
+                    <span>{{ $t('importCenter.calendar.include') }}</span>
+                  </label>
+                </th>
                 <th scope="col">{{ $t('importCenter.startDate') }}</th>
                 <th scope="col">{{ $t('importCenter.endDate') }}</th>
                 <th scope="col">{{ $t('importCenter.calendar.note') }}</th>
@@ -101,8 +112,8 @@
     </div>
 
     <template #footer>
-      <Button :label="$t('common.cancel')" text severity="secondary" @click="$emit('cancel')" />
-      <Button :label="$t('importCenter.calendar.confirm')" icon="pi pi-check" :disabled="!canConfirm" @click="confirm" />
+      <Button class="calendar-cancel" :label="$t('common.cancel')" outlined severity="secondary" @click="$emit('cancel')" />
+      <Button class="calendar-confirm" :label="$t('importCenter.calendar.confirm')" icon="pi pi-check" :disabled="!canConfirm" @click="confirm" />
     </template>
   </Dialog>
 </template>
@@ -243,13 +254,15 @@ const selectedClosures = computed(() => {
   return [...byDate.values()].sort((left, right) => left.date.localeCompare(right.date))
 })
 const selectedDateCount = computed(() => selectedClosures.value.length)
+const allGroupsIncluded = computed(() => groups.value.length > 0 && groups.value.every(group => group.included))
+const someGroupsIncluded = computed(() => groups.value.some(group => group.included))
 const calendarStart = computed(() => iso(props.calendar.calendar_start))
 const calendarEnd = computed(() => iso(props.calendar.calendar_end))
 const invalidGroup = computed(() => [...groups.value, ...reviewDays.value]
   .some(group => group.included && (!group.start || !group.end || group.end < group.start
     || group.start < calendarStart.value || group.end > calendarEnd.value)))
 const canConfirm = computed(() => draftFrom.value && draftTo.value && draftTo.value >= draftFrom.value && !invalidGroup.value)
-const calendarRange = computed(() => [calendarStart.value, calendarEnd.value].filter(Boolean).join(' – '))
+const calendarRange = computed(() => [calendarStart.value, calendarEnd.value].filter(Boolean).join(' - '))
 const summaryText = computed(() => {
   const summary = props.calendar.summary
   if (typeof summary === 'string') return summary
@@ -273,6 +286,7 @@ function applySelectedRange() {
   draftTo.value = range.end
 }
 const onVisibilityChange = value => { if (!value) emit('cancel') }
+const toggleAllGroups = event => groups.value.forEach(group => { group.included = event.target.checked })
 const confirm = () => {
   if (!canConfirm.value) return
   emit('confirm', {
@@ -285,42 +299,200 @@ const confirm = () => {
 </script>
 
 <style scoped>
+:global(.calendar-review-dialog) {
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: 0 24px 72px rgba(12, 47, 85, .2);
+}
+
+:global(.calendar-review-dialog .p-dialog-header) {
+  padding: 1.15rem 1.45rem;
+  border-bottom: 0;
+  background: #0c3158;
+  color: #fff;
+}
+
+:global(.calendar-review-dialog .p-dialog-title) {
+  font-size: clamp(1.25rem, 2vw, 1.55rem);
+  font-weight: 750;
+  letter-spacing: -.025em;
+}
+
+:global(.calendar-review-dialog .p-dialog-header-icon) {
+  width: 2.35rem;
+  height: 2.35rem;
+  color: #fff;
+  transition: background-color var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease);
+}
+
+:global(.calendar-review-dialog .p-dialog-header-icon:hover) {
+  background: rgba(255, 255, 255, .12);
+  color: #fff;
+}
+
+:global(.calendar-review-dialog .p-dialog-header-icon:active) { transform: translateY(1px); }
+:global(.calendar-review-dialog .p-dialog-header-icon:focus-visible) { box-shadow: 0 0 0 3px rgba(255, 255, 255, .35); }
+
+:global(.calendar-review-dialog .p-dialog-content) {
+  padding: 1.2rem 1.45rem 1.35rem;
+  background: #fff;
+  color: var(--text-color-primary);
+}
+
+:global(.calendar-review-dialog .p-dialog-footer) {
+  display: flex;
+  justify-content: flex-end;
+  gap: .7rem;
+  padding: .9rem 1.45rem 1rem;
+  border-top: 1px solid var(--border-color);
+  background: #fbfcfd;
+}
+
 .calendar-preview { display: grid; gap: 1rem; color: var(--text-color-primary); }
-.overview { display: grid; grid-template-columns: repeat(4, 1fr); overflow: hidden; border: 1px solid var(--border-color); border-radius: 10px; }
-.overview div { display: grid; gap: .2rem; padding: .7rem .8rem; border-left: 1px solid var(--border-color); }
-.overview div:first-child { border-left: 0; }
+
+.overview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: .05rem 0 .9rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.overview div {
+  display: flex;
+  align-items: baseline;
+  gap: .45rem;
+  min-width: 0;
+  padding: 0 1.1rem;
+  border-left: 1px solid var(--border-strong);
+}
+
+.overview div:first-child { padding-left: 0; border-left: 0; }
 .overview span, .section-heading p { color: var(--text-color-secondary); font-size: var(--font-supporting); }
-.overview strong { font-size: var(--font-data); font-variant-numeric: tabular-nums; }
-.summary-text { margin: 0; color: var(--text-color-secondary); font-size: var(--font-ui); }
-.breakdown { display: flex; flex-wrap: wrap; gap: .4rem; }
-.breakdown span { padding: .3rem .55rem; border-radius: 999px; background: var(--surface-soft); color: var(--text-color-secondary); font-size: var(--font-supporting); }
-.breakdown strong { color: var(--text-color-primary); }
-.range-section { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .75rem; padding: .8rem; border-radius: 9px; background: var(--surface-soft); }
-label { display: grid; gap: .3rem; color: #344054; font-size: var(--font-ui); font-weight: 650; }
-input, select { width: 100%; min-height: 2.45rem; padding: .52rem .6rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
-input[type=checkbox] { width: auto; min-height: auto; accent-color: var(--primary-color); }
-.section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: .75rem; margin-bottom: .55rem; }
+.overview strong { color: var(--text-color-primary); font-size: var(--font-critical); font-variant-numeric: tabular-nums; }
+.summary-text { margin: -.25rem 0 0; color: var(--text-color-secondary); font-size: var(--font-ui); }
+
+.breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.75rem;
+  margin-top: -.35rem;
+  padding: 0 .15rem .65rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.breakdown span { color: var(--text-color-secondary); font-size: var(--font-ui); }
+.breakdown strong { color: var(--primary-color-dark); font-variant-numeric: tabular-nums; }
+
+.range-section {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr 1fr;
+  gap: 1.2rem;
+  padding: .25rem 0 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+label { color: #344054; font-size: var(--font-ui); font-weight: 650; }
+.range-section label { display: flex; align-items: center; gap: .65rem; min-width: 0; }
+.range-section label > span { flex: 0 0 auto; white-space: nowrap; }
+
+.calendar-preview input:not([type=checkbox]),
+.calendar-preview select {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.45rem;
+  padding: .48rem .65rem;
+  border: 1px solid #cbd6df;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text-color-primary);
+  font-variant-numeric: tabular-nums;
+  transition: border-color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease);
+}
+
+.calendar-preview input:not([type=checkbox]):hover,
+.calendar-preview select:hover { border-color: #9fb0bf; }
+.calendar-preview input:not([type=checkbox]):focus,
+.calendar-preview select:focus { border-color: var(--primary-color); }
+.calendar-preview input[type=checkbox] { width: 1.05rem; height: 1.05rem; accent-color: #135da5; }
+
+.section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: .6rem; }
+.section-heading > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: .75rem; min-width: 0; }
 .section-heading h4, .section-heading p { margin: 0; }
-.section-heading p { margin-top: .2rem; }
-.section-heading > span { color: var(--text-color-secondary); font-size: var(--font-supporting); white-space: nowrap; }
-.table-wrap { overflow: auto; border: 1px solid var(--border-color); border-radius: 9px; }
-table { width: 100%; border-collapse: collapse; font-size: var(--font-data); }
-th, td { padding: .48rem .55rem; border-bottom: 1px solid #edf0f3; text-align: left; }
-th { background: var(--surface-soft); color: var(--text-color-secondary); font-size: var(--font-supporting); }
-th:first-child, td:first-child { width: 4.5rem; text-align: center; }
-td:nth-child(2), td:nth-child(3) { width: 10.5rem; }
+.section-heading h4 { color: var(--primary-color-dark); font-size: var(--font-critical); letter-spacing: -.01em; }
+.section-heading > span { color: #135da5; font-size: var(--font-ui); font-weight: 700; white-space: nowrap; }
+
+.table-wrap {
+  max-height: min(42vh, 27rem);
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+}
+
+table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: var(--font-data); font-variant-numeric: tabular-nums; }
+th, td { height: 3.5rem; padding: .45rem .75rem; border-right: 1px solid #e3e8ec; border-bottom: 1px solid #e3e8ec; text-align: left; }
+th:last-child, td:last-child { border-right: 0; }
+
+th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: #f1f4f6;
+  color: #344657;
+  font-size: var(--font-ui);
+  font-weight: 700;
+}
+
+th:first-child, td:first-child { width: 6rem; text-align: center; }
+td:nth-child(2), td:nth-child(3) { width: 11.5rem; }
+tbody tr { background: #f8fbfe; transition: background-color var(--motion-fast) var(--motion-ease); }
+tbody tr:hover:not(.excluded) { background: #edf5fb; }
 tbody tr:last-child td { border-bottom: 0; }
-tr.excluded { opacity: .52; }
+tr.excluded { background: #fff; color: var(--text-color-secondary); }
+tr.excluded input:not([type=checkbox]) { background: #f5f7f8; }
 td input { min-width: 9rem; }
+.select-all { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; cursor: pointer; }
 .empty { padding: 1rem; color: var(--text-color-secondary); text-align: center; }
 .review-section { padding-top: .15rem; }
-.warnings { margin: 0; padding: .7rem .8rem .7rem 1.8rem; border-left: 3px solid #b77816; border-radius: 8px; background: #fff8e8; color: #805515; font-size: var(--font-ui); }
-.merge-notice { display: flex; align-items: center; gap: .45rem; margin: 0; padding: .7rem .8rem; border-radius: 8px; background: #eef5ff; color: #345f8c; font-size: var(--font-ui); }
+.warnings { margin: 0; padding: .7rem .8rem .7rem 1.8rem; border-left: 3px solid #b77816; border-radius: 6px; background: #fff8e8; color: #805515; font-size: var(--font-ui); }
+.merge-notice { display: flex; align-items: center; gap: .45rem; margin: 0; padding: .7rem .8rem; border-radius: 6px; background: #eef5fb; color: #345f8c; font-size: var(--font-ui); }
 .invalid-range { margin: 0; color: #96382f; font-size: var(--font-ui); }
+
+.calendar-cancel,
+.calendar-confirm { min-height: 2.7rem; border-radius: 6px; font-weight: 700; transition: transform var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease); }
+.calendar-cancel { min-width: 6.25rem; background: #fff; }
+.calendar-confirm { min-width: 10.5rem; border-color: #0756b3; background: #0756b3; }
+.calendar-confirm:hover:not(:disabled) { border-color: #06478f; background: #06478f; }
+.calendar-cancel:active,
+.calendar-confirm:active:not(:disabled) { transform: translateY(1px); }
+
+@media (max-width: 900px) {
+  .range-section { grid-template-columns: 1fr; gap: .65rem; }
+  .range-section label { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); }
+}
+
 @media (max-width: 720px) {
-  .overview { grid-template-columns: 1fr 1fr; }
-  .overview div:nth-child(3) { border-top: 1px solid var(--border-color); border-left: 0; }
-  .overview div:nth-child(4) { border-top: 1px solid var(--border-color); }
-  .range-section { grid-template-columns: 1fr; }
+  :global(.calendar-review-dialog) { border-radius: 0; }
+  :global(.calendar-review-dialog .p-dialog-header),
+  :global(.calendar-review-dialog .p-dialog-content),
+  :global(.calendar-review-dialog .p-dialog-footer) { padding-right: 1rem; padding-left: 1rem; }
+  .overview { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem 1rem; }
+  .overview div, .overview div:first-child { display: grid; gap: .15rem; padding: 0; border: 0; }
+  .breakdown { flex-wrap: nowrap; gap: 1.25rem; overflow-x: auto; white-space: nowrap; }
+  .range-section label { grid-template-columns: 1fr; gap: .3rem; }
+  .section-heading { align-items: flex-start; flex-direction: column; gap: .35rem; }
+  .section-heading > div { display: grid; gap: .2rem; }
+  .table-wrap { max-height: 48vh; }
+  .calendar-cancel, .calendar-confirm { flex: 1; min-width: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.calendar-review-dialog .p-dialog-header-icon),
+  .calendar-preview input,
+  .calendar-preview select,
+  tbody tr,
+  .calendar-cancel,
+  .calendar-confirm { transition: none; }
 }
 </style>

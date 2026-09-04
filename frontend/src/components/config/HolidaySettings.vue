@@ -28,12 +28,30 @@
       </div>
 
       <aside class="holiday-notes">
-        <h4>{{ $t('settings.holidays.selectedHolidays') }}</h4>
+        <div class="holiday-notes-heading">
+          <h4>{{ $t('settings.holidays.selectedHolidays') }}</h4>
+          <span v-if="selectedDatesSorted.length">{{ $t('settings.holidays.groupSummary', { days: selectedDates.size, groups: selectedHolidayGroups.length }) }}</span>
+        </div>
         <p v-if="!selectedDatesSorted.length">{{ $t('settings.holidays.noSelectedHolidays') }}</p>
-        <label v-for="date in selectedDatesSorted" :key="date">
-          <span>{{ date.replaceAll('-', '/') }}</span>
-          <input v-model="closureNotes[date]" type="text" :placeholder="$t('settings.holidays.holidayNamePlaceholder')" />
-        </label>
+        <section v-for="group in selectedHolidayGroups" :key="group.start" class="holiday-note-group">
+          <div class="holiday-group-meta">
+            <strong>{{ formatDateRange(group) }}</strong>
+            <span v-if="group.dates.length > 1">{{ $t('settings.holidays.dayCount', { count: group.dates.length }) }}</span>
+          </div>
+          <label class="group-note-field">
+            <span class="sr-only">{{ formatDateRange(group) }} {{ $t('settings.holidays.holidayNamePlaceholder') }}</span>
+            <input :value="group.note" type="text" :placeholder="$t('settings.holidays.holidayNamePlaceholder')" @change="updateNotes(group.dates, $event.target.value)" />
+          </label>
+          <details v-if="group.dates.length > 1" class="holiday-days">
+            <summary>{{ $t('settings.holidays.editDates') }}</summary>
+            <div class="holiday-day-list">
+              <label v-for="date in group.dates" :key="date">
+                <span>{{ formatDate(date) }}</span>
+                <input :value="closureNotes[date]" type="text" :placeholder="$t('settings.holidays.holidayNamePlaceholder')" @change="updateNotes([date], $event.target.value)" />
+              </label>
+            </div>
+          </details>
+        </section>
       </aside>
     </div>
 
@@ -69,6 +87,24 @@ const toIso = (value) => {
   const day = String(value.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
+const selectedHolidayGroups = computed(() => selectedDatesSorted.value.reduce((groups, date) => {
+  const note = closureNotes.value[date] || ''
+  const previous = groups.at(-1)
+  if (previous) {
+    const next = new Date(`${previous.end}T12:00:00`)
+    next.setDate(next.getDate() + 1)
+    if (toIso(next) === date && previous.note.trim() === note.trim()) {
+      previous.end = date
+      previous.dates.push(date)
+      return groups
+    }
+  }
+  groups.push({ start: date, end: date, dates: [date], note })
+  return groups
+}, []))
+const formatDate = (value) => value.replaceAll('-', '/')
+const formatDateRange = (group) => group.start === group.end ? formatDate(group.start) : `${formatDate(group.start)} – ${formatDate(group.end)}`
+const updateNotes = (dates, value) => dates.forEach(date => { closureNotes.value[date] = value })
 const months = computed(() => {
   if (!Number.isInteger(year.value) || year.value < 1900 || year.value > 2100) return []
   const result = []
@@ -156,13 +192,24 @@ input { min-height: 2.5rem; padding: .55rem .65rem; border: 1px solid #cfd6df; b
 .month-grid button:hover { background: var(--surface-soft); }
 .month-grid button.weekend { color: #9a6670; }
 .month-grid button.selected { background: var(--primary-color); color: #fff; font-weight: 700; }
-.holiday-notes { display: grid; gap: .75rem; padding: .9rem; border: 1px solid var(--border-color); border-radius: 9px; }
-.holiday-notes > p { margin: 0; color: var(--text-color-secondary); font-size: var(--font-ui); }
-.holiday-notes label span { font-variant-numeric: tabular-nums; }
+.holiday-notes { position: sticky; top: .75rem; max-height: calc(100dvh - 8rem); overflow-y: auto; border: 1px solid var(--border-color); border-radius: 9px; background: #fff; }
+.holiday-notes-heading { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; padding: .9rem; border-bottom: 1px solid var(--border-color); background: #fff; }
+.holiday-notes-heading > span { color: var(--primary-color); font-size: var(--font-supporting); font-weight: 700; white-space: nowrap; }
+.holiday-notes > p { margin: 0; padding: .9rem; color: var(--text-color-secondary); font-size: var(--font-ui); }
+.holiday-note-group { display: grid; gap: .55rem; padding: .85rem .9rem; border-bottom: 1px solid var(--border-color); }
+.holiday-note-group:last-child { border-bottom: 0; }
+.holiday-group-meta { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-variant-numeric: tabular-nums; }
+.holiday-group-meta strong { color: var(--text-color-primary); font-size: var(--font-ui); }
+.holiday-group-meta span { padding: .16rem .42rem; border-radius: 4px; background: var(--surface-soft); color: var(--text-color-secondary); font-size: var(--font-supporting); white-space: nowrap; }
+.group-note-field input { width: 100%; }
+.holiday-days summary { width: fit-content; color: var(--primary-color); cursor: pointer; font-size: var(--font-supporting); font-weight: 650; }
+.holiday-days summary:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 3px; border-radius: 2px; }
+.holiday-day-list { display: grid; gap: .6rem; margin-top: .65rem; padding: .7rem; border-radius: 6px; background: var(--surface-soft); }
+.holiday-day-list label { font-size: var(--font-supporting); font-variant-numeric: tabular-nums; }
 .feedback { margin: 0; color: #216a42; font-size: var(--font-ui); }
 .feedback.error { color: #9b3b30; }
 .save-row { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; color: var(--text-color-secondary); font-size: var(--font-ui); }
-@media (max-width: 1050px) { .holiday-editor { grid-template-columns: 1fr; } }
+@media (max-width: 1050px) { .holiday-editor { grid-template-columns: 1fr; } .holiday-notes { position: static; max-height: none; } }
 @media (max-width: 800px) { .year-calendar { grid-template-columns: repeat(2, minmax(200px, 1fr)); } }
 @media (max-width: 560px) { .section-heading, .save-row { align-items: stretch; flex-direction: column; } .year-calendar { grid-template-columns: 1fr; } }
 </style>
