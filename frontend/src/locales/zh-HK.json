@@ -162,7 +162,7 @@
   },
   "importCenter": {
     "eyebrow": "管理員", "title": "課表匯入中心", "description": "正常及試後課表均使用班別表和教師表；試後課表只在所選日期內覆蓋正常課表。",
-    "baseTitle": "匯入課表", "scheduleType": "課表類型", "normalType": "正常課表", "postExamType": "試後課表", "classFile": "班別時間表（.xls）", "postExamClassFile": "試後班別時間表（.xlsx）", "teacherFile": "教師時間表（.xlsx，非值日版）", "calendarFile": "校曆（.docx，選填）", "effectiveFrom": "開始適用日期（校曆可自動填寫）", "effectiveTo": "結束適用日期（校曆可自動填寫）", "check": "對比時間表差異",
+    "baseTitle": "匯入課表", "scheduleType": "課表類型", "uploadFiles": "上傳檔案", "setDates": "設定日期", "chooseFile": "選擇檔案", "noFileSelected": "尚未選擇檔案", "normalType": "正常課表", "postExamType": "試後課表", "classFile": "班別時間表（.xls）", "postExamClassFile": "試後班別時間表（.xlsx）", "teacherFile": "教師時間表（.xlsx，非值日版）", "calendarFile": "校曆（.docx，選填）", "effectiveFrom": "開始適用日期（校曆可自動填寫）", "effectiveTo": "結束適用日期（校曆可自動填寫）", "check": "上傳並對比時間表差異",
     "currentFiles": "查詢日期 {date} 使用：{classFile} + {teacherFile}", "noCurrent": "目前日期尚未有已生效的課表。",
     "classes": "班別", "teachers": "教師", "lessons": "班別課堂", "blocked": "鎖定課堂", "resultTitle": "核對結果", "specialSubjects": "特殊課程標註", "specialSubjectsHint": "系統已預選體育、視藝及默書類課程；可按實際需要增減。涉及這些課程的跨日調動會降低優先級。",
     "resultHint": "每項決定可以單獨或批量確認；全部核對完成後，課表才可啟用。", "activate": "確認啟用", "cancelUpload": "取消這次上傳", "uploadCancelled": "已取消這次上傳，可以重新選擇檔案。", "errorsBlock": "存在無法辨識的教師資料，修正 Excel 後才能啟用。", "reviewsBlock": "尚有 {count} 項未完成核對，課表尚未生效。", "reviewsProgress": "已確認 {confirmed}／{total} 項；尚有 {remaining} 項未處理，課表尚未生效。",

@@ -8,19 +8,64 @@
       <span class="revision">{{ $t('rescheduling.revision', { revision: timetable.revision ?? '-' }) }}</span>
     </header>
 
-    <section class="panel">
+    <section class="panel import-panel">
       <h3>{{ $t('importCenter.baseTitle') }}</h3>
-      <div v-if="can('timetable.upload')" class="import-grid" :class="{ 'has-calendar': isAdmin && scheduleType !== 'post_exam' }">
-        <label>{{ $t('importCenter.scheduleType') }}<select v-model="scheduleType" :disabled="Boolean(preview)" @change="classFile = null; teacherFile = null; calendarFile = null; uploadInputKey += 1"><option value="normal">{{ $t('importCenter.normalType') }}</option><option value="post_exam">{{ $t('importCenter.postExamType') }}</option></select></label>
-        <label>{{ $t(scheduleType === 'post_exam' ? 'importCenter.postExamClassFile' : 'importCenter.classFile') }}<input :key="`class-${uploadInputKey}`" type="file" :accept="scheduleType === 'post_exam' ? '.xlsx' : '.xls'" @change="classFile = $event.target.files[0]" /></label>
-        <label>{{ $t('importCenter.teacherFile') }}<input :key="`teacher-${uploadInputKey}`" type="file" accept=".xlsx" @change="teacherFile = $event.target.files[0]" /></label>
-        <label v-if="isAdmin && scheduleType !== 'post_exam'">{{ $t('importCenter.calendarFile') }}<input :key="`calendar-${uploadInputKey}`" type="file" accept=".docx" @change="calendarFile = $event.target.files[0]" /></label>
-        <label>{{ $t('importCenter.effectiveFrom') }}<input v-model="effectiveFrom" type="date" /></label>
-        <label>{{ $t('importCenter.effectiveTo') }}<input v-model="effectiveTo" type="date" /></label>
-        <Button :label="$t('importCenter.check')" icon="pi pi-search" class="progress-fill-button" :class="{ 'is-progressing': busy === 'preview' }" :loading="busy === 'preview'" :disabled="!filesReady || (!calendarFile && (!effectiveFrom || !effectiveTo))" @click="previewImport" />
+      <div v-if="can('timetable.upload')" class="import-steps">
+        <fieldset class="import-step">
+          <legend><span class="step-number">1</span>{{ $t('importCenter.scheduleType') }}</legend>
+          <div class="step-card type-card">
+            <div class="schedule-type-options">
+              <label :class="['schedule-option', { active: scheduleType === 'normal' }]">
+                <input v-model="scheduleType" class="sr-only" type="radio" value="normal" :disabled="Boolean(preview)" @change="resetUploadFields" />
+                <i class="pi pi-calendar" aria-hidden="true"></i>
+                <span>{{ $t('importCenter.normalType') }}</span>
+              </label>
+              <label :class="['schedule-option', { active: scheduleType === 'post_exam' }]">
+                <input v-model="scheduleType" class="sr-only" type="radio" value="post_exam" :disabled="Boolean(preview)" @change="resetUploadFields" />
+                <i class="pi pi-clock" aria-hidden="true"></i>
+                <span>{{ $t('importCenter.postExamType') }}</span>
+              </label>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="import-step">
+          <legend><span class="step-number">2</span>{{ $t('importCenter.uploadFiles') }}</legend>
+          <div class="step-card upload-list">
+            <label class="upload-row">
+              <span class="file-format">{{ scheduleType === 'post_exam' ? 'XLSX' : 'XLS' }}</span>
+              <span class="upload-copy"><strong>{{ $t(scheduleType === 'post_exam' ? 'importCenter.postExamClassFile' : 'importCenter.classFile') }}</strong><small>{{ classFile?.name || $t('importCenter.noFileSelected') }}</small></span>
+              <span class="upload-action">{{ $t('importCenter.chooseFile') }}</span>
+              <input :key="`class-${uploadInputKey}`" class="sr-only" type="file" :accept="scheduleType === 'post_exam' ? '.xlsx' : '.xls'" @click="$event.target.value = null" @change="classFile = $event.target.files[0]" />
+            </label>
+            <label class="upload-row">
+              <span class="file-format">XLSX</span>
+              <span class="upload-copy"><strong>{{ $t('importCenter.teacherFile') }}</strong><small>{{ teacherFile?.name || $t('importCenter.noFileSelected') }}</small></span>
+              <span class="upload-action">{{ $t('importCenter.chooseFile') }}</span>
+              <input :key="`teacher-${uploadInputKey}`" class="sr-only" type="file" accept=".xlsx" @click="$event.target.value = null" @change="teacherFile = $event.target.files[0]" />
+            </label>
+            <label v-if="isAdmin && scheduleType !== 'post_exam'" class="upload-row optional">
+              <span class="file-format docx">DOCX</span>
+              <span class="upload-copy"><strong>{{ $t('importCenter.calendarFile') }}</strong><small>{{ calendarFile?.name || $t('importCenter.noFileSelected') }}</small></span>
+              <span class="upload-action">{{ $t('importCenter.chooseFile') }}</span>
+              <input :key="`calendar-${uploadInputKey}`" class="sr-only" type="file" accept=".docx" @click="$event.target.value = null" @change="calendarFile = $event.target.files[0]" />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="import-step">
+          <legend><span class="step-number">3</span>{{ $t('importCenter.setDates') }}</legend>
+          <div class="step-card date-fields">
+            <label>{{ $t('importCenter.effectiveFrom') }}<input v-model="effectiveFrom" type="date" /></label>
+            <label>{{ $t('importCenter.effectiveTo') }}<input v-model="effectiveTo" type="date" /></label>
+          </div>
+        </fieldset>
       </div>
-      <p v-if="timetable.active" class="muted">{{ $t('importCenter.currentFiles', { date: timetable.query_date, classFile: timetable.class_filename, teacherFile: timetable.teacher_filename }) }}</p>
-      <p v-else class="notice warning">{{ $t('importCenter.noCurrent') }}</p>
+      <div class="import-footer">
+        <p v-if="timetable.active" class="current-files"><i class="pi pi-info-circle" aria-hidden="true"></i>{{ $t('importCenter.currentFiles', { date: timetable.query_date, classFile: timetable.class_filename, teacherFile: timetable.teacher_filename }) }}</p>
+        <p v-else class="notice warning">{{ $t('importCenter.noCurrent') }}</p>
+        <Button v-if="can('timetable.upload')" :label="$t('importCenter.check')" icon="pi pi-search" class="progress-fill-button" :class="{ 'is-progressing': busy === 'preview' }" :loading="busy === 'preview'" :disabled="!filesReady || (!calendarFile && (!effectiveFrom || !effectiveTo))" @click="previewImport" />
+      </div>
     </section>
 
     <section class="panel">
@@ -194,6 +239,12 @@ const savedResolutions = ref({})
 const selectedReviewIds = ref([])
 const specialSubjects = ref([])
 const uploadInputKey = ref(0)
+const resetUploadFields = () => {
+  classFile.value = null
+  teacherFile.value = null
+  calendarFile.value = null
+  uploadInputKey.value += 1
+}
 const resolutionId = (issue) => issue.resolution_id || `${issue.weekday}:${issue.period}:${issue.class_code}:${issue.teacher}`
 const reviewIds = computed(() => (preview.value?.issues || [])
   .filter(issue => issue.severity === 'review')
@@ -392,9 +443,41 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .preview-stack { display: grid; gap: 1.25rem; }
 .panel h3 { margin: 0 0 .9rem; }
 .result-heading h3 { margin: 0; }
-.import-grid { display: grid; grid-template-columns: .7fr 1fr 1fr .62fr .62fr auto; align-items: end; gap: .8rem; }
-.import-grid.has-calendar { grid-template-columns: .65fr repeat(3, 1fr) .65fr .65fr auto; }
-.import-grid label { display: flex; flex-direction: column; gap: .35rem; color: #344054; font-size: var(--font-ui); font-weight: 650; }
+.import-panel { padding: 1.5rem; }
+.import-steps { position: relative; display: grid; grid-template-columns: minmax(180px, .72fr) minmax(420px, 1.55fr) minmax(280px, 1fr); gap: 1rem; }
+.import-steps::before { position: absolute; top: 1rem; right: 1.25rem; left: 1.25rem; height: 1px; background: #dce3eb; content: ''; }
+.import-step { min-width: 0; margin: 0; padding: 0; border: 0; }
+.import-step legend { position: relative; z-index: 1; display: flex; align-items: center; gap: .55rem; margin: 0 0 .75rem; padding: 0 .7rem 0 0; background: var(--card-background); color: #25364d; font-size: var(--font-ui); font-weight: 750; }
+.step-number { display: inline-grid; width: 2rem; height: 2rem; flex: 0 0 2rem; place-items: center; border-radius: 50%; background: var(--primary-color); color: #fff; font-size: .88rem; }
+.step-card { height: calc(100% - 2.75rem); min-height: 9rem; padding: .9rem; border: 1px solid #dce3eb; border-radius: 12px; background: #fbfcfe; }
+.type-card { display: grid; align-items: center; }
+.schedule-type-options { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; }
+.schedule-option { display: grid; min-height: 5.4rem; place-items: center; gap: .3rem; padding: .75rem .45rem; border: 1px solid #d5dde7; border-radius: 10px; background: #fff; color: var(--text-color-secondary); cursor: pointer; font-size: var(--font-ui); font-weight: 700; text-align: center; transition: border-color .16s ease, background .16s ease, color .16s ease, box-shadow .16s ease; }
+.schedule-option i { font-size: 1.2rem; }
+.schedule-option:hover { border-color: #aebdce; }
+.schedule-option.active { border-color: var(--primary-color); background: var(--highlight-bg); color: var(--primary-color-dark); box-shadow: inset 0 0 0 1px var(--primary-color); }
+.schedule-option:has(input:focus-visible) { outline: 3px solid color-mix(in srgb, var(--primary-color) 24%, transparent); outline-offset: 2px; }
+.schedule-option:has(input:disabled) { cursor: not-allowed; opacity: .7; }
+.upload-list { display: grid; align-content: center; gap: .55rem; }
+.upload-row { position: relative; display: grid; grid-template-columns: 3.2rem minmax(0, 1fr) auto; align-items: center; gap: .7rem; min-height: 3.45rem; padding: .55rem .65rem; border: 1px solid #dce3eb; border-radius: 9px; background: #fff; cursor: pointer; }
+.upload-row:hover { border-color: #aebdce; background: #f8fafc; }
+.upload-row:has(input:focus-visible) { outline: 3px solid color-mix(in srgb, var(--primary-color) 24%, transparent); outline-offset: 1px; }
+.file-format { display: inline-grid; min-height: 1.85rem; place-items: center; border-radius: 6px; background: #e6f4ea; color: #267147; font-size: .66rem; font-weight: 800; letter-spacing: .03em; }
+.file-format.docx { background: #e8eff9; color: #315e8b; }
+.upload-copy { display: grid; min-width: 0; gap: .08rem; }
+.upload-copy strong, .upload-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload-copy strong { color: #344054; font-size: var(--font-supporting); }
+.upload-copy small { color: var(--text-color-secondary); font-size: .76rem; font-weight: 500; }
+.upload-action { padding: .35rem .55rem; border: 1px solid #ccd6e2; border-radius: 7px; color: var(--primary-color-dark); font-size: var(--font-supporting); font-weight: 700; white-space: nowrap; }
+.date-fields { display: grid; align-content: center; gap: .75rem; }
+.date-fields label { display: grid; gap: .32rem; color: #344054; font-size: var(--font-supporting); font-weight: 700; }
+.import-footer { display: flex; align-items: center; gap: 1rem; margin-top: 1rem; padding: .75rem .8rem .75rem 1rem; border-radius: 10px; background: #eef5fa; }
+.import-footer p { margin: 0; }
+.current-files { display: flex; min-width: 0; align-items: center; gap: .55rem; margin-right: auto !important; color: #50657e; font-size: var(--font-supporting); }
+.current-files i { color: var(--primary-color); }
+.import-footer .notice { flex: 1; }
+.import-footer .p-button { flex: 0 0 auto; min-height: 2.85rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 input { width: 100%; min-height: 2.55rem; padding: .6rem .7rem; border: 1px solid #cfd6df; border-radius: 8px; background: #fff; color: var(--text-color-primary); }
 input:hover { border-color: #aeb8c5; }
 input:focus { border-color: var(--primary-color); }
@@ -452,8 +535,9 @@ tbody tr:hover { background: #fbfcfe; }
 .empty-row { text-align: center; color: var(--text-color-secondary); }
 
 @media (max-width: 1000px) {
-  .import-grid { grid-template-columns: 1fr 1fr; }
-  .import-grid .p-button { grid-column: 1 / -1; }
+  .import-steps { grid-template-columns: 1fr; }
+  .import-steps::before { display: none; }
+  .step-card { height: auto; }
   .versions-table, .versions-table tbody { display: block; }
   .versions-table thead { display: none; }
   .versions-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem 1rem; padding: 1rem; border-bottom: 1px solid var(--border-color); }
@@ -466,7 +550,12 @@ tbody tr:hover { background: #fbfcfe; }
 @media (max-width: 600px) {
   .page-heading, .result-heading { flex-direction: column; }
   .revision { padding-top: 0; }
-  .import-grid { grid-template-columns: 1fr; }
+  .import-panel { padding: 1rem; }
+  .schedule-type-options { grid-template-columns: 1fr; }
+  .upload-row { grid-template-columns: 3rem minmax(0, 1fr); }
+  .upload-action { grid-column: 1 / -1; text-align: center; }
+  .import-footer { align-items: stretch; flex-direction: column; }
+  .import-footer .p-button { width: 100%; }
   .summary-grid { grid-template-columns: 1fr 1fr; }
   .summary-grid div:nth-child(3) { border-top: 1px solid var(--border-color); border-left: 0; }
   .summary-grid div:nth-child(4) { border-top: 1px solid var(--border-color); }
