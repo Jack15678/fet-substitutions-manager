@@ -10,7 +10,7 @@
 
     <section class="panel import-panel">
       <h3>{{ $t('importCenter.baseTitle') }}</h3>
-      <div v-if="can('timetable.upload')" class="import-steps" :class="{ 'post-exam-steps': scheduleType === 'post_exam' }">
+      <div v-if="can('timetable.upload')" class="import-steps">
         <fieldset class="import-step">
           <legend><span class="step-number">1</span>{{ $t('importCenter.scheduleType') }}</legend>
           <div class="step-card type-card">
@@ -56,7 +56,7 @@
         <fieldset class="import-step">
           <legend><span class="step-number">3</span>{{ $t(scheduleType === 'post_exam' ? 'importCenter.effectiveRanges' : 'importCenter.setDates') }}</legend>
           <div class="step-card date-fields">
-            <TimetableRangeEditor v-if="scheduleType === 'post_exam'" v-model="effectiveRanges" :disabled="busy === 'activate'" />
+            <TimetableRangeEditor v-if="scheduleType === 'post_exam'" v-model="effectiveRanges" compact :disabled="busy === 'activate'" />
             <template v-else>
             <label>{{ $t('importCenter.effectiveFrom') }}<input v-model="effectiveFrom" type="date" /></label>
             <label>{{ $t('importCenter.effectiveTo') }}<input v-model="effectiveTo" type="date" /></label>
@@ -71,53 +71,122 @@
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel versions-panel">
       <div class="result-heading">
-        <div><h3>{{ $t('importCenter.versionsTitle') }}</h3><p class="muted">{{ $t('importCenter.versionsHint') }}</p></div>
+        <div><h3>{{ $t('importCenter.versionsTitle') }}</h3><p class="muted versions-intro">{{ $t('importCenter.versionsSummary') }}</p></div>
+        <Button v-if="can('timetable.manage')" :label="$t('importCenter.groups.add')" icon="pi pi-plus" size="small" outlined :disabled="groupBusy" @click="openGroupEditor()" />
       </div>
+      <p v-if="groupNotice" class="notice" :class="groupError ? 'danger' : 'success'" :role="groupError ? 'alert' : 'status'">{{ groupNotice }}</p>
+      <div class="group-layout">
+        <nav class="group-sidebar" :aria-label="$t('importCenter.groups.title')">
+          <h4>{{ $t('importCenter.groups.title') }}</h4>
+          <button v-for="group in groupEntries" :key="String(group.id)" type="button" class="group-link"
+            :class="{ selected: selectedGroup === group.id, 'drop-target': dropGroup === group.id && draggedVersion !== null }"
+            :aria-current="selectedGroup === group.id ? 'true' : undefined"
+            @click="selectedGroup = group.id" @dragover="dragOverGroup($event, group.id)" @dragleave="leaveGroup($event)" @drop="dropIntoGroup($event, group.id)">
+            <i :class="['pi', group.id === 'all' ? 'pi-th-large' : group.id === null ? 'pi-inbox' : 'pi-folder']" aria-hidden="true"></i>
+            <span class="group-name">{{ group.name }}</span><span class="group-count">{{ group.count }}</span>
+            <span v-if="group.dirty" class="group-unsaved" :title="$t('importCenter.unsaved')" :aria-label="$t('importCenter.unsaved')">•</span>
+          </button>
+          <p v-if="can('timetable.manage')" class="group-hint">{{ draggedVersion !== null ? $t('importCenter.groups.dropHint') : $t('importCenter.groups.hint') }}</p>
+        </nav>
+        <div class="group-content" :aria-busy="groupBusy">
+          <div class="group-heading">
+            <div><h4>{{ selectedGroupName }}</h4><span class="muted">{{ $t('importCenter.groups.count', { count: visibleVersions.length }) }}</span></div>
+            <Button v-if="can('timetable.manage') && selectedGroup !== null && selectedGroup !== 'all'" :label="$t('importCenter.groups.rename')" icon="pi pi-pencil" size="small" text :disabled="groupBusy" @click="openGroupEditor(groups.find(group => group.id === selectedGroup))" />
+          </div>
       <div class="table-wrap">
         <table class="versions-table">
-          <thead><tr><th>{{ $t('importCenter.dateRange') }}</th><th>{{ $t('importCenter.files') }}</th><th>{{ $t('importCenter.scale') }}</th><th>{{ $t('importCenter.linkedRecords') }}</th><th>{{ $t('importCenter.status') }}</th><th>{{ $t('importCenter.actions') }}</th></tr></thead>
-          <TransitionGroup name="motion-list" tag="tbody">
-            <tr v-for="version in versions" :key="version.id" :class="{ 'version-dirty': versionChanged(version) }">
-              <td class="version-range-cell">
-                <div class="version-range-editor">
-                  <template v-if="version.post_exam">
-                    <strong class="range-title">{{ $t('importCenter.postExamRanges', { count: version.draft_effective_ranges.length }) }}</strong>
-                    <TimetableRangeEditor v-model="version.draft_effective_ranges" :disabled="!can('timetable.manage') || busy === `version-${version.id}`" @update:model-value="message = ''" />
-                  </template>
-                  <template v-else>
-                  <label><span>{{ $t('importCenter.startDate') }}</span><input v-model="version.draft_effective_from" type="date" :disabled="!can('timetable.manage')" @input="message = ''" /></label>
-                  <label><span>{{ $t('importCenter.endDate') }}</span><input v-model="version.draft_effective_to" type="date" :disabled="!can('timetable.manage')" @input="message = ''" /></label>
-                  </template>
-                  <div v-if="can('timetable.manage') && versionChanged(version)" class="version-date-actions">
-                    <span class="status unsaved">{{ $t('importCenter.unsaved') }}</span>
-                    <Button :label="$t('importCenter.saveChanges')" size="small" :loading="busy === `version-${version.id}`" :disabled="!rangesValid(versionDraftRanges(version))" @click="saveVersion(version)" />
-                    <Button :label="$t('importCenter.cancelChanges')" size="small" text :disabled="busy === `version-${version.id}`" @click="resetVersion(version)" />
+          <thead><tr><th scope="col">{{ $t('importCenter.timetable') }}</th><th scope="col">{{ $t('importCenter.dateRange') }}</th><th scope="col">{{ $t('importCenter.scale') }}</th><th scope="col">{{ $t('importCenter.actions') }}</th></tr></thead>
+          <tbody>
+            <template v-for="version in visibleVersions" :key="version.id">
+            <tr class="version-summary" :class="{ 'version-dirty': versionChanged(version), 'version-dragging': draggedVersion === version.id, 'version-expanded': expandedVersionId === version.id }">
+              <td class="version-name-cell">
+                <div class="version-identity">
+                  <span v-if="can('timetable.manage')" class="drag-handle" :draggable="!groupBusy" role="img" :aria-label="$t('importCenter.groups.drag')" :title="$t('importCenter.groups.drag')" @dragstart="startVersionDrag($event, version)" @dragend="endVersionDrag">⠿</span>
+                  <div class="version-name">
+                    <strong :title="version.class_filename">{{ version.class_filename.replace(/\.[^.]+$/, '') }}</strong>
+                    <div class="version-meta"><span>{{ $t(version.post_exam ? 'importCenter.postExamType' : 'importCenter.normalType') }}</span><span v-if="version.is_current" class="status current">{{ $t('importCenter.current') }}</span><span v-if="versionChanged(version)" class="draft-indicator">{{ $t('importCenter.unsaved') }}</span></div>
                   </div>
                 </div>
               </td>
-              <td :data-label="$t('importCenter.files')"><div class="file-list"><span>{{ version.class_filename }}</span><span>{{ version.teacher_filename }}</span></div></td>
-              <td :data-label="$t('importCenter.scale')">
-                {{ $t('importCenter.scaleValue', { lessons: version.lessons, teachers: version.teachers }) }}
-                <details class="version-specials">
-                  <summary>{{ $t('importCenter.specialCount', { count: version.draft_special_subjects.length }) }}</summary>
-                  <div>
-                    <label v-for="subject in version.subjects" :key="subject" :class="{ selected: version.draft_special_subjects.includes(subject) }">
-                      <input v-model="version.draft_special_subjects" type="checkbox" :value="subject" :disabled="!can('timetable.manage')" @change="message = ''" />{{ subject }}
-                    </label>
-                  </div>
-                </details>
+              <td :data-label="$t('importCenter.dateRange')">
+                <div class="version-date-summary" :title="rangesText(versionDraftRanges(version))">
+                  <span v-for="(range, index) in sortedRanges(versionDraftRanges(version)).slice(0, 2)" :key="index">{{ range.effective_from || '—' }} <span class="date-separator">→</span> {{ range.effective_to || $t('importCenter.ongoing') }}</span>
+                  <span v-if="versionDraftRanges(version).length > 2" class="muted">{{ $t('importCenter.moreRanges', { count: versionDraftRanges(version).length - 2 }) }}</span>
+                </div>
               </td>
-              <td :data-label="$t('importCenter.linkedRecords')">{{ $t('importCenter.recordValue', { absences: version.absence_records, adjustments: version.adjustment_records }) }}</td>
-              <td :data-label="$t('importCenter.status')"><span :class="['status', version.locked ? 'locked' : 'available']">{{ version.locked ? $t('importCenter.locked') : $t('importCenter.available') }}</span><span v-if="version.is_current" class="status current">{{ $t('importCenter.current') }}</span></td>
-              <td :data-label="$t('importCenter.actions')"><Button v-if="can('timetable.manage')" :label="$t('common.delete')" size="small" severity="danger" outlined :disabled="version.locked" @click="removeVersion(version)" /></td>
+              <td :data-label="$t('importCenter.scale')">
+                <div class="version-stats"><span>{{ $t('importCenter.scaleValue', { lessons: version.lessons, teachers: version.teachers }) }}</span><small>{{ version.absence_records || version.adjustment_records ? $t('importCenter.recordValue', { absences: version.absence_records, adjustments: version.adjustment_records }) : $t('importCenter.noLinkedRecords') }}</small></div>
+              </td>
+              <td class="version-action-cell">
+                <div class="version-actions">
+                  <Button :id="`version-toggle-${version.id}`" :label="$t(expandedVersionId === version.id ? 'importCenter.collapse' : can('timetable.manage') ? 'common.edit' : 'importCenter.details')" :icon="expandedVersionId === version.id ? 'pi pi-angle-up' : undefined" size="small" :outlined="expandedVersionId !== version.id" :aria-expanded="expandedVersionId === version.id" :aria-controls="`version-editor-${version.id}`" :disabled="busy.startsWith('version-')" @click="toggleVersion(version)" />
+                  <label v-if="can('timetable.manage')" class="move-group-label"><span class="sr-only">{{ $t('importCenter.groups.move') }}</span>
+                    <select value="move" :aria-label="$t('importCenter.groups.moveVersion', { name: version.class_filename })" :disabled="groupBusy || busy.startsWith('version-')" @change="selectVersionGroup($event, version)">
+                      <option value="move" disabled>{{ $t('importCenter.groups.move') }}</option>
+                      <option value="" :disabled="version.group_id === null">{{ $t('importCenter.groups.ungrouped') }}</option>
+                      <option v-for="group in groups" :key="group.id" :value="group.id" :disabled="version.group_id === group.id">{{ group.name }}</option>
+                    </select>
+                  </label>
+                </div>
+              </td>
             </tr>
-            <tr v-if="!versions.length"><td colspan="6" class="empty-row">{{ $t('importCenter.noVersions') }}</td></tr>
-          </TransitionGroup>
+            <tr v-if="expandedVersionId === version.id" class="version-editor-row">
+              <td colspan="4">
+                <section :id="`version-editor-${version.id}`" class="version-editor" :aria-labelledby="`version-editor-title-${version.id}`">
+                  <div class="editor-heading"><h5 :id="`version-editor-title-${version.id}`">{{ $t(can('timetable.manage') ? 'importCenter.editTimetable' : 'importCenter.details') }}</h5><span v-if="versionChanged(version)" class="status unsaved">{{ $t('importCenter.unsaved') }}</span></div>
+                  <div class="version-range-editor">
+                    <TimetableRangeEditor v-if="version.post_exam" v-model="version.draft_effective_ranges" :disabled="!can('timetable.manage') || busy === `version-${version.id}`" @update:model-value="message = ''" />
+                    <template v-else>
+                      <label><span>{{ $t('importCenter.startDate') }}</span><input v-model="version.draft_effective_from" type="date" :disabled="!can('timetable.manage') || busy === `version-${version.id}`" @input="message = ''" /></label>
+                      <label><span>{{ $t('importCenter.endDate') }}</span><input v-model="version.draft_effective_to" type="date" :disabled="!can('timetable.manage') || busy === `version-${version.id}`" @input="message = ''" /></label>
+                      <p v-if="!rangesValid(versionDraftRanges(version))" class="range-validation" role="status">{{ $t(rangeErrors(versionDraftRanges(version))[0]) }}</p>
+                    </template>
+                  </div>
+                  <fieldset class="version-specials" :disabled="!can('timetable.manage') || busy === `version-${version.id}`">
+                    <legend>{{ $t('importCenter.specialSubjects') }} <span class="muted">({{ version.draft_special_subjects.length }})</span></legend>
+                    <div><label v-for="subject in version.subjects" :key="subject" :class="{ selected: version.draft_special_subjects.includes(subject) }"><input v-model="version.draft_special_subjects" type="checkbox" :value="subject" @change="message = ''" />{{ subject }}</label></div>
+                  </fieldset>
+                  <div class="version-source-files">
+                    <h5>{{ $t('importCenter.files') }}</h5>
+                    <div><p><i class="pi pi-file-excel" aria-hidden="true"></i><span><small>{{ $t('importCenter.classWorkbook') }}</small>{{ version.class_filename }}</span></p><p><i class="pi pi-file-excel" aria-hidden="true"></i><span><small>{{ $t('importCenter.teacherWorkbook') }}</small>{{ version.teacher_filename }}</span></p></div>
+                  </div>
+                  <p class="editor-hint">{{ $t('importCenter.versionsHint') }}</p>
+                  <p v-if="versionSaveError" class="notice danger" role="alert">{{ versionSaveError }}</p>
+                  <div v-if="can('timetable.manage')" class="version-editor-footer">
+                    <div class="version-delete"><Button :label="$t('common.delete')" icon="pi pi-trash" size="small" severity="danger" text :disabled="version.locked || groupBusy || busy.startsWith('version-')" @click="removeVersion(version)" /><small v-if="version.locked"><i class="pi pi-lock" aria-hidden="true"></i>{{ $t('importCenter.linkedDeleteHint') }}</small></div>
+                    <div class="version-save-actions"><Button :label="$t('importCenter.cancelChanges')" size="small" outlined :disabled="busy === `version-${version.id}`" @click="cancelVersion(version)" /><Button :label="$t('importCenter.saveChanges')" size="small" :loading="busy === `version-${version.id}`" :disabled="!versionChanged(version) || !rangesValid(versionDraftRanges(version))" @click="saveVersion(version)" /></div>
+                  </div>
+                </section>
+              </td>
+            </tr>
+            </template>
+            <tr v-if="!visibleVersions.length"><td colspan="4" class="empty-row">{{ versions.length ? $t('importCenter.groups.empty') : $t('importCenter.noVersions') }}</td></tr>
+          </tbody>
         </table>
       </div>
+        </div>
+      </div>
     </section>
+
+    <Dialog v-model:visible="groupDialogVisible" modal class="timetable-group-dialog" :draggable="false" :pt="{ root: { 'aria-labelledby': 'timetable-group-title' } }" :closable="!groupBusy" :close-on-escape="!groupBusy">
+      <template #header>
+        <div class="group-dialog-heading">
+          <span class="group-dialog-icon"><i class="pi pi-folder" aria-hidden="true"></i></span>
+          <div><h3 id="timetable-group-title">{{ $t(editingGroupId === null ? 'importCenter.groups.add' : 'importCenter.groups.rename') }}</h3><p>{{ $t('importCenter.groups.dialogIntro') }}</p></div>
+        </div>
+      </template>
+      <form class="group-form" @submit.prevent="saveGroup">
+        <div class="group-name-field">
+          <label for="timetable-group-name">{{ $t('importCenter.groups.name') }}</label>
+          <input id="timetable-group-name" v-model="groupName" autofocus required maxlength="80" autocomplete="off" aria-describedby="timetable-group-hint timetable-group-error" :aria-invalid="Boolean(groupFormError)" :placeholder="$t('importCenter.groups.placeholder')" :disabled="groupBusy" @input="groupFormError = ''" />
+        </div>
+        <p id="timetable-group-hint" class="group-form-hint"><i class="pi pi-info-circle" aria-hidden="true"></i><span>{{ $t('importCenter.groups.nameHint') }}</span></p>
+        <p v-if="groupFormError" id="timetable-group-error" class="notice danger" role="alert">{{ groupFormError }}</p>
+        <div class="group-form-actions"><Button :label="$t('common.cancel')" text :disabled="groupBusy" @click="groupDialogVisible = false" /><Button type="submit" :label="$t(editingGroupId === null ? 'importCenter.groups.create' : 'importCenter.saveChanges')" :icon="editingGroupId === null ? 'pi pi-plus' : 'pi pi-check'" :loading="groupBusy" :disabled="!groupName.trim()" /></div>
+      </form>
+    </Dialog>
 
     <Transition name="motion-fade">
     <div v-if="preview" class="preview-stack">
@@ -225,19 +294,119 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Button from 'primevue/button'
+import Dialog from 'primevue/dialog'
 import CalendarImportPreviewDialog from '../components/CalendarImportPreviewDialog.vue'
 import TimetableRangeEditor from '../components/TimetableRangeEditor.vue'
-import { rangesValid, sortedRanges } from '../components/timetableRanges'
+import { rangeErrors, rangesValid, sortedRanges } from '../components/timetableRanges'
 
 const { t } = useI18n()
-defineProps({ can: { type: Function, required: true }, isAdmin: { type: Boolean, default: false } })
+const props = defineProps({ can: { type: Function, required: true }, isAdmin: { type: Boolean, default: false } })
 
 const timetable = ref({ active: false })
 const versions = ref([])
+const expandedVersionId = ref(null)
+const versionSaveError = ref('')
+const toggleVersion = (version) => {
+  expandedVersionId.value = expandedVersionId.value === version.id ? null : version.id
+  versionSaveError.value = ''
+}
+const closeVersion = async (version) => {
+  expandedVersionId.value = null
+  await nextTick()
+  document.getElementById(`version-toggle-${version.id}`)?.focus({ preventScroll: true })
+}
+const cancelVersion = (version) => {
+  resetVersion(version)
+  versionSaveError.value = ''
+  closeVersion(version)
+}
+const groups = ref([])
+const selectedGroup = ref(null)
+const groupsLoaded = ref(false)
+const groupBusy = ref(false)
+const groupNotice = ref('')
+const groupError = ref(false)
+const groupDialogVisible = ref(false)
+const editingGroupId = ref(null)
+const groupName = ref('')
+const groupFormError = ref('')
+const draggedVersion = ref(null)
+const dropGroup = ref(undefined)
+const groupEntries = computed(() => [
+  { id: 'all', name: t('importCenter.groups.all') },
+  { id: null, name: t('importCenter.groups.ungrouped') },
+  ...groups.value
+].map(group => {
+  const rows = versions.value.filter(version => group.id === 'all' || version.group_id === group.id)
+  return { ...group, count: rows.length, dirty: rows.some(versionChanged) }
+}))
+const visibleVersions = computed(() => versions.value.filter(version => selectedGroup.value === 'all' || version.group_id === selectedGroup.value))
+const selectedGroupName = computed(() => groupEntries.value.find(group => group.id === selectedGroup.value)?.name || '')
+
+const openGroupEditor = (group) => {
+  editingGroupId.value = group?.id ?? null
+  groupName.value = group?.name || ''
+  groupFormError.value = ''
+  groupDialogVisible.value = true
+}
+const saveGroup = async () => {
+  if (groupBusy.value || !groupName.value.trim()) return
+  groupBusy.value = true; groupFormError.value = ''
+  try {
+    const payload = { name: groupName.value.trim() }
+    const { data } = editingGroupId.value === null
+      ? await axios.post('/api/timetable-groups', payload, { _silent: true })
+      : await axios.put(`/api/timetable-groups/${editingGroupId.value}`, payload, { _silent: true })
+    groups.value = [...groups.value.filter(group => group.id !== data.id), data].sort((left, right) => right.name.localeCompare(left.name))
+    selectedGroup.value = data.id
+    groupDialogVisible.value = false
+  } catch (error) {
+    groupFormError.value = typeof error.response?.data?.detail === 'string' ? error.response.data.detail : t('importCenter.groups.saveFailed')
+  } finally { groupBusy.value = false }
+}
+const moveVersion = async (version, groupId) => {
+  if (!props.can('timetable.manage') || groupBusy.value || version.group_id === groupId) return
+  groupBusy.value = true; groupNotice.value = ''; groupError.value = false
+  try {
+    await axios.put(`/api/timetables/${version.id}/group`, { group_id: groupId }, { _silent: true })
+    version.group_id = groupId
+    groupNotice.value = t('importCenter.groups.moved', { name: groupEntries.value.find(group => group.id === groupId)?.name })
+  } catch (error) {
+    groupError.value = true
+    groupNotice.value = typeof error.response?.data?.detail === 'string' ? error.response.data.detail : t('importCenter.groups.moveFailed')
+  } finally { groupBusy.value = false }
+}
+const selectVersionGroup = (event, version) => {
+  const groupId = event.target.value ? Number(event.target.value) : null
+  event.target.value = 'move'
+  return moveVersion(version, groupId)
+}
+const startVersionDrag = (event, version) => {
+  if (groupBusy.value || !props.can('timetable.manage')) { event.preventDefault(); return }
+  draggedVersion.value = version.id
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', String(version.id))
+}
+const endVersionDrag = () => { draggedVersion.value = null; dropGroup.value = undefined }
+const dragOverGroup = (event, groupId) => {
+  if (draggedVersion.value === null || groupId === 'all' || groupBusy.value) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'move'
+  dropGroup.value = groupId
+}
+const leaveGroup = (event) => {
+  if (!event.currentTarget.contains(event.relatedTarget)) dropGroup.value = undefined
+}
+const dropIntoGroup = (event, groupId) => {
+  event.preventDefault()
+  const version = versions.value.find(row => row.id === draggedVersion.value)
+  endVersionDrag()
+  if (version && groupId !== 'all') return moveVersion(version, groupId)
+}
 const scheduleType = ref('normal')
 const classFile = ref(null)
 const teacherFile = ref(null)
@@ -344,34 +513,51 @@ const saveResolutions = async (ids, busyKey) => {
   } finally { busy.value = '' }
 }
 
-const loadCurrent = async () => {
-  const [currentResponse, versionsResponse] = await Promise.all([
-    axios.get('/api/timetables/current'), axios.get('/api/timetables')
+const loadCurrent = async (savedVersionId) => {
+  const [currentResponse, versionsResponse, groupsResponse] = await Promise.all([
+    axios.get('/api/timetables/current'), axios.get('/api/timetables'), axios.get('/api/timetable-groups')
   ])
   timetable.value = currentResponse.data
+  groups.value = groupsResponse.data
   versions.value = versionsResponse.data.map(version => {
+    const previous = versions.value.find(row => row.id === version.id)
     const row = {
       ...version,
+      group_id: version.group_id ?? null,
       effective_ranges: (version.effective_ranges || [{ effective_from: version.effective_from, effective_to: version.effective_to }])
         .map(range => ({ ...range, effective_to: range.effective_to || '' }))
     }
     resetVersion(row)
+    if (previous && previous.id !== savedVersionId && versionChanged(previous)) {
+      row.draft_effective_from = previous.draft_effective_from
+      row.draft_effective_to = previous.draft_effective_to
+      row.draft_effective_ranges = previous.draft_effective_ranges
+      row.draft_special_subjects = previous.draft_special_subjects
+    }
     return row
   })
+  if (!groupsLoaded.value) {
+    selectedGroup.value = versions.value.find(version => version.is_current)?.group_id ?? null
+    groupsLoaded.value = true
+  }
 }
 
 const saveVersion = async (version) => {
-  busy.value = `version-${version.id}`; message.value = ''
+  busy.value = `version-${version.id}`; message.value = ''; versionSaveError.value = ''
   try {
     await axios.put(`/api/timetables/${version.id}`, {
       ...(version.post_exam ? { effective_ranges: sortedRanges(version.draft_effective_ranges) }
         : { effective_from: version.draft_effective_from, effective_to: version.draft_effective_to }),
       special_subjects: version.draft_special_subjects
-    })
+    }, { _silent: true })
     message.value = version.post_exam ? t('importCenter.rangesUpdated', { ranges: rangesText(version.draft_effective_ranges) }) : t('importCenter.versionUpdated', {
       start: version.draft_effective_from, end: version.draft_effective_to
     })
-    await loadCurrent()
+    await loadCurrent(version.id)
+    busy.value = ''
+    await closeVersion(version)
+  } catch (error) {
+    versionSaveError.value = typeof error.response?.data?.detail === 'string' ? error.response.data.detail : t('importCenter.versionSaveFailed')
   } finally { busy.value = '' }
 }
 
@@ -418,6 +604,7 @@ const activateImport = async () => {
     specialSubjects.value = []
     calendarSelection.value = null
     calendarDialogVisible.value = false
+    selectedGroup.value = null
     await loadCurrent()
   } finally { busy.value = '' }
 }
@@ -535,23 +722,8 @@ th, td { padding: .72rem .75rem; border-bottom: 1px solid #edf0f3; text-align: l
 th { background: var(--surface-soft); color: var(--text-color-secondary); font-size: var(--font-ui); font-weight: 700; }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: #fbfcfe; }
-.file-list { display: flex; flex-direction: column; gap: .2rem; max-width: 260px; }
-.file-list span { overflow: hidden; text-overflow: ellipsis; }
-.version-range-cell { min-width: 430px; }
-.range-title { width: 100%; font-size: var(--font-ui); }
 .preview-ranges { margin-top: 1rem; padding: .8rem 1rem; border-radius: 8px; background: var(--surface-soft); }
 .preview-ranges ul { margin: .4rem 0 0; padding-left: 1.2rem; }
-.version-range-editor { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .55rem; }
-.version-range-editor label { display: grid; gap: .25rem; color: var(--text-color-secondary); font-size: var(--font-supporting); font-weight: 650; }
-.version-range-editor input { width: 165px; }
-.versions-table td { vertical-align: top; }
-.version-date-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; width: 100%; }
-.version-dirty .version-range-cell { background: #fffaf0; box-shadow: inset 3px 0 #d3aa52; }
-.version-specials { margin-top: .35rem; }
-.version-specials summary { color: var(--primary-color-dark); cursor: pointer; font-size: var(--font-ui); font-weight: 650; }
-.version-specials > div { display: flex; max-width: 420px; flex-wrap: wrap; gap: .3rem; padding-top: .45rem; white-space: normal; }
-.version-specials label { display: inline-flex; align-items: center; gap: .25rem; padding: .28rem .4rem; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; font-size: var(--font-supporting); }
-.version-specials label.selected { border-color: #d3aa52; background: #fff6db; color: #72500b; }
 .resolution-choice { display: flex; gap: .35rem; }
 .resolution-cell { display: flex; align-items: center; gap: .5rem; }
 .resolution-choice label { display: inline-flex; align-items: center; gap: .3rem; padding: .42rem .55rem; border: 1px solid #d6dce5; border-radius: 7px; cursor: pointer; }
@@ -568,25 +740,128 @@ tbody tr:hover { background: #fbfcfe; }
 .success { background: #ebf8ef; color: #247147; }
 .empty-row { text-align: center; color: var(--text-color-secondary); }
 
-@media (min-width: 1001px) {
-  .post-exam-steps { grid-template-columns: minmax(180px, .72fr) minmax(420px, 1.55fr); }
-  .post-exam-steps .import-step:last-child { grid-column: 1 / -1; }
-  .post-exam-steps .date-fields { height: auto; }
-  .post-exam-steps .date-fields :deep(.range-editor) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .post-exam-steps .date-fields :deep(.range-hint), .post-exam-steps .date-fields :deep(.add-range) { grid-column: 1 / -1; }
+.versions-panel > .result-heading { flex-wrap: wrap; gap: .75rem; }
+.versions-intro { margin: .35rem 0 0; font-size: var(--font-ui); }
+.group-layout { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 1.2rem; margin-top: 1rem; border-top: 1px solid var(--border-color); }
+.group-sidebar { padding: 1rem .8rem 1rem 0; border-right: 1px solid var(--border-color); }
+.group-sidebar h4 { margin: 0 .65rem .6rem; color: var(--text-color-secondary); font-size: var(--font-supporting); }
+.group-link { display: flex; align-items: center; gap: .55rem; width: 100%; min-height: 2.8rem; margin-bottom: .25rem; padding: .65rem; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-color-primary); text-align: left; cursor: pointer; font: inherit; font-size: var(--font-ui); transition: background .15s, border-color .15s; }
+.group-link:hover { background: var(--surface-soft); }
+.group-link.selected { background: var(--highlight-bg); color: var(--primary-color-dark); font-weight: 700; }
+.group-link.drop-target { border-color: var(--primary-color); background: var(--highlight-bg); box-shadow: inset 0 0 0 1px var(--primary-color); }
+.group-link:focus-visible, .move-group-label select:focus-visible, .group-form input:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.group-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.group-count { flex-shrink: 0; min-width: 1.35rem; padding: .1rem .3rem; border-radius: 5px; background: var(--card-background); color: var(--text-color-secondary); font-size: var(--font-supporting); text-align: center; font-variant-numeric: tabular-nums; }
+.group-unsaved { color: #996b13; }
+.group-hint { margin: 1rem .65rem 0; color: var(--text-color-secondary); font-size: var(--font-supporting); line-height: 1.6; }
+.group-content { min-width: 0; padding-top: 1rem; container-type: inline-size; }
+.group-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
+.group-heading h4 { margin: 0 0 .15rem; overflow-wrap: anywhere; font-size: var(--font-ui); }
+.group-heading .muted { font-size: var(--font-supporting); }
+.group-content .table-wrap { margin-top: .75rem; }
+.versions-table { table-layout: fixed; font-size: var(--font-ui); }
+.versions-table th, .versions-table td { padding: .95rem .85rem; white-space: normal; overflow-wrap: anywhere; vertical-align: middle; }
+.versions-table th { padding-block: .75rem; font-weight: 600; }
+.versions-table th:nth-child(1) { width: 30%; }
+.versions-table th:nth-child(2) { width: 26%; }
+.versions-table th:nth-child(3) { width: 23%; }
+.versions-table th:nth-child(4) { width: 21%; }
+.version-summary { transition: background .15s; }
+.version-summary.version-expanded { background: #f1f7fa; }
+.version-summary.version-expanded td { border-bottom-color: transparent; }
+.version-summary.version-dirty .version-name-cell { box-shadow: inset 3px 0 #d3aa52; }
+.version-identity { display: flex; align-items: center; gap: .55rem; }
+.version-name { min-width: 0; }
+.version-name > strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; line-height: 1.6; }
+.version-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .3rem; color: var(--text-color-secondary); font-size: var(--font-supporting); }
+.version-meta .status { padding: .08rem .4rem; font-size: .8em; }
+.draft-indicator { color: #946711; font-size: .85em; }
+.version-date-summary, .version-stats { display: grid; gap: .3rem; font-variant-numeric: tabular-nums; }
+.version-date-summary { font-size: var(--font-supporting); }
+.version-date-summary > span { white-space: nowrap; }
+.date-separator { padding: 0 .15rem; color: #8997a8; }
+.version-stats small { color: var(--text-color-secondary); font-size: var(--font-supporting); }
+.drag-handle { flex-shrink: 0; padding: .4rem .15rem; color: #8997a8; cursor: grab; font-size: 1.35rem; line-height: 1.2; }
+.drag-handle:active { cursor: grabbing; }
+.version-dragging { opacity: .5; }
+.version-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.version-actions .p-button { flex-shrink: 0; min-height: 2.3rem; padding: .4rem .65rem; font-size: var(--font-supporting); }
+.move-group-label { flex: 0 0 auto; min-width: 0; max-width: 100%; color: var(--primary-color-dark); font-size: var(--font-supporting); }
+.move-group-label select { max-width: 100%; min-height: 2.3rem; padding: .35rem .15rem; border: 1px solid transparent; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.move-group-label select:hover { background: var(--highlight-bg); }
+.versions-table .version-editor-row > td { padding: 0 .65rem .65rem; background: #f1f7fa; }
+.version-editor { padding: 1.15rem; border: 1px solid #d9e5ec; border-radius: 9px; background: #f8fbfd; }
+.editor-heading { display: flex; align-items: center; gap: .65rem; margin-bottom: 1rem; }
+.version-editor h5 { margin: 0; font-size: var(--font-ui); font-weight: 650; }
+.version-range-editor { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem; }
+.version-range-editor > label { display: grid; flex: 0 1 16rem; min-width: 0; gap: .4rem; color: var(--text-color-secondary); font-size: var(--font-supporting); }
+.version-range-editor input { min-width: 0; font: inherit; }
+.version-range-editor input:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.version-range-editor :deep(.range-row) { padding: .65rem .8rem; }
+.version-range-editor :deep(.range-inputs label) { flex: 0 1 16rem; }
+.version-range-editor :deep(.range-inputs) { gap: .8rem; }
+.range-validation { flex-basis: 100%; margin: 0; color: #96382f; font-size: var(--font-supporting); }
+.version-specials { min-width: 0; margin: 1.2rem 0; padding: 0; border: 0; }
+.version-specials legend { margin-bottom: .5rem; color: var(--text-color-secondary); font-size: var(--font-supporting); }
+.version-specials > div { display: flex; flex-wrap: wrap; gap: .45rem; }
+.version-specials label { display: inline-flex; align-items: center; gap: .35rem; padding: .4rem .6rem; border: 1px solid #d8e1e8; border-radius: 6px; background: #fff; cursor: pointer; font-size: var(--font-supporting); }
+.version-specials label.selected { border-color: #aec6d4; background: #eaf3f8; color: var(--primary-color-dark); }
+.version-specials input { margin: 0; }
+.version-source-files h5 { color: var(--text-color-secondary); font-size: var(--font-supporting); font-weight: 500; }
+.version-source-files > div { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem 1.5rem; margin-top: .5rem; }
+.version-source-files p { display: flex; align-items: flex-start; gap: .5rem; min-width: 0; margin: 0; font-size: var(--font-supporting); overflow-wrap: anywhere; }
+.version-source-files i { margin-top: .3rem; color: #39805a; }
+.version-source-files small { display: block; margin-bottom: .15rem; color: var(--text-color-secondary); font-size: .8em; }
+.editor-hint { margin: 1rem 0 0; color: var(--text-color-secondary); font-size: var(--font-supporting); line-height: 1.6; }
+.version-editor .notice { margin-top: .8rem; }
+.version-editor-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .8rem; margin-top: 1rem; padding-top: .85rem; border-top: 1px solid #dce6ed; }
+.version-delete, .version-save-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.version-delete small { display: flex; align-items: center; gap: .3rem; color: var(--text-color-secondary); font-size: var(--font-supporting); }
+.version-save-actions { margin-left: auto; }
+.version-editor .p-button { min-height: 2.4rem; padding: .5rem .8rem; font-size: var(--font-supporting); }
+.group-dialog-heading { display: flex; align-items: center; gap: .85rem; min-width: 0; }
+.group-dialog-icon { display: grid; place-items: center; flex: 0 0 2.85rem; height: 2.85rem; border: 1px solid #d9e5ec; border-radius: 12px; background: #edf4f8; color: var(--primary-color-dark); }
+.group-dialog-icon i { font-size: 1.3rem; }
+.group-dialog-heading h3 { margin: 0; color: var(--text-color-primary); font-size: 1.25rem; font-weight: 750; line-height: 1.4; }
+.group-dialog-heading p { margin: .2rem 0 0; color: var(--text-color-secondary); font-size: var(--font-supporting); line-height: 1.5; }
+.group-form { display: grid; gap: 1rem; }
+.group-name-field { display: grid; gap: .55rem; }
+.group-name-field label { color: var(--text-color-primary); font-size: var(--font-ui); font-weight: 650; }
+.group-name-field input { min-width: 0; min-height: 3rem; padding: .75rem .9rem; font: inherit; font-size: var(--font-data); border-radius: 10px; }
+.group-name-field input::placeholder { color: #8a96a6; }
+.group-name-field input:focus-visible { outline: 3px solid #dce8ef; outline-offset: 1px; border-color: var(--primary-color); }
+.group-form p { margin: 0; font-size: var(--font-supporting); line-height: 1.6; }
+.group-form-hint { display: flex; align-items: flex-start; gap: .5rem; color: var(--text-color-secondary); }
+.group-form-hint i { flex-shrink: 0; margin-top: .2rem; color: #7590a3; }
+.group-form-actions { display: flex; justify-content: flex-end; gap: .65rem; margin: .5rem -1.75rem -1.5rem; padding: 1rem 1.75rem; border-top: 1px solid #e8edf2; background: #f8fafc; }
+.group-form-actions .p-button { min-height: 2.65rem; padding: .65rem 1.1rem; border-radius: 8px; }
+
+@container (max-width: 48rem) {
+  .versions-table, .versions-table tbody { display: block; }
+  .versions-table thead { display: none; }
+  .versions-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem 1rem; padding: .85rem; border-bottom: 1px solid var(--border-color); }
+  .versions-table td { display: block; min-width: 0; padding: 0; border: 0; }
+  .versions-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: .25rem; color: var(--text-color-secondary); font-size: var(--font-supporting); }
+  .versions-table .version-name-cell, .versions-table .version-action-cell, .versions-table .empty-row, .versions-table .version-editor-row > td { grid-column: 1 / -1; }
+  .versions-table .version-editor-row { padding: 0; }
+  .version-editor { padding: .85rem; }
+  .version-date-summary > span { white-space: normal; }
+  .version-range-editor > label, .version-range-editor :deep(.range-inputs label) { flex: 1 1 10rem; }
+  .version-source-files > div { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  .group-layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .group-sidebar { display: grid; grid-template-columns: 1fr 1fr; align-content: start; gap: .25rem; max-height: 15rem; overflow-y: auto; padding: .75rem 0; border-right: 0; border-bottom: 1px solid var(--border-color); }
+  .group-sidebar h4, .group-hint { grid-column: 1 / -1; }
+  .group-hint { margin-top: .35rem; }
+  .group-link { height: auto; margin: 0; }
 }
 
 @media (max-width: 1000px) {
   .import-steps { grid-template-columns: 1fr; }
   .import-steps::before { display: none; }
   .step-card { height: auto; }
-  .versions-table, .versions-table tbody { display: block; }
-  .versions-table thead { display: none; }
-  .versions-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem 1rem; padding: 1rem; border-bottom: 1px solid var(--border-color); }
-  .versions-table td { display: block; padding: 0; border: 0; white-space: normal; }
-  .versions-table td:not(.version-range-cell)::before { content: attr(data-label); display: block; margin-bottom: .25rem; color: var(--text-color-secondary); font-size: var(--font-supporting); font-weight: 700; }
-  .versions-table .version-range-cell { grid-column: 1 / -1; min-width: 0; padding: .7rem; }
-  .versions-table .empty-row { grid-column: 1 / -1; }
 }
 
 @media (max-width: 600px) {
@@ -607,7 +882,15 @@ tbody tr:hover { background: #fbfcfe; }
   .calendar-review-status > div { width: calc(100% - 2rem); }
   .calendar-review-status .p-button { width: 100%; }
   .versions-table tr { grid-template-columns: 1fr; }
-  .versions-table .version-range-cell, .versions-table .empty-row { grid-column: auto; }
-  .version-range-editor label, .version-range-editor input { width: 100%; }
+  .version-range-editor :deep(.range-inputs label) { flex-basis: auto; }
 }
+</style>
+
+<style>
+.timetable-group-dialog.p-dialog { width: min(30rem, calc(100vw - 2rem)) !important; max-width: calc(100vw - 2rem) !important; height: auto !important; max-height: calc(100dvh - 2rem) !important; margin: 1rem !important; overflow: hidden; border: 1px solid #dbe3eb; border-radius: 18px !important; box-shadow: 0 24px 80px #142e4933; }
+.timetable-group-dialog .p-dialog-header { align-items: flex-start; gap: .75rem; padding: 1.6rem 1.75rem 1.4rem; }
+.timetable-group-dialog .p-dialog-header-icons { flex-shrink: 0; }
+.timetable-group-dialog .p-dialog-header-close { width: 2rem; height: 2rem; border-radius: 8px; color: #8090a2; }
+.timetable-group-dialog .p-dialog-header-close:hover { background: #eef3f7; color: #253f54; }
+.timetable-group-dialog .p-dialog-content { padding: 0 1.75rem 1.5rem; }
 </style>

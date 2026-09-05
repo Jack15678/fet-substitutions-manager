@@ -1,17 +1,17 @@
 <template>
-  <div class="range-editor">
-    <p class="range-hint">{{ $t('importCenter.rangesHint') }}</p>
+  <div class="range-editor" :class="{ compact }">
+    <p v-if="!compact" class="range-hint">{{ $t('importCenter.rangesHint') }}</p>
     <fieldset v-for="(range, index) in modelValue" :key="index" class="range-row" :disabled="disabled">
-      <legend>{{ $t('importCenter.rangeNumber', { count: index + 1 }) }}</legend>
+      <legend v-if="!compact || modelValue.length > 1">{{ $t('importCenter.rangeNumber', { count: index + 1 }) }}</legend>
       <div class="range-inputs">
         <label>{{ $t('importCenter.startDate') }}<input type="date" :value="range.effective_from" :aria-invalid="Boolean(errors[index])" @input="update(index, 'effective_from', $event.target.value)" /></label>
         <label>{{ $t('importCenter.endDate') }}<input type="date" :value="range.effective_to" :aria-invalid="Boolean(errors[index])" @input="update(index, 'effective_to', $event.target.value)" /></label>
-        <Button v-if="!disabled" :label="$t('importCenter.removeRange')" :aria-label="$t('importCenter.removeRangeNumber', { count: index + 1 })" size="small" text severity="danger" :disabled="modelValue.length === 1" @click="remove(index)" />
+        <Button v-if="!disabled && (!compact || modelValue.length > 1)" :label="$t('importCenter.removeRange')" :aria-label="$t('importCenter.removeRangeNumber', { count: index + 1 })" size="small" text severity="danger" :disabled="modelValue.length === 1" @click="remove(index)" />
       </div>
       <p v-if="errors[index]" class="range-error" role="status">{{ $t(errors[index]) }}</p>
     </fieldset>
-    <Button v-if="!disabled" :label="$t('importCenter.addRange')" icon="pi pi-plus" size="small" outlined class="add-range" @click="add" />
-    <p class="range-hint">{{ $t('importCenter.rangePriority') }}</p>
+    <Button v-if="!disabled" :label="$t('importCenter.addRange')" icon="pi pi-plus" size="small" :outlined="!compact" :text="compact" class="add-range" @click="add" />
+    <p v-if="!compact" class="range-hint">{{ $t('importCenter.rangePriority') }}</p>
   </div>
 </template>
 
@@ -20,9 +20,10 @@ import { computed } from 'vue'
 import Button from 'primevue/button'
 import { rangeErrors } from './timetableRanges'
 
-const props = defineProps({ modelValue: { type: Array, required: true }, disabled: Boolean })
+const props = defineProps({ modelValue: { type: Array, required: true }, disabled: Boolean, compact: Boolean })
 const emit = defineEmits(['update:modelValue'])
-const errors = computed(() => rangeErrors(props.modelValue))
+const errors = computed(() => rangeErrors(props.modelValue).map((error, index) =>
+  props.compact && !props.modelValue[index].effective_from && !props.modelValue[index].effective_to ? '' : error))
 const update = (index, field, value) => emit('update:modelValue', props.modelValue.map((range, i) => i === index ? { ...range, [field]: value } : range))
 const remove = (index) => emit('update:modelValue', props.modelValue.filter((_, i) => i !== index))
 const add = () => emit('update:modelValue', [...props.modelValue, { effective_from: '', effective_to: '' }])
@@ -41,5 +42,13 @@ const add = () => emit('update:modelValue', [...props.modelValue, { effective_fr
 .range-inputs .p-button { min-height: 2.55rem; }
 .range-error { margin: .5rem 0 0; color: #96382f; white-space: normal; font-size: var(--font-supporting); }
 .add-range { justify-self: start; }
+.compact .range-row { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.compact .range-row + .range-row { margin-top: .25rem; padding-top: .75rem; border-top: 1px solid var(--border-color); }
+.compact .range-row legend { padding: 0 0 .5rem; }
+.compact .range-inputs { display: grid; gap: .75rem; }
+.compact .range-inputs label { gap: .32rem; color: #344054; font-weight: 700; }
+.compact .range-inputs input { padding: .6rem .7rem; font: inherit; }
+.compact .range-inputs .p-button { justify-self: end; }
+.compact .add-range { min-height: 1.75rem; padding: .2rem 0; font-size: var(--font-supporting); }
 @media (max-width: 600px) { .range-inputs { flex-direction: column; align-items: stretch; } .range-inputs label { flex-basis: auto; } .range-inputs .p-button { align-self: flex-end; } }
 </style>

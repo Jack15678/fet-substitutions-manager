@@ -8,42 +8,40 @@
     <section class="panel">
       <form class="record-filters" @submit.prevent="loadRecords(1)">
         <label class="search-field">
-          <span>{{ $t('records.search') }}</span>
-          <input v-model.trim="filters.q" type="search" :placeholder="$t('records.searchPlaceholder')" />
+          <span class="sr-only">{{ $t('records.search') }}</span>
+          <span class="search-input"><i class="pi pi-search" aria-hidden="true"></i><input v-model.trim="filters.q" type="search" :placeholder="$t('records.searchPlaceholder')" /></span>
         </label>
         <label><span>{{ $t('records.dateFrom') }}</span><input v-model="filters.date_from" type="date" :max="filters.date_to || undefined" /></label>
         <label><span>{{ $t('records.dateTo') }}</span><input v-model="filters.date_to" type="date" :min="filters.date_from || undefined" /></label>
         <label><span>{{ $t('records.status') }}</span><select v-model="filters.status"><option value="">{{ $t('common.all') }}</option><option value="open">{{ $t('records.filterStatuses.open') }}</option><option value="completed">{{ $t('records.filterStatuses.completed') }}</option></select></label>
         <label><span>{{ $t('records.type') }}</span><select v-model="filters.kind"><option value="">{{ $t('common.all') }}</option><option value="swap">{{ $t('records.filterKinds.swap') }}</option><option value="cover">{{ $t('records.filterKinds.cover') }}</option><option value="manual">{{ $t('records.filterKinds.manual') }}</option></select></label>
-        <div class="filter-actions"><Button type="button" :label="$t('records.reset')" text @click="resetFilters" /><Button type="submit" :label="$t('records.apply')" /></div>
+        <div class="filter-actions"><Button type="button" :label="$t('records.reset')" text :disabled="loading" @click="resetFilters" /><Button type="submit" :label="$t('records.apply')" :loading="loading" :disabled="loading" /></div>
       </form>
 
       <div class="result-bar">
         <strong>{{ $t('records.resultCount', { count: records.total }) }}</strong>
-        <span>{{ $t('records.resultHint') }}</span>
       </div>
 
       <Transition name="motion-fade" mode="out-in">
-      <div v-if="loading" key="loading" class="empty-state">{{ $t('common.loading') }}</div>
+      <div v-if="loading" key="loading" class="empty-state" role="status">{{ $t('common.loading') }}</div>
       <div v-else-if="!records.items.length" class="empty-state">{{ $t('records.empty') }}</div>
-      <div v-else class="records-table-wrap">
-        <table class="records-table">
-          <thead><tr><th>{{ $t('records.columns.date') }}</th><th>{{ $t('records.columns.teacher') }}</th><th>{{ $t('records.columns.periods') }}</th><th>{{ $t('records.columns.arrangements') }}</th><th>{{ $t('records.columns.status') }}</th><th><span class="sr-only">{{ $t('common.actions') }}</span></th></tr></thead>
-          <TransitionGroup name="motion-list" tag="tbody">
-            <tr v-for="record in records.items" :key="record.id">
-              <td><strong>{{ formatDate(record.date) }}</strong></td>
-              <td>{{ record.teacher_name || $t('records.manual') }}</td>
-              <td>{{ periodsLabel(record) }}</td>
-              <td>{{ arrangementSummary(record) }}</td>
-              <td><span :class="['status', record.needs_review ? 'needs-review' : record.status]">{{ record.needs_review ? $t('records.needsReview') : statusLabel(record.status) }}</span></td>
-              <td class="row-action"><Button :label="$t('records.view')" text size="small" @click="openDetail(record)" /></td>
-            </tr>
-          </TransitionGroup>
-        </table>
+      <div v-else class="record-groups">
+        <section v-for="group in groupedRecords" :key="group.date" class="date-group" :aria-labelledby="`records-date-${group.date}`">
+          <h3 :id="`records-date-${group.date}`"><time :datetime="group.date">{{ formatDate(group.date) }}</time></h3>
+          <ul class="records-list">
+            <li v-for="record in group.items" :key="record.id" class="record-row">
+              <strong class="record-teacher"><span class="sr-only">{{ $t('records.columns.teacher') }}: </span>{{ record.teacher_name || $t('records.manual') }}</strong>
+              <div class="record-periods"><span class="sr-only">{{ $t('records.columns.periods') }}: </span><span class="period-chip">{{ periodsLabel(record) }}</span></div>
+              <span class="record-summary">{{ arrangementSummary(record) }}</span>
+              <span :class="['status', record.needs_review ? 'needs-review' : record.status]">{{ record.needs_review ? $t('records.needsReview') : statusLabel(record.status) }}</span>
+              <div class="row-action"><Button :label="$t('records.view')" :aria-label="`${$t('records.view')} · ${record.teacher_name || $t('records.manual')} · ${formatDate(record.date)}`" text size="small" @click="openDetail(record)" /></div>
+            </li>
+          </ul>
+        </section>
       </div>
       </Transition>
 
-      <div v-if="records.total" class="pagination">
+      <div v-if="records.pages > 1" class="pagination">
         <Button :label="$t('records.previous')" text :disabled="records.page <= 1" @click="loadRecords(records.page - 1)" />
         <span>{{ $t('records.page', { page: records.page, pages: records.pages, total: records.total }) }}</span>
         <Button :label="$t('records.next')" text :disabled="records.page >= records.pages" @click="loadRecords(records.page + 1)" />
@@ -129,7 +127,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Button from 'primevue/button'
@@ -140,6 +138,14 @@ const emit = defineEmits(['resume-absence'])
 const { t, locale } = useI18n()
 const filters = reactive({ q: '', date_from: '', date_to: '', status: '', kind: '' })
 const records = ref({ page: 1, pages: 1, total: 0, items: [] })
+const groupedRecords = computed(() => {
+  const groups = new Map()
+  for (const record of records.value.items) {
+    if (!groups.has(record.date)) groups.set(record.date, [])
+    groups.get(record.date).push(record)
+  }
+  return Array.from(groups, ([date, items]) => ({ date, items }))
+})
 const loading = ref(false)
 const detailVisible = ref(false)
 const selectedRecord = ref(null)
@@ -155,9 +161,19 @@ const statusLabel = (value) => t(`records.statuses.${value}`, value)
 const kindLabel = (value) => t(`records.kinds.${value}`, value)
 const executionStateLabel = (value) => t(`records.executionStates.${value}`, value)
 const joinItems = (items) => items.join(locale.value === 'en' ? ', ' : '、')
-const periodsLabel = (record) => record.periods.length === 9
-  ? t('rescheduling.allDay')
-  : joinItems(record.periods.map(period => t('records.period', { period })))
+const periodsLabel = (record) => {
+  const periods = [...new Set(record.periods)].sort((a, b) => a - b)
+  if (periods.length === 9) return t('rescheduling.allDay')
+  const ranges = []
+  for (const period of periods) {
+    const previous = ranges.at(-1)
+    if (previous && period === previous[1] + 1) previous[1] = period
+    else ranges.push([period, period])
+  }
+  return joinItems(ranges.map(([start, end]) => start === end
+    ? t('records.period', { period: start })
+    : t('records.periodRange', { start, end }))) || '—'
+}
 const arrangementSummary = (record) => record.adjustments.length
   ? t('records.arrangementCount', { count: record.adjustments.length })
   : t('records.noAdjustmentShort')
@@ -244,24 +260,41 @@ onMounted(loadRecords)
 <style scoped>
 .records-page { display: grid; gap: 1.25rem; color: var(--text-color-primary); }
 .page-heading h2 { margin: 0 0 .35rem; font-size: clamp(1.65rem, 3vw, 2.15rem); line-height: 1.15; letter-spacing: -.035em; }
-.page-heading p, .muted, .result-bar span, .detail-heading p, .detail-title span { color: var(--text-color-secondary); }
-.panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: var(--radius-lg); background: var(--card-background); box-shadow: var(--shadow-panel); }
-.record-filters { display: grid; grid-template-columns: minmax(210px, 1.4fr) repeat(4, minmax(130px, .75fr)) auto; align-items: end; gap: .75rem; }
-.record-filters label { display: flex; min-width: 0; flex-direction: column; gap: .35rem; color: #344054; font-size: var(--font-ui); font-weight: 650; }
+.page-heading p, .muted, .detail-heading p, .detail-title span { color: var(--text-color-secondary); }
+.page-heading p { font-size: var(--font-ui); }
+.panel { min-width: 0; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--card-background); }
+.record-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: end; gap: .9rem 1.25rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border-color); }
+.record-filters label { display: flex; min-width: 0; flex-direction: column; gap: .35rem; color: var(--text-color-secondary); font-size: var(--font-ui); font-weight: 500; }
 .record-filters input, .record-filters select, .record-edit select, .record-edit input[type=date], .record-edit input[type=text] { width: 100%; min-height: 2.5rem; padding: .55rem .65rem; border: 1px solid #cfd6df; border-radius: 6px; background: #fff; color: var(--text-color-primary); }
-.filter-actions { display: flex; align-items: center; gap: .25rem; }
-.result-bar { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin: 1.2rem 0 .6rem; font-size: var(--font-ui); }
-.records-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; }
-.records-table { width: 100%; min-width: 900px; border-collapse: collapse; }
-.records-table th, .records-table td { padding: .75rem; border-bottom: 1px solid #edf0f3; text-align: left; font-size: var(--font-data); }
-.records-table th { background: var(--surface-soft); color: #526071; font-weight: 700; }
-.records-table tbody tr:last-child td { border-bottom: 0; }
-.records-table tbody tr:hover { background: #fbfcfe; }
-.row-action { width: 1%; text-align: right !important; white-space: nowrap; }
+.record-filters input, .record-filters select { min-width: 0; min-height: 2.75rem; font: inherit; }
+.record-filters input:focus-visible, .record-filters select:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.search-field { grid-column: span 2; }
+.search-input { position: relative; display: flex; }
+.search-input i { position: absolute; top: 50%; left: .8rem; transform: translateY(-50%); pointer-events: none; }
+.search-input input { padding-left: 2.3rem; }
+.filter-actions { display: flex; grid-column: span 2; align-items: center; justify-content: flex-end; gap: .5rem; }
+.filter-actions :deep(.p-button) { min-height: 2.75rem; font-size: var(--font-ui); }
+.result-bar { margin: 1rem 0; font-size: var(--font-ui); }
+.result-bar strong { font-weight: 600; }
+.record-groups { position: relative; display: grid; gap: 1.15rem; padding-left: 1.4rem; }
+.record-groups::before { content: ''; position: absolute; top: .75rem; bottom: 1rem; left: .3rem; width: 1px; background: var(--border-color); }
+.date-group { min-width: 0; }
+.date-group h3 { position: relative; margin: 0 0 .45rem; font-size: var(--font-data); font-weight: 650; font-variant-numeric: tabular-nums; }
+.date-group h3::before { content: ''; position: absolute; top: .5em; left: -1.4rem; width: .65rem; height: .65rem; border: 2px solid var(--border-strong); border-radius: 50%; background: var(--card-background); }
+.records-list { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border-color); border-radius: var(--radius-sm); overflow: hidden; }
+.record-row { display: grid; grid-template-columns: minmax(6rem, 1.15fr) minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto; align-items: center; gap: .6rem 1rem; padding: .5rem .85rem; font-size: var(--font-data); }
+.record-row + .record-row { border-top: 1px solid var(--border-color); }
+.record-row:hover, .record-row:focus-within { background: var(--surface-soft); }
+.record-row > * { min-width: 0; overflow-wrap: anywhere; }
+.record-teacher { font-weight: 600; }
+.record-periods .period-chip { display: inline-block; white-space: normal; background: #edf6f8; color: #285666; }
+.row-action { justify-self: end; }
 .status { display: inline-flex; align-items: center; padding: .24rem .52rem; border-radius: 999px; background: #eef1f4; color: #596476; font-size: var(--font-supporting); white-space: nowrap; }
 .status.resolved, .status.confirmed { background: #e4f5e9; color: #216a42; }
 .status.open { background: #fff4d6; color: #84590e; }
 .status.needs-review { background: #fff0d5; color: #8a4f08; }
+.record-row .status { gap: .45rem; padding: 0; border-radius: 0; background: transparent; white-space: normal; }
+.record-row .status::before { content: ''; flex-shrink: 0; width: .4rem; height: .4rem; border-radius: 50%; background: currentColor; }
 .empty-state { display: grid; min-height: 140px; place-items: center; border: 1px dashed var(--border-strong); border-radius: var(--radius-md); background: rgba(245, 247, 248, .72); color: var(--text-color-secondary); }
 .pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; color: var(--text-color-secondary); font-size: var(--font-ui); }
 :global(.records-sidebar .p-sidebar-header) { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border-color); }
@@ -308,6 +341,20 @@ onMounted(loadRecords)
 .edit-actions { justify-content: flex-end; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
-@media (max-width: 1100px) { .record-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); } .filter-actions { justify-content: flex-end; } }
-@media (max-width: 720px) { .panel { padding: 1rem; } .record-filters { grid-template-columns: 1fr; } .filter-actions { justify-content: flex-end; } .result-bar { align-items: flex-start; flex-direction: column; } :global(.records-sidebar .p-sidebar-header) { padding: 1rem; } .detail-workspace { grid-template-columns: 1fr; padding: 1rem; } .detail-section { min-height: auto; } .arrangement-empty { min-height: 16rem; } .admin-actions { padding: .85rem 1rem; } .record-edit { grid-template-columns: 1fr; margin: 1rem; } .leg { grid-template-columns: 1fr; } .leg b { text-align: left; } .pagination { justify-content: space-between; gap: .25rem; } }
+@media (max-width: 1100px) {
+  .record-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .record-row { grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; padding: .85rem; }
+  .record-teacher { grid-area: 1 / 1; }
+  .record-row .status { grid-area: 1 / 2; }
+  .record-periods { grid-area: 2 / 1; }
+  .record-summary { grid-area: 3 / 1; }
+  .row-action { grid-area: 2 / 2 / 4 / 3; align-self: end; }
+}
+@media (max-width: 600px) {
+  .record-filters { grid-template-columns: minmax(0, 1fr); }
+  .search-field, .filter-actions { grid-column: auto; }
+}
+@media (max-width: 720px) { .panel { padding: 1rem; } :global(.records-sidebar .p-sidebar-header) { padding: 1rem; } .detail-workspace { grid-template-columns: 1fr; padding: 1rem; } .detail-section { min-height: auto; } .arrangement-empty { min-height: 16rem; } .admin-actions { padding: .85rem 1rem; } .record-edit { grid-template-columns: 1fr; margin: 1rem; } .leg { grid-template-columns: 1fr; } .leg b { text-align: left; } .pagination { justify-content: space-between; gap: .25rem; } }
 </style>

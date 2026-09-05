@@ -107,14 +107,14 @@
     }
   },
   "records": {
-    "eyebrow": "調課檔案", "title": "調課記錄", "description": "查詢缺席個案及相關調課安排；新增及處理工作繼續在調課工作臺進行。",
+    "eyebrow": "調課檔案", "title": "調課記錄", "description": "查詢缺席個案及調課安排。",
     "search": "搜尋", "searchPlaceholder": "老師、班別或科目", "dateFrom": "開始日期", "dateTo": "結束日期", "status": "狀態", "type": "類型", "apply": "查詢", "reset": "重設",
     "filterStatuses": { "open": "待處理", "completed": "已安排" }, "filterKinds": { "swap": "互調", "cover": "代課", "manual": "人工調課" },
     "columns": { "date": "日期", "teacher": "缺席老師", "periods": "缺席節次", "arrangements": "安排摘要", "status": "狀態" },
     "resultCount": "共 {count} 項", "resultHint": "按「查看」開啟完整資料；如有權限，亦可使用管理操作。", "view": "查看", "empty": "沒有符合條件的調課記錄。",
     "absenceDetails": "缺席資料", "arrangementDetails": "調課／代課安排", "createdByLabel": "建立者", "editAbsence": "修改缺席", "arrangementCount": "{count} 個安排", "noAdjustmentShort": "尚未安排",
     "today": "香港今日：{date}", "scopes": { "future": "未來", "today": "今日", "past": "過往" },
-    "manual": "人工互調", "period": "第 {period} 節", "createdBy": "建立者：{user}", "noAdjustment": "尚未確認任何調課安排。",
+    "manual": "人工互調", "period": "第 {period} 節", "periodRange": "第 {start}–{end} 節", "createdBy": "建立者：{user}", "noAdjustment": "尚未確認任何調課安排。",
     "previous": "上一頁", "next": "下一頁", "page": "第 {page}／{pages} 頁，共 {total} 項", "resume": "繼續處理",
     "statuses": { "open": "待處理", "resolved": "已安排", "cancelled": "已取消", "confirmed": "已確認", "reverted": "已撤銷" }, "needsReview": "需覆核",
     "confirmedIdentityLocked": "這項缺席已有已確認安排，不能更改老師或日期；可新增缺席節次，但要移除已安排的節次，須先撤銷相關安排。", "deleteAbsenceConfirm": "完整刪除此缺席及其所有調課記錄？", "reselectArrangement": "重新挑選方案", "reselectArrangementConfirm": "重新挑選這項尚未開始的安排？原安排會撤銷並保留歷史記錄。", "revertAdjustment": "撤銷安排", "revertAdjustmentConfirm": "撤銷這項尚未開始的安排？歷史記錄會保留。", "cannotRevertStarted": "相關節次已開始、已過去或已有後續安排，不能直接撤銷。", "executionStates": { "pending": "尚未開始", "partial": "部分已執行", "completed": "已執行" },
@@ -148,7 +148,8 @@
   },
   "statistics": {
     "title": "統計", "description": "按所選日期範圍查看每位老師參與代課及互調課堂的次數。",
-    "matrixTitle": "教師月份統計", "matrixHint": "只計已確認且未撤銷的安排。", "startDate": "開始日期", "endDate": "結束日期", "apply": "查詢", "teacher": "老師", "total": "合計", "invalidRange": "結束日期不可早於開始日期。", "loadError": "載入統計失敗。"
+    "matrixTitle": "教師月份統計", "matrixHint": "按月查看代課及互調次數，只計已確認且未撤銷的安排。", "startDate": "開始日期", "endDate": "結束日期", "apply": "查詢", "teacher": "老師", "total": "合計", "invalidRange": "結束日期不可早於開始日期。", "loadError": "載入統計失敗。",
+    "search": "搜尋老師", "searchPlaceholder": "輸入老師姓名…", "clearSearch": "清除搜尋", "showAllMonths": "顯示全部月份", "teacherCount": "共 {count} 位老師", "filteredCount": "顯示 {count} / {total} 位老師", "noResults": "找不到符合「{query}」的老師。"
   },
   "settings": {
     "title": "配置", "description": "管理假期、調課及導出所使用的設定。",
@@ -161,6 +162,37 @@
     }
   },
   "importCenter": {
+    "versionsSummary": "按分組整理課表，點選「編輯」調整日期與特殊課程。",
+    "timetable": "課表",
+    "collapse": "收起",
+    "details": "查看詳情",
+    "editTimetable": "編輯課表",
+    "moreRanges": "另有 {count} 個時段",
+    "noLinkedRecords": "無相關記錄",
+    "linkedDeleteHint": "已有相關記錄，不可刪除",
+    "versionSaveFailed": "無法儲存課表，修改已保留，請重試。",
+    "groups": {
+      "title": "分組",
+      "all": "全部課表",
+      "ungrouped": "未分組",
+      "add": "新增分組",
+      "create": "建立分組",
+      "dialogIntro": "按學年或用途整理，讓課表更容易找到。",
+      "rename": "重新命名",
+      "name": "分組名稱",
+      "placeholder": "例如：2026–2027 學年",
+      "nameHint": "可將已匯入的課表拖入分組，課表的適用日期維持不變。",
+      "count": "{count} 份課表",
+      "hint": "拖曳課表旁的把手至分組，或使用「移至分組」。",
+      "dropHint": "放開即可移入分組，適用日期維持不變。",
+      "drag": "拖曳課表至分組",
+      "move": "移至分組",
+      "moveVersion": "將 {name} 移至分組",
+      "empty": "此分組尚未有課表，可從其他分組移入。",
+      "moved": "課表已移至「{name}」。",
+      "saveFailed": "無法儲存分組，請重試。",
+      "moveFailed": "無法移動課表，請重試。"
+    },
     "effectiveRanges": "適用時段",
     "rangesHint": "同一份試後課表會套用至以下所有時段。",
     "rangeNumber": "時段 {count}",

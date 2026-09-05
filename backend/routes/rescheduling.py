@@ -25,6 +25,7 @@ from models import (
     ScheduleAdjustmentLeg,
     ScheduleAudit,
     SchoolClosure,
+    TimetableGroup,
     TimetableImportPreview,
     TimetableLesson,
     TimetableTeacherSlot,
@@ -70,6 +71,21 @@ MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 class CalendarClosureInput(BaseModel):
     date: date
     note: Optional[str] = Field(default=None, max_length=500)
+
+
+class TimetableGroupRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+    @model_validator(mode="after")
+    def validate_name(self):
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("請填寫分組名稱")
+        return self
+
+
+class MoveTimetableGroupRequest(BaseModel):
+    group_id: Optional[int] = Field(..., gt=0)
 
 
 class TimetableDateRange(BaseModel):
@@ -406,6 +422,76 @@ def _mark_special_adjustments_for_review(db: Session, version: TimetableVersion,
     return marked
 
 
+@router.get("/api/timetable-groups")
+def list_timetable_groups(
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_any_permission("workbench.view", "timetable.upload", "timetable.manage")),
+):
+    return [{"id": group.id, "name": group.name}
+            for group in db.query(TimetableGroup).order_by(TimetableGroup.name.desc(), TimetableGroup.id.desc()).all()]
+
+
+@router.post("/api/timetable-groups")
+def create_timetable_group(
+    request: TimetableGroupRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("timetable.manage")),
+):
+    group = TimetableGroup(name=request.name)
+    db.add(group)
+    try:
+        db.flush()
+        _audit(db, "create", "timetable_group", group.id, current_user.username, {"name": group.name})
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "已有同名分組，請使用另一個名稱")
+    return {"id": group.id, "name": group.name}
+
+
+@router.put("/api/timetable-groups/{group_id}")
+def rename_timetable_group(
+    group_id: int,
+    request: TimetableGroupRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("timetable.manage")),
+):
+    group = db.get(TimetableGroup, group_id)
+    if not group:
+        raise HTTPException(404, "找不到分組")
+    old_name = group.name
+    group.name = request.name
+    try:
+        db.flush()
+        _audit(db, "update", "timetable_group", group.id, current_user.username,
+               {"old_name": old_name, "name": group.name})
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "已有同名分組，請使用另一個名稱")
+    return {"id": group.id, "name": group.name}
+
+
+@router.put("/api/timetables/{version_id}/group")
+def move_timetable_group(
+    version_id: int,
+    request: MoveTimetableGroupRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("timetable.manage")),
+):
+    version = db.get(TimetableVersion, version_id)
+    if not version:
+        raise HTTPException(404, "找不到課表版本")
+    if request.group_id is not None and not db.get(TimetableGroup, request.group_id):
+        raise HTTPException(404, "找不到分組")
+    old_group_id = version.group_id
+    version.group_id = request.group_id
+    _audit(db, "update", "timetable_group_membership", version.id, current_user.username,
+           {"old_group_id": old_group_id, "group_id": version.group_id})
+    db.commit()
+    return {"id": version.id, "group_id": version.group_id}
+
+
 @router.get("/api/timetables")
 def list_timetable_versions(
     db: Session = Depends(get_db),
@@ -422,6 +508,7 @@ def list_timetable_versions(
         lessons = db.query(TimetableLesson).filter_by(version_id=version.id).all()
         rows.append({
             "id": version.id,
+            "group_id": version.group_id,
             "effective_from": version.effective_from.isoformat(),
             "effective_to": version.effective_to.isoformat() if version.effective_to else None,
             "effective_ranges": serialize_ranges(version_ranges(version)),

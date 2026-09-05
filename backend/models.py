@@ -463,6 +463,13 @@ class ExamSchedule(Base):
 # 基礎課表與已確認調動分開保存；任何日期的「有效課表」都由兩者疊加得出。
 
 
+class TimetableGroup(Base):
+    __tablename__ = 'timetable_groups'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(80), nullable=False, unique=True)
+
+
 class TimetableVersion(Base):
     __tablename__ = 'timetable_versions'
 
@@ -470,6 +477,7 @@ class TimetableVersion(Base):
     effective_from = Column(Date, nullable=False)
     effective_to = Column(Date)
     effective_ranges_json = Column(Text)
+    group_id = Column(Integer, ForeignKey('timetable_groups.id'))
     class_filename = Column(String, nullable=False)
     teacher_filename = Column(String, nullable=False)
     resolutions_json = Column(Text)

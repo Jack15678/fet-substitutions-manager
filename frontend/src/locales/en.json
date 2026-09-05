@@ -1754,7 +1754,7 @@
   "records": {
     "eyebrow": "Rescheduling archive",
     "title": "Rescheduling records",
-    "description": "Find absence cases and their arrangements; add and handle cases in the rescheduling workbench.",
+    "description": "Find absence cases and their rescheduling arrangements.",
     "search": "Search", "searchPlaceholder": "Teacher, class or subject", "dateFrom": "From", "dateTo": "To", "status": "Status", "type": "Type", "apply": "Search", "reset": "Reset",
     "filterStatuses": { "open": "Pending", "completed": "Arranged" }, "filterKinds": { "swap": "Swap", "cover": "Cover", "manual": "Manual adjustment" },
     "columns": { "date": "Date", "teacher": "Absent teacher", "periods": "Absent periods", "arrangements": "Arrangement summary", "status": "Status" },
@@ -1764,6 +1764,7 @@
     "scopes": { "future": "Future", "today": "Today", "past": "Past" },
     "manual": "Manual swap",
     "period": "Period {period}",
+    "periodRange": "Periods {start}–{end}",
     "createdBy": "Created by: {user}",
     "noAdjustment": "No rescheduling arrangement has been confirmed.",
     "previous": "Previous",
@@ -1804,7 +1805,8 @@
   },
   "statistics": {
     "title": "Statistics", "description": "Review each teacher's confirmed covers and lesson-swap participation in the selected date range.",
-    "matrixTitle": "Monthly teacher totals", "matrixHint": "Only confirmed, non-reverted arrangements are counted.", "startDate": "Start date", "endDate": "End date", "apply": "Search", "teacher": "Teacher", "total": "Total", "invalidRange": "The end date cannot be earlier than the start date.", "loadError": "Could not load statistics."
+    "matrixTitle": "Monthly teacher totals", "matrixHint": "Monthly covers and lesson swaps. Only confirmed, non-reverted arrangements are counted.", "startDate": "Start date", "endDate": "End date", "apply": "Apply", "teacher": "Teacher", "total": "Total", "invalidRange": "The end date cannot be earlier than the start date.", "loadError": "Could not load statistics.",
+    "search": "Search teachers", "searchPlaceholder": "Enter a teacher's name…", "clearSearch": "Clear search", "showAllMonths": "Show all months", "teacherCount": "Teachers: {count}", "filteredCount": "Showing {count} / {total} teachers", "noResults": "No teachers match “{query}”."
   },
   "settings": {
     "title": "Configuration", "description": "Manage holiday, rescheduling and export settings.",
@@ -1817,6 +1819,37 @@
     }
   },
   "importCenter": {
+    "versionsSummary": "Organize timetables by group. Choose Edit to adjust dates and special subjects.",
+    "timetable": "Timetable",
+    "collapse": "Collapse",
+    "details": "View details",
+    "editTimetable": "Edit timetable",
+    "moreRanges": "{count} more periods",
+    "noLinkedRecords": "No linked records",
+    "linkedDeleteHint": "Linked records prevent deletion",
+    "versionSaveFailed": "Could not save the timetable. Your changes are kept; please try again.",
+    "groups": {
+      "title": "Groups",
+      "all": "All timetables",
+      "ungrouped": "Ungrouped",
+      "add": "New group",
+      "create": "Create group",
+      "dialogIntro": "Organize timetables by school year or purpose.",
+      "rename": "Rename",
+      "name": "Group name",
+      "placeholder": "e.g. 2026–2027 school year",
+      "nameHint": "Drag imported timetables into a group. Their applicable dates stay the same.",
+      "count": "{count} timetables",
+      "hint": "Drag a timetable handle to a group, or use “Move to group”.",
+      "dropHint": "Drop to move into this group. Applicable dates stay the same.",
+      "drag": "Drag timetable to a group",
+      "move": "Move to group",
+      "moveVersion": "Move {name} to a group",
+      "empty": "This group is empty. Move a timetable here from another group.",
+      "moved": "Timetable moved to “{name}”.",
+      "saveFailed": "Could not save the group. Please try again.",
+      "moveFailed": "Could not move the timetable. Please try again."
+    },
     "effectiveRanges": "Effective periods",
     "rangesHint": "The same post-exam timetable applies to every period below.",
     "rangeNumber": "Period {count}",
