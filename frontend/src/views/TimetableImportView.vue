@@ -10,7 +10,7 @@
 
     <section class="panel import-panel">
       <h3>{{ $t('importCenter.baseTitle') }}</h3>
-      <div v-if="can('timetable.upload')" class="import-steps">
+      <div v-if="can('timetable.upload')" class="import-steps" :class="{ 'post-exam-steps': scheduleType === 'post_exam' }">
         <fieldset class="import-step">
           <legend><span class="step-number">1</span>{{ $t('importCenter.scheduleType') }}</legend>
           <div class="step-card type-card">
@@ -54,17 +54,20 @@
         </fieldset>
 
         <fieldset class="import-step">
-          <legend><span class="step-number">3</span>{{ $t('importCenter.setDates') }}</legend>
+          <legend><span class="step-number">3</span>{{ $t(scheduleType === 'post_exam' ? 'importCenter.effectiveRanges' : 'importCenter.setDates') }}</legend>
           <div class="step-card date-fields">
+            <TimetableRangeEditor v-if="scheduleType === 'post_exam'" v-model="effectiveRanges" :disabled="busy === 'activate'" />
+            <template v-else>
             <label>{{ $t('importCenter.effectiveFrom') }}<input v-model="effectiveFrom" type="date" /></label>
             <label>{{ $t('importCenter.effectiveTo') }}<input v-model="effectiveTo" type="date" /></label>
+            </template>
           </div>
         </fieldset>
       </div>
       <div class="import-footer">
         <p v-if="timetable.active" class="current-files"><i class="pi pi-info-circle" aria-hidden="true"></i>{{ $t('importCenter.currentFiles', { date: timetable.query_date, classFile: timetable.class_filename, teacherFile: timetable.teacher_filename }) }}</p>
         <p v-else class="notice warning">{{ $t('importCenter.noCurrent') }}</p>
-        <Button v-if="can('timetable.upload')" :label="$t('importCenter.check')" icon="pi pi-search" class="progress-fill-button" :class="{ 'is-progressing': busy === 'preview' }" :loading="busy === 'preview'" :disabled="!filesReady || (!calendarFile && (!effectiveFrom || !effectiveTo))" @click="previewImport" />
+        <Button v-if="can('timetable.upload')" :label="$t('importCenter.check')" icon="pi pi-search" class="progress-fill-button" :class="{ 'is-progressing': busy === 'preview' }" :loading="busy === 'preview'" :disabled="!filesReady || (!calendarFile && !importDatesValid)" @click="previewImport" />
       </div>
     </section>
 
@@ -79,11 +82,17 @@
             <tr v-for="version in versions" :key="version.id" :class="{ 'version-dirty': versionChanged(version) }">
               <td class="version-range-cell">
                 <div class="version-range-editor">
+                  <template v-if="version.post_exam">
+                    <strong class="range-title">{{ $t('importCenter.postExamRanges', { count: version.draft_effective_ranges.length }) }}</strong>
+                    <TimetableRangeEditor v-model="version.draft_effective_ranges" :disabled="!can('timetable.manage') || busy === `version-${version.id}`" @update:model-value="message = ''" />
+                  </template>
+                  <template v-else>
                   <label><span>{{ $t('importCenter.startDate') }}</span><input v-model="version.draft_effective_from" type="date" :disabled="!can('timetable.manage')" @input="message = ''" /></label>
                   <label><span>{{ $t('importCenter.endDate') }}</span><input v-model="version.draft_effective_to" type="date" :disabled="!can('timetable.manage')" @input="message = ''" /></label>
+                  </template>
                   <div v-if="can('timetable.manage') && versionChanged(version)" class="version-date-actions">
                     <span class="status unsaved">{{ $t('importCenter.unsaved') }}</span>
-                    <Button :label="$t('importCenter.saveChanges')" size="small" :loading="busy === `version-${version.id}`" :disabled="!version.draft_effective_from || !version.draft_effective_to" @click="saveVersion(version)" />
+                    <Button :label="$t('importCenter.saveChanges')" size="small" :loading="busy === `version-${version.id}`" :disabled="!rangesValid(versionDraftRanges(version))" @click="saveVersion(version)" />
                     <Button :label="$t('importCenter.cancelChanges')" size="small" text :disabled="busy === `version-${version.id}`" @click="resetVersion(version)" />
                   </div>
                 </div>
@@ -124,8 +133,12 @@
           <div><h3>{{ $t('importCenter.resultTitle') }}</h3><p class="muted">{{ $t('importCenter.resultHint') }}</p></div>
           <div class="result-actions">
             <Button v-if="can('timetable.upload')" :label="$t('importCenter.cancelUpload')" severity="danger" text :loading="busy === 'discard'" @click="discardPreview" />
-            <Button v-if="can('timetable.manage')" :label="$t('importCenter.activate')" icon="pi pi-check" severity="success" :loading="busy === 'activate'" :disabled="hasErrors || hasUnresolvedReviews || calendarNeedsReview || !effectiveFrom || !effectiveTo" @click="activateImport" />
+            <Button v-if="can('timetable.manage')" :label="$t('importCenter.activate')" icon="pi pi-check" severity="success" :loading="busy === 'activate'" :disabled="hasErrors || hasUnresolvedReviews || calendarNeedsReview || !importDatesValid" @click="activateImport" />
           </div>
+        </div>
+        <div v-if="scheduleType === 'post_exam'" class="preview-ranges">
+          <strong>{{ $t('importCenter.effectiveRanges') }}</strong>
+          <ul><li v-for="(range, index) in sortedRanges(effectiveRanges)" :key="index">{{ range.effective_from || '—' }} → {{ range.effective_to || '—' }}</li></ul>
         </div>
         <div v-if="preview.calendar" :class="['calendar-review-status', { confirmed: calendarSelection }]">
           <i :class="calendarSelection ? 'pi pi-check-circle' : 'pi pi-calendar'" aria-hidden="true"></i>
@@ -217,6 +230,8 @@ import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Button from 'primevue/button'
 import CalendarImportPreviewDialog from '../components/CalendarImportPreviewDialog.vue'
+import TimetableRangeEditor from '../components/TimetableRangeEditor.vue'
+import { rangesValid, sortedRanges } from '../components/timetableRanges'
 
 const { t } = useI18n()
 defineProps({ can: { type: Function, required: true }, isAdmin: { type: Boolean, default: false } })
@@ -229,6 +244,11 @@ const teacherFile = ref(null)
 const calendarFile = ref(null)
 const effectiveFrom = ref('')
 const effectiveTo = ref('')
+const effectiveRanges = ref([{ effective_from: '', effective_to: '' }])
+const importRanges = computed(() => scheduleType.value === 'post_exam' ? effectiveRanges.value
+  : [{ effective_from: effectiveFrom.value, effective_to: effectiveTo.value }])
+const importDatesValid = computed(() => rangesValid(importRanges.value))
+const rangesText = (ranges) => sortedRanges(ranges).map(range => `${range.effective_from} → ${range.effective_to}`).join('；')
 const preview = ref(null)
 const calendarDialogVisible = ref(false)
 const calendarSelection = ref(null)
@@ -275,14 +295,16 @@ const canConfirmSelected = computed(() => selectedReviewIds.value.length > 0
   && selectedReviewIds.value.every(id => resolutions.value[id])
   && selectedReviewIds.value.some(id => savedResolutions.value[id] !== resolutions.value[id]))
 const sameItems = (left, right) => left.length === right.length && left.every(item => right.includes(item))
-const versionChanged = (version) => version.draft_effective_from !== version.effective_from
-  || version.draft_effective_to !== version.effective_to
+const versionDraftRanges = (version) => version.post_exam ? version.draft_effective_ranges
+  : [{ effective_from: version.draft_effective_from, effective_to: version.draft_effective_to }]
+const versionChanged = (version) => JSON.stringify(sortedRanges(versionDraftRanges(version))) !== JSON.stringify(sortedRanges(version.effective_ranges))
   || !sameItems(version.draft_special_subjects, version.special_subjects)
 const hasUnsavedVersions = computed(() => versions.value.some(versionChanged))
 
 const resetVersion = (version) => {
   version.draft_effective_from = version.effective_from
   version.draft_effective_to = version.effective_to || ''
+  version.draft_effective_ranges = version.effective_ranges.map(range => ({ ...range }))
   version.draft_special_subjects = [...version.special_subjects]
 }
 const resetAllVersions = () => versions.value.forEach(resetVersion)
@@ -327,20 +349,26 @@ const loadCurrent = async () => {
     axios.get('/api/timetables/current'), axios.get('/api/timetables')
   ])
   timetable.value = currentResponse.data
-  versions.value = versionsResponse.data.map(version => ({
-    ...version, draft_effective_from: version.effective_from, draft_effective_to: version.effective_to || '',
-    draft_special_subjects: [...version.special_subjects]
-  }))
+  versions.value = versionsResponse.data.map(version => {
+    const row = {
+      ...version,
+      effective_ranges: (version.effective_ranges || [{ effective_from: version.effective_from, effective_to: version.effective_to }])
+        .map(range => ({ ...range, effective_to: range.effective_to || '' }))
+    }
+    resetVersion(row)
+    return row
+  })
 }
 
 const saveVersion = async (version) => {
   busy.value = `version-${version.id}`; message.value = ''
   try {
     await axios.put(`/api/timetables/${version.id}`, {
-      effective_from: version.draft_effective_from, effective_to: version.draft_effective_to,
+      ...(version.post_exam ? { effective_ranges: sortedRanges(version.draft_effective_ranges) }
+        : { effective_from: version.draft_effective_from, effective_to: version.draft_effective_to }),
       special_subjects: version.draft_special_subjects
     })
-    message.value = t('importCenter.versionUpdated', {
+    message.value = version.post_exam ? t('importCenter.rangesUpdated', { ranges: rangesText(version.draft_effective_ranges) }) : t('importCenter.versionUpdated', {
       start: version.draft_effective_from, end: version.draft_effective_to
     })
     await loadCurrent()
@@ -348,7 +376,7 @@ const saveVersion = async (version) => {
 }
 
 const removeVersion = async (version) => {
-  if (!window.confirm(t('importCenter.deleteConfirm', { date: version.effective_from }))) return
+  if (!window.confirm(t('importCenter.deleteConfirm', { date: version.post_exam ? rangesText(version.effective_ranges) : version.effective_from }))) return
   await axios.delete(`/api/timetables/${version.id}`)
   message.value = t('importCenter.versionDeleted')
   await loadCurrent()
@@ -376,11 +404,13 @@ const activateImport = async () => {
   busy.value = 'activate'; message.value = ''
   try {
     await axios.post(`/api/timetables/import/${preview.value.preview_id}/activate`, {
-      effective_from: effectiveFrom.value, effective_to: effectiveTo.value,
+      ...(scheduleType.value === 'post_exam' ? { effective_ranges: sortedRanges(effectiveRanges.value) }
+        : { effective_from: effectiveFrom.value, effective_to: effectiveTo.value }),
       resolutions: resolutions.value, special_subjects: specialSubjects.value,
       calendar_closures: calendarSelection.value?.calendar_closures || []
     })
-    message.value = t('importCenter.activated', { start: effectiveFrom.value, end: effectiveTo.value })
+    message.value = scheduleType.value === 'post_exam' ? t('importCenter.rangesActivated', { ranges: rangesText(effectiveRanges.value) })
+      : t('importCenter.activated', { start: effectiveFrom.value, end: effectiveTo.value })
     preview.value = null
     resolutions.value = {}
     savedResolutions.value = {}
@@ -508,9 +538,13 @@ tbody tr:hover { background: #fbfcfe; }
 .file-list { display: flex; flex-direction: column; gap: .2rem; max-width: 260px; }
 .file-list span { overflow: hidden; text-overflow: ellipsis; }
 .version-range-cell { min-width: 430px; }
+.range-title { width: 100%; font-size: var(--font-ui); }
+.preview-ranges { margin-top: 1rem; padding: .8rem 1rem; border-radius: 8px; background: var(--surface-soft); }
+.preview-ranges ul { margin: .4rem 0 0; padding-left: 1.2rem; }
 .version-range-editor { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .55rem; }
 .version-range-editor label { display: grid; gap: .25rem; color: var(--text-color-secondary); font-size: var(--font-supporting); font-weight: 650; }
 .version-range-editor input { width: 165px; }
+.versions-table td { vertical-align: top; }
 .version-date-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; width: 100%; }
 .version-dirty .version-range-cell { background: #fffaf0; box-shadow: inset 3px 0 #d3aa52; }
 .version-specials { margin-top: .35rem; }
@@ -533,6 +567,14 @@ tbody tr:hover { background: #fbfcfe; }
 .danger { background: #fdecea; color: #96382f; }
 .success { background: #ebf8ef; color: #247147; }
 .empty-row { text-align: center; color: var(--text-color-secondary); }
+
+@media (min-width: 1001px) {
+  .post-exam-steps { grid-template-columns: minmax(180px, .72fr) minmax(420px, 1.55fr); }
+  .post-exam-steps .import-step:last-child { grid-column: 1 / -1; }
+  .post-exam-steps .date-fields { height: auto; }
+  .post-exam-steps .date-fields :deep(.range-editor) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .post-exam-steps .date-fields :deep(.range-hint), .post-exam-steps .date-fields :deep(.add-range) { grid-column: 1 / -1; }
+}
 
 @media (max-width: 1000px) {
   .import-steps { grid-template-columns: 1fr; }

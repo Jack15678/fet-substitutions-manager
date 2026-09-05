@@ -469,6 +469,7 @@ class TimetableVersion(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     effective_from = Column(Date, nullable=False)
     effective_to = Column(Date)
+    effective_ranges_json = Column(Text)
     class_filename = Column(String, nullable=False)
     teacher_filename = Column(String, nullable=False)
     resolutions_json = Column(Text)

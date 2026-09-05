@@ -55,6 +55,9 @@ from rescheduling_service import (
     professor_ids_for_version,
     schedule_slot_started,
     version_for_date,
+    version_ranges,
+    serialize_ranges,
+    matching_range_start,
 )
 from time_utils import hong_kong_now, hong_kong_today, utc_iso, utc_now
 from permissions import user_has_permission
@@ -69,17 +72,24 @@ class CalendarClosureInput(BaseModel):
     note: Optional[str] = Field(default=None, max_length=500)
 
 
-class ActivateTimetableRequest(BaseModel):
+class TimetableDateRange(BaseModel):
     effective_from: date
     effective_to: date
+
+
+class ActivateTimetableRequest(BaseModel):
+    effective_from: Optional[date] = None
+    effective_to: Optional[date] = None
+    effective_ranges: Optional[list[TimetableDateRange]] = Field(default=None, min_length=1)
     resolutions: dict[str, Literal["class", "teacher"]] = Field(default_factory=dict)
     special_subjects: list[str] = Field(default_factory=list)
     calendar_closures: list[CalendarClosureInput] = Field(default_factory=list)
 
 
 class UpdateTimetableRequest(BaseModel):
-    effective_from: date
-    effective_to: date
+    effective_from: Optional[date] = None
+    effective_to: Optional[date] = None
+    effective_ranges: Optional[list[TimetableDateRange]] = Field(default=None, min_length=1)
     special_subjects: Optional[list[str]] = None
 
 
@@ -261,6 +271,25 @@ def _serialize_leave(row: ProfessorBaixa, professor_ids: dict[str, int]) -> dict
     }
 
 
+def _request_ranges(request, post_exam: bool, version: TimetableVersion | None = None):
+    if request.effective_ranges is not None:
+        ranges = sorted((row.effective_from, row.effective_to) for row in request.effective_ranges)
+    else:
+        if version and len(version_ranges(version)) > 1:
+            raise HTTPException(409, "此試後課表有多個適用時段，請提交完整時段清單")
+        if request.effective_from is None or request.effective_to is None:
+            raise HTTPException(400, "請填寫開始及結束日期")
+        ranges = [(request.effective_from, request.effective_to)]
+    if not post_exam and len(ranges) > 1:
+        raise HTTPException(400, "只有試後課表可以設定多個適用時段")
+    if any(start > end for start, end in ranges):
+        raise HTTPException(400, "結束日期不可早於開始日期")
+    if any(current[0] <= previous[1] for previous, current in zip(ranges, ranges[1:])):
+        raise HTTPException(400, "同一課表的適用時段不可重疊")
+    request.effective_from, request.effective_to = ranges[0][0], ranges[-1][1]
+    return ranges
+
+
 def _records_in_range(db: Session, start: date, end: date | None) -> tuple[int, set[int]]:
     absences = db.query(AbsenceCase).filter(AbsenceCase.data >= start)
     if end:
@@ -277,7 +306,11 @@ def _records_in_range(db: Session, start: date, end: date | None) -> tuple[int, 
 
 
 def _version_usage(db: Session, version: TimetableVersion) -> tuple[int, int]:
-    absences, adjustment_ids = _records_in_range(db, version.effective_from, version.effective_to)
+    absences, adjustment_ids = 0, set()
+    for start, end in version_ranges(version):
+        count, ids = _records_in_range(db, start, end)
+        absences += count
+        adjustment_ids.update(ids)
     adjustment_ids.update(row[0] for row in
                           db.query(ScheduleAdjustmentLeg.adjustment_id)
                           .join(TimetableLesson, ScheduleAdjustmentLeg.lesson_id == TimetableLesson.id)
@@ -292,21 +325,39 @@ def _overlapping_version(db: Session, start: date, end: date, exclude_id: int | 
     )
     if exclude_id is not None:
         query = query.filter(TimetableVersion.id != exclude_id)
-    return query.first()
+    return next((version for version in query.all()
+                 if any(left <= end and (right is None or right >= start)
+                        for left, right in version_ranges(version))), None)
 
 
 def _version_record_dates(db: Session, version: TimetableVersion) -> set[date]:
+    ranges = version_ranges(version)
     dates = {row[0] for row in db.query(AbsenceCase.data)
              .filter(AbsenceCase.data >= version.effective_from).all()
-             if version.effective_to is None or row[0] <= version.effective_to}
+             if matching_range_start(ranges, row[0]) is not None}
     lesson_ids = {row[0] for row in db.query(TimetableLesson.id).filter_by(version_id=version.id).all()}
     for leg in db.query(ScheduleAdjustmentLeg).all():
         if leg.lesson_id in lesson_ids:
             dates.add(leg.from_date)
         for value in (leg.from_date, leg.to_date):
-            if value >= version.effective_from and (version.effective_to is None or value <= version.effective_to):
+            if matching_range_start(ranges, value) is not None:
                 dates.add(value)
     return dates
+
+
+def _check_added_range_records(db: Session, old_ranges, new_ranges):
+    # Check actual record dates, including both ends of swaps, without filling interval gaps.
+    start, end = new_ranges[0][0], new_ranges[-1][1]
+    dates = {row[0] for row in db.query(AbsenceCase.data)
+             .filter(AbsenceCase.data >= start, AbsenceCase.data <= end).all()}
+    for left, right in db.query(ScheduleAdjustmentLeg.from_date, ScheduleAdjustmentLeg.to_date).filter(
+        or_(ScheduleAdjustmentLeg.from_date.between(start, end),
+            ScheduleAdjustmentLeg.to_date.between(start, end))
+    ).all():
+        dates.update((left, right))
+    if any(matching_range_start(new_ranges, day) is not None
+           and matching_range_start(old_ranges, day) is None for day in dates):
+        raise HTTPException(409, "新增適用時段已有缺席或調課記錄，不能覆蓋")
 
 
 def _mark_latest_version_active(db: Session) -> None:
@@ -373,6 +424,7 @@ def list_timetable_versions(
             "id": version.id,
             "effective_from": version.effective_from.isoformat(),
             "effective_to": version.effective_to.isoformat() if version.effective_to else None,
+            "effective_ranges": serialize_ranges(version_ranges(version)),
             "class_filename": version.class_filename,
             "teacher_filename": version.teacher_filename,
             "post_exam": is_post_exam_version(version),
@@ -402,16 +454,15 @@ def update_timetable_version(
     version = db.get(TimetableVersion, version_id)
     if not version:
         raise HTTPException(404, "找不到課表版本")
-    if request.effective_from > request.effective_to:
-        raise HTTPException(400, "結束日期不可早於開始日期")
+    ranges = _request_ranges(request, is_post_exam_version(version), version)
     lessons = db.query(TimetableLesson).filter_by(version_id=version.id).all()
     current_specials = {lesson.subject for lesson in lessons if lesson.special}
     requested_specials = set(request.special_subjects) if request.special_subjects is not None else current_specials
     available_subjects = {lesson.subject for lesson in lessons}
     if not requested_specials.issubset(available_subjects):
         raise HTTPException(400, "包含課表中不存在的特殊課程")
-    dates_changed = (request.effective_from != version.effective_from
-                     or request.effective_to != version.effective_to)
+    old_ranges = version_ranges(version)
+    dates_changed = ranges != old_ranges
     specials_changed = requested_specials != current_specials
     if not dates_changed and not specials_changed:
         return {"success": True, "revision": get_schedule_revision(db)}
@@ -420,12 +471,15 @@ def update_timetable_version(
         raise HTTPException(409, "課表適用日期與另一個版本重疊")
     if dates_changed:
         record_dates = _version_record_dates(db, version)
-        if any(value < request.effective_from or value > request.effective_to for value in record_dates):
+        if any(matching_range_start(ranges, value) is None for value in record_dates):
             raise HTTPException(409, "新日期範圍未能包含此版本的全部缺席或調課記錄")
+        _check_added_range_records(db, old_ranges, ranges)
     old_range = {"effective_from": version.effective_from.isoformat(),
-                 "effective_to": version.effective_to.isoformat() if version.effective_to else None}
+                 "effective_to": version.effective_to.isoformat() if version.effective_to else None,
+                 "effective_ranges": serialize_ranges(old_ranges)}
     version.effective_from = request.effective_from
     version.effective_to = request.effective_to
+    version.effective_ranges_json = json.dumps(serialize_ranges(ranges)) if is_post_exam_version(version) else None
     for lesson in lessons:
         lesson.special = lesson.subject in requested_specials
     review_required_count = _mark_special_adjustments_for_review(
@@ -436,6 +490,7 @@ def update_timetable_version(
     _audit(db, "update", "timetable_version", version.id, current_user.username,
            {"old": old_range, "effective_from": request.effective_from.isoformat(),
             "effective_to": request.effective_to.isoformat(),
+            "effective_ranges": serialize_ranges(ranges),
             "old_special_subjects": sorted(current_specials),
             "special_subjects": sorted(requested_specials),
             "review_required_count": review_required_count})
@@ -462,7 +517,8 @@ def delete_timetable_version(
     revision = bump_schedule_revision(db)
     _audit(db, "delete", "timetable_version", version_id, current_user.username,
            {"effective_from": version.effective_from.isoformat(),
-            "effective_to": version.effective_to.isoformat() if version.effective_to else None})
+            "effective_to": version.effective_to.isoformat() if version.effective_to else None,
+            "effective_ranges": serialize_ranges(version_ranges(version))})
     db.commit()
     return {"success": True, "revision": revision}
 
@@ -572,17 +628,16 @@ def activate_import(
     special_subjects = set(request.special_subjects)
     if not special_subjects.issubset(available_subjects):
         raise HTTPException(400, "包含課表中不存在的特殊課程")
-    if request.effective_from > request.effective_to:
-        raise HTTPException(400, "結束日期不可早於開始日期")
+    ranges = _request_ranges(request, payload.get("format") == "post_exam")
     if payload.get("format") != "post_exam" and _overlapping_version(
         db, request.effective_from, request.effective_to
     ):
         raise HTTPException(409, "課表適用日期與另一個版本重疊")
-    if any(_records_in_range(db, request.effective_from, request.effective_to)):
-        raise HTTPException(409, "新版本適用日期範圍已有缺席或調課記錄，不能覆蓋")
+    _check_added_range_records(db, [], ranges)
     version = TimetableVersion(
         effective_from=request.effective_from,
         effective_to=request.effective_to,
+        effective_ranges_json=json.dumps(serialize_ranges(ranges)) if payload.get("format") == "post_exam" else None,
         class_filename=preview.class_filename,
         teacher_filename=preview.teacher_filename,
         resolutions_json=json.dumps(resolutions, ensure_ascii=False),
@@ -644,6 +699,7 @@ def activate_import(
     revision = bump_schedule_revision(db)
     audit_detail = {
         **payload["summary"], "resolutions": resolutions,
+        "effective_ranges": serialize_ranges(ranges),
         "special_subjects": sorted(special_subjects),
     }
     if calendar:
@@ -725,6 +781,7 @@ def current_timetable(
         "version_id": version.id,
         "effective_from": version.effective_from.isoformat(),
         "effective_to": version.effective_to.isoformat() if version.effective_to else None,
+        "effective_ranges": serialize_ranges(version_ranges(version)),
         "class_filename": version.class_filename,
         "teacher_filename": version.teacher_filename,
         "post_exam": is_post_exam_version(version),
@@ -1954,6 +2011,7 @@ def get_effective_timetable(
     return {
         "date": data.isoformat(),
         "post_exam": bool(version and is_post_exam_version(version)),
+        "effective_ranges": serialize_ranges(version_ranges(version)) if version else [],
         "period_count": len(get_period_times(db, data)),
         "revision": get_schedule_revision(db),
         "lessons": lessons,

@@ -1817,6 +1817,20 @@
     }
   },
   "importCenter": {
+    "effectiveRanges": "Effective periods",
+    "rangesHint": "The same post-exam timetable applies to every period below.",
+    "rangeNumber": "Period {count}",
+    "postExamRanges": "Post-exam timetable · {count} periods",
+    "addRange": "Add effective period",
+    "removeRange": "Remove",
+    "removeRangeNumber": "Remove period {count}",
+    "rangeRequired": "Enter both start and end dates.",
+    "rangeReversed": "The end date cannot precede the start date.",
+    "rangeOverlap": "This period overlaps another period in this timetable. Adjust the dates.",
+    "rangePriority": "When versions overlap, the matching period with the later start date takes priority; ties use the newer version.",
+    "rangesUpdated": "Timetable periods updated: {ranges}",
+    "rangesActivated": "Post-exam timetable activated for: {ranges}",
+
     "eyebrow": "Administrator",
     "title": "Timetable import centre",
     "description": "Normal and post-exam timetables both use class and teacher files; post-exam versions override only within the selected dates.",

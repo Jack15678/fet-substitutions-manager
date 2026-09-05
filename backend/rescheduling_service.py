@@ -660,11 +660,35 @@ def bump_schedule_revision(db: Session) -> int:
     return revision
 
 
+def version_ranges(version: TimetableVersion) -> list[tuple[date, date | None]]:
+    if version.effective_ranges_json and is_post_exam_version(version):
+        return [(date.fromisoformat(row["effective_from"]), date.fromisoformat(row["effective_to"]))
+                for row in json.loads(version.effective_ranges_json)]
+    return [(version.effective_from, version.effective_to)]
+
+
+def serialize_ranges(ranges: list[tuple[date, date | None]]) -> list[dict]:
+    return [{"effective_from": start.isoformat(), "effective_to": end.isoformat() if end else None}
+            for start, end in ranges]
+
+
+def matching_range_start(ranges: list[tuple[date, date | None]], day: date) -> date | None:
+    return max((start for start, end in ranges if start <= day and (end is None or day <= end)),
+               default=None)
+
+
+def _select_version(candidates, day: date) -> TimetableVersion | None:
+    eligible = [(start, version.id, version) for version, ranges in candidates
+                if (start := matching_range_start(ranges, day)) is not None]
+    return max(eligible, key=lambda row: row[:2])[2] if eligible else None
+
+
 def version_for_date(db: Session, target_date: date) -> TimetableVersion | None:
-    return (db.query(TimetableVersion)
+    versions = (db.query(TimetableVersion)
             .filter(TimetableVersion.effective_from <= target_date,
                     or_(TimetableVersion.effective_to.is_(None), TimetableVersion.effective_to >= target_date))
-            .order_by(TimetableVersion.effective_from.desc(), TimetableVersion.id.desc()).first())
+            .all())
+    return _select_version([(version, version_ranges(version)) for version in versions], target_date)
 
 
 def is_post_exam_version(version: TimetableVersion) -> bool:
@@ -725,10 +749,7 @@ def effective_occurrences(db: Session, start: date, end: date) -> list[dict]:
     if not versions:
         return []
 
-    def version_on(day: date) -> TimetableVersion | None:
-        eligible = [version for version in versions
-                    if version.effective_from <= day and (version.effective_to is None or version.effective_to >= day)]
-        return eligible[-1] if eligible else None
+    candidates = [(version, version_ranges(version)) for version in versions]
 
     lessons_by_version: dict[int, list[TimetableLesson]] = {}
     slots_by_version: dict[int, list[TimetableTeacherSlot]] = {}
@@ -737,7 +758,7 @@ def effective_occurrences(db: Session, start: date, end: date) -> list[dict]:
     for day in _daterange(start, end):
         if day.weekday() >= 5 or day in closures:
             continue
-        version = version_on(day)
+        version = _select_version(candidates, day)
         if not version:
             continue
         if version.id not in lessons_by_version:
@@ -764,7 +785,7 @@ def effective_occurrences(db: Session, start: date, end: date) -> list[dict]:
     for day in _daterange(start, end):
         if day.weekday() >= 5 or day in closures:
             continue
-        version = version_on(day)
+        version = _select_version(candidates, day)
         if not version:
             continue
         if version.id not in slots_by_version:

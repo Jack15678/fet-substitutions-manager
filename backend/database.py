@@ -120,6 +120,8 @@ def _ensure_timetable_version_columns(engine):
                 conn.exec_driver_sql("ALTER TABLE timetable_versions ADD COLUMN effective_to DATE")
             if columns and "resolutions_json" not in names:
                 conn.exec_driver_sql("ALTER TABLE timetable_versions ADD COLUMN resolutions_json TEXT")
+            if columns and "effective_ranges_json" not in names:
+                conn.exec_driver_sql("ALTER TABLE timetable_versions ADD COLUMN effective_ranges_json TEXT")
     except Exception:
         pass
 
