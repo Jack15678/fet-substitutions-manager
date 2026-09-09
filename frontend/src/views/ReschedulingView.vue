@@ -47,7 +47,7 @@
           <label>{{ $t('rescheduling.candidates') }}
             <select v-model="selectedCandidates[task.task_key]">
               <option v-for="candidate in task.alternatives" :key="candidate.id" :value="candidate.id">
-                {{ optionLabel(candidate) }}{{ candidate.special_cross_day_moves ? ` · ${$t('rescheduling.specialCourseLater')}` : '' }}
+                {{ optionLabel(candidate) }}
               </option>
             </select>
           </label>
@@ -65,7 +65,7 @@
           </div>
         </template>
         <div v-else class="unresolved-actions">
-          <p class="unresolved-copy">{{ $t(task.blocking_reason === 'started' ? 'rescheduling.startedLesson' : 'rescheduling.noCandidate') }}</p>
+          <p class="unresolved-copy">{{ $t(task.blocking_reason === 'started' ? 'rescheduling.startedLesson' : task.target.special ? 'rescheduling.specialManualOnly' : 'rescheduling.noCandidate') }}</p>
           <Button v-if="can('manual_arrangement.manage')" :label="$t('rescheduling.arrangeThisLesson')" severity="secondary" outlined @click="openManualPanel(task.task_key)" />
         </div>
       </article>
@@ -112,7 +112,7 @@
           <section class="candidate-area">
             <header class="candidate-area-heading">
               <div><span>{{ $t('rescheduling.manualStep', { step: 1 }) }}</span><h3>{{ $t('rescheduling.chooseCoverTeacher') }}</h3></div>
-              <small>{{ $t('rescheduling.candidateRule') }}</small>
+              <small>{{ $t(selectedManualTask.target.special ? 'rescheduling.specialCandidateRule' : 'rescheduling.candidateRule') }}</small>
             </header>
             <div v-if="selectedManualTask.co_teachers?.length" class="co-teacher-option">
               <div>
@@ -143,6 +143,7 @@
                   <i aria-hidden="true"></i>
                 </div>
                 <div class="candidate-badges">
+                  <span v-if="selectedManualTask.target.special && candidate.same_class" class="same-subject">{{ $t('rescheduling.sameClass') }}</span>
                   <span v-if="candidate.same_subject" class="same-subject">{{ $t('rescheduling.sameSubject') }}</span>
                   <span>{{ adjacentLabel(candidate) }}</span>
                 </div>

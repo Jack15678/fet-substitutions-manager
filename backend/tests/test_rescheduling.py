@@ -1572,7 +1572,7 @@ class ReschedulingTests(unittest.TestCase):
         self.assertEqual(task["recommended"]["breaks_consecutive_lessons"], 0)
         self.assertTrue(any(candidate["breaks_consecutive_lessons"] for candidate in task["alternatives"]))
 
-    def test_analysis_deprioritizes_cross_day_special_lessons(self):
+    def test_analysis_excludes_special_lessons_from_all_swaps(self):
         teachers = [Professor(nom=f"{name}老師", actiu=True) for name in "ABC"]
         self.db.add_all(teachers)
         self.db.flush()
@@ -1607,6 +1607,60 @@ class ReschedulingTests(unittest.TestCase):
 
         self.assertEqual(candidate["completion_date"], "2026-08-12")
         self.assertEqual(candidate["special_cross_day_moves"], 0)
+
+        from rescheduling_service import _leg, validate_move_legs
+        special = self.db.query(TimetableLesson).filter_by(special=True).one()
+        for weekday in (0, 1):
+            special.weekday = weekday
+            self.db.commit()
+            task = analyze_absence(self.db, absence)["tasks"][0]
+            self.assertTrue(task["alternatives"])
+            self.assertTrue(all(
+                not leg["special"] for option in task["alternatives"] for leg in option["legs"]
+            ))
+            occurrences = effective_occurrences(self.db, absence.data, date(2026, 8, 12))
+            target = next(row for row in occurrences if row["subject"] == "中文")
+            other = next(row for row in occurrences if row["special"])
+            legs = [_leg(target, other["date"], other["period"]),
+                    _leg(other, target["date"], target["period"])]
+            for leg in legs:
+                leg.pop("special")  # Manual requests need not supply this flag.
+            ok, detail = validate_move_legs(legs, occurrences, set())
+            self.assertFalse(ok)
+            self.assertIn("特殊課程不可調課", detail)
+
+    def test_special_absence_requires_manual_cover_and_prefers_class_teacher(self):
+        absent, same_class, same_subject = [Professor(nom=name, actiu=True)
+                                           for name in ("缺席", "同班", "同科")]
+        version = TimetableVersion(effective_from=date(2026, 8, 10), active=True,
+                                   class_filename="classes.xls", teacher_filename="teachers.xlsx")
+        self.db.add_all([absent, same_class, same_subject, version])
+        self.db.flush()
+        self.db.add_all([
+            TimetableLesson(version_id=version.id, weekday=0, period=3, class_code="1A",
+                            subject="體育", special=True, teachers_json=json.dumps([absent.id])),
+            TimetableLesson(version_id=version.id, weekday=0, period=2, class_code="1A",
+                            subject="中文", teachers_json=json.dumps([same_class.id])),
+            TimetableLesson(version_id=version.id, weekday=0, period=1, class_code="2A",
+                            subject="體育", special=True, teachers_json=json.dumps([same_subject.id])),
+        ])
+        absence = AbsenceCase(professor_id=absent.id, data=date(2026, 8, 10),
+                              periods_json="[3]", status="open")
+        self.db.add(absence)
+        self.db.commit()
+        task = analyze_absence(self.db, absence)["tasks"][0]
+        self.assertIsNone(task["recommended"])
+        self.assertEqual(task["alternatives"], [])
+        self.assertEqual(task["blocking_reason"], "special")
+        queue = list_manual_arrangements(self.db, SimpleNamespace(username="admin"))
+        task = queue["tasks"][0]
+        self.assertEqual([row["id"] for row in task["candidates"]], [same_class.id, same_subject.id])
+        result = confirm_manual_cover(ManualCoverRequest(
+            absence_case_id=absence.id, occurrence_id=task["target"]["occurrence_id"],
+            replacement_teacher_id=same_class.id, expected_revision=queue["revision"],
+        ), self.db, SimpleNamespace(username="admin"))
+        self.assertEqual(result["kind"], "emergency_cover")
+        self.assertEqual(absence.status, "resolved")
 
     def test_analysis_uses_three_lesson_cycle_when_direct_swaps_conflict(self):
         teachers = [Professor(nom=f"{name}老師", actiu=True) for name in "ABC"]

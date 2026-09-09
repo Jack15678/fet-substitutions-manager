@@ -949,6 +949,8 @@ def validate_move_legs(legs: list[dict], occurrences: list[dict], absences: set,
     source_map, occupied_teachers, occupied_classes = occupancy or _occupancy_index(occurrences)
     if len(source_ids) != len(legs) or any(source_id not in source_map for source_id in source_ids):
         return False, "課堂來源已改變，請重新分析"
+    if any(source_map[source_id].get("special") for source_id in source_ids):
+        return False, "特殊課程不可調課，請使用人工代課流程"
     if len({source_map[source_id]["version_id"] for source_id in source_ids}) != 1:
         return False, "不同課表版本的課堂不能互調"
     allowed_locked_ids = allowed_locked_ids or set()
@@ -1147,6 +1149,10 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase], *,
             option_groups.append([])
             blocking_reasons.append("started")
             continue
+        if target.get("special"):
+            option_groups.append([])
+            blocking_reasons.append("special")
+            continue
         repairable_target = (
             not target["locked"]
             or bool(target.get("adjustment_id")) and target.get("source") in REPAIRABLE_SWAP_KINDS
@@ -1156,6 +1162,7 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase], *,
             occ for occ in occurrences
             if occ["class_code"] == target["class_code"] and occ["lesson_id"] is not None
             and occ["occurrence_id"] != target["occurrence_id"] and not occ["locked"]
+            and not occ.get("special")
             and occ["date"] in dates
         ]
         same_class.sort(key=lambda occ: (dates.index(occ["date"]), occ["period"], occ["lesson_id"]))

@@ -1463,10 +1463,12 @@ def _manual_cover_candidates(
         .filter(Professor.id.in_(teacher_ids), Professor.actiu.is_(True)).all()
     }
     subjects_by_teacher: dict[int, set[str]] = {}
+    classes_by_teacher: dict[int, set[str]] = {}
     for lesson in db.query(TimetableLesson).filter_by(version_id=version.id).all():
         subject = normalize_subject(lesson.subject)
         for teacher_id in json.loads(lesson.teachers_json or "[]"):
             subjects_by_teacher.setdefault(int(teacher_id), set()).add(subject)
+            classes_by_teacher.setdefault(int(teacher_id), set()).add(lesson.class_code)
 
     cover_counts = {
         int(teacher_id): int(count)
@@ -1524,6 +1526,7 @@ def _manual_cover_candidates(
             "id": teacher_id,
             "name": teacher_name,
             "same_subject": target_subject in subjects_by_teacher.get(teacher_id, set()),
+            "same_class": target["class_code"] in classes_by_teacher.get(teacher_id, set()),
             "cover_count": cover_counts.get(teacher_id, 0),
             "adjacent_busy_count": adjacent_busy_count,
             "adjacent_teaching_count": adjacent_teaching,
@@ -1531,6 +1534,7 @@ def _manual_cover_candidates(
             "slots": slots,
         })
     candidates.sort(key=lambda item: (
+        not item["same_class"] if target.get("special") else False,
         item["adjacent_teaching_count"],
         item["adjacent_busy_count"],
         not item["same_subject"],
