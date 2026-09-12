@@ -79,7 +79,10 @@
           <Button icon="pi pi-arrow-left" :aria-label="$t('common.back')" text rounded @click="manualPanelVisible = false" />
           <div><span>{{ $t('rescheduling.manualEyebrow') }}</span><h2>{{ $t('rescheduling.manualArrangement') }}</h2></div>
         </div>
-        <small>{{ $t('rescheduling.manualQueueCount', { count: manualTasks.length }) }}</small>
+        <div>
+          <label for="manual-date" class="inline-date">{{ $t('rescheduling.date') }}<input id="manual-date" v-model="manualDate" type="date" required @change="loadManualArrangements()" /></label>
+          <small>{{ $t('rescheduling.manualQueueCount', { count: manualTasks.length }) }}</small>
+        </div>
       </header>
 
       <div v-if="manualLoading" class="manual-state">{{ $t('common.loading') }}</div>
@@ -494,6 +497,8 @@ const manualLoading = ref(false)
 const manualError = ref('')
 const manualRevision = ref(0)
 const manualTasks = ref([])
+const manualDate = ref(iso(props.dataGlobal))
+let manualRequestId = 0
 const selectedManualTaskKey = ref('')
 const selectedManualTeacherId = ref(null)
 const absenceEntries = ref([])
@@ -575,6 +580,10 @@ const periodLabel = (period) => period ? t('records.period', { period }) : '—'
 watch(() => props.dataGlobal, (value) => {
   const nextDate = iso(value)
   effectiveDate.value = nextDate
+  if (manualPanelVisible.value) {
+    manualDate.value = nextDate
+    loadManualArrangements()
+  }
   loadDateContext()
   loadEffective()
 })
@@ -666,13 +675,20 @@ const selectManualTask = (taskKey) => {
 }
 
 const loadManualArrangements = async (preferredTaskKey = '') => {
+  const requestId = ++manualRequestId
+  const previousTaskKey = selectedManualTaskKey.value
+  manualTasks.value = []
+  selectedManualTaskKey.value = ''
+  selectedManualTeacherId.value = null
   manualLoading.value = true
   manualError.value = ''
   try {
-    const response = (await axios.get('/api/manual-arrangements', { _silent: true })).data
+    if (!manualDate.value) return
+    const response = (await axios.get('/api/manual-arrangements', { params: { data: manualDate.value }, _silent: true })).data
+    if (requestId !== manualRequestId) return
     manualRevision.value = response.revision
     manualTasks.value = response.tasks || []
-    const nextKey = [preferredTaskKey, selectedManualTaskKey.value]
+    const nextKey = [preferredTaskKey, previousTaskKey]
       .find(key => manualTasks.value.some(task => task.task_key === key)) || manualTasks.value[0]?.task_key || ''
     if (nextKey) selectManualTask(nextKey)
     else {
@@ -680,14 +696,19 @@ const loadManualArrangements = async (preferredTaskKey = '') => {
       selectedManualTeacherId.value = null
     }
   } catch (error) {
+    if (requestId !== manualRequestId) return
     manualTasks.value = []
     manualError.value = error.response?.data?.detail || t('app.errors.unexpected')
-  } finally { manualLoading.value = false }
+  } finally {
+    if (requestId === manualRequestId) manualLoading.value = false
+  }
 }
 
 const openManualPanel = async (taskKey = '') => {
   absencePanelVisible.value = false
   manualPanelVisible.value = true
+  manualDate.value = analysis.value?.tasks.find(task => task.task_key === taskKey)?.target.date
+    || selectedAnalysisDate.value || iso(props.dataGlobal)
   await loadManualArrangements(taskKey)
 }
 
@@ -1003,7 +1024,7 @@ onMounted(async () => {
 .page-actions { display: flex; align-items: center; gap: 1rem; }
 .revision { color: var(--text-color-secondary); font-size: var(--font-supporting); white-space: nowrap; }
 .manual-workspace { display: grid; gap: 1rem; min-width: 0; }
-.manual-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: .8rem; border-bottom: 1px solid var(--border-color); }
+.manual-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; padding-bottom: .8rem; border-bottom: 1px solid var(--border-color); }
 .manual-heading > div { display: flex; align-items: center; gap: .55rem; }
 .manual-heading h2 { margin: .05rem 0 0; color: var(--primary-color-dark); font-size: clamp(1.45rem, 3vw, 1.85rem); letter-spacing: -.025em; }
 .manual-heading span, .candidate-area-heading span, .summary-step span { color: #58708b; font-size: var(--font-supporting); font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
@@ -1164,8 +1185,8 @@ input[type=file] { padding: .45rem; }
 .candidate-warning { display: block; margin-top: .4rem; color: #8a5b16; font-size: var(--font-supporting); }
 .unresolved-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .effective-filters { display: flex; align-items: center; gap: 1rem; }
-.effective-panel .inline-date { display: flex; align-items: center; gap: .55rem; color: var(--text-color-secondary); font-size: var(--font-ui); }
-.effective-panel .inline-date input { width: auto; }
+.inline-date { display: flex; align-items: center; gap: .55rem; color: var(--text-color-secondary); font-size: var(--font-ui); }
+.inline-date input { width: auto; }
 .affected-view-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
 .view-switch { display: inline-flex; padding: .2rem; border-radius: 4px; background: var(--surface-soft); }
 .view-switch button { padding: .42rem .7rem; border: 0; border-radius: 3px; background: transparent; color: var(--text-color-secondary); cursor: pointer; font-size: var(--font-ui); font-weight: 650; transition: background .15s ease, color .15s ease; }

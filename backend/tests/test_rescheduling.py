@@ -256,6 +256,34 @@ class ReschedulingTests(unittest.TestCase):
             )
         self.assertEqual(self.db.query(AbsenceCase).count(), 3)
 
+    def test_manual_arrangements_only_show_the_requested_date_and_preserve_old_cases(self):
+        old_day, new_day = date(2026, 6, 8), date(2026, 9, 14)
+        old_teacher = Professor(nom="離職老師", actiu=False)
+        new_teacher = Professor(nom="新學年老師", actiu=True)
+        self.db.add_all([old_teacher, new_teacher])
+        self.db.flush()
+        cases = []
+        for day, teacher in ((old_day, old_teacher), (new_day, new_teacher)):
+            version = TimetableVersion(effective_from=day, effective_to=day,
+                                       class_filename="classes.xls", teacher_filename="teachers.xlsx")
+            self.db.add(version)
+            self.db.flush()
+            self.db.add(TimetableLesson(version_id=version.id, weekday=0, period=1,
+                                       class_code="1A", subject="中文", teachers_json=json.dumps([teacher.id])))
+            absence = AbsenceCase(professor_id=teacher.id, data=day, periods_json="[1]", status="open")
+            self.db.add(absence)
+            cases.append(absence)
+        self.db.commit()
+
+        with patch("routes.rescheduling.hong_kong_today", return_value=new_day):
+            current = list_manual_arrangements(db=self.db)
+        self.assertEqual([task["absent_teacher_name"] for task in current["tasks"]], [new_teacher.nom])
+        self.assertEqual({task["target"]["date"] for task in current["tasks"]}, {new_day.isoformat()})
+        old = list_manual_arrangements(db=self.db, data=old_day)
+        self.assertEqual([task["absent_teacher_name"] for task in old["tasks"]], [old_teacher.nom])
+        self.assertEqual(list_manual_arrangements(db=self.db, data=date(2026, 9, 15))["tasks"], [])
+        self.assertEqual([self.db.get(AbsenceCase, case.id).status for case in cases], ["open", "open"])
+
     def test_manual_arrangement_ranks_free_neighbors_and_resolves_absence(self):
         absent, clear, one_busy, two_busy, extra = [
             Professor(nom=f"{name}老師", actiu=True)
@@ -304,7 +332,7 @@ class ReschedulingTests(unittest.TestCase):
         self.db.add(absence)
         self.db.commit()
 
-        queue = list_manual_arrangements(self.db, SimpleNamespace(username="admin"))
+        queue = list_manual_arrangements(self.db, SimpleNamespace(username="admin"), data=date(2026, 8, 10))
         self.assertEqual(len(queue["tasks"]), 1)
         task = queue["tasks"][0]
         self.assertEqual(len(task["candidates"]), 4)
@@ -367,7 +395,7 @@ class ReschedulingTests(unittest.TestCase):
         self.db.add(absence)
         self.db.commit()
 
-        queue = list_manual_arrangements(self.db, SimpleNamespace(username="admin"))
+        queue = list_manual_arrangements(self.db, SimpleNamespace(username="admin"), data=date(2026, 8, 10))
         task = queue["tasks"][0]
         self.assertEqual(task["status"], "recommended")
         self.assertIn(manual_teacher.id, {item["id"] for item in task["candidates"]})
@@ -410,7 +438,7 @@ class ReschedulingTests(unittest.TestCase):
         analysis = analyze_absence(self.db, absence)
         self.assertEqual(analysis["tasks"][0]["status"], "unresolved")
         self.assertEqual(analysis["tasks"][0]["alternatives"], [])
-        queue = list_manual_arrangements(self.db, SimpleNamespace(username="admin"))
+        queue = list_manual_arrangements(self.db, SimpleNamespace(username="admin"), data=date(2026, 8, 10))
         self.assertEqual(queue["tasks"][0]["co_teachers"], [{"id": co_teacher.id, "name": co_teacher.nom}])
 
         result = confirm_manual_cover(
@@ -1652,7 +1680,7 @@ class ReschedulingTests(unittest.TestCase):
         self.assertIsNone(task["recommended"])
         self.assertEqual(task["alternatives"], [])
         self.assertEqual(task["blocking_reason"], "special")
-        queue = list_manual_arrangements(self.db, SimpleNamespace(username="admin"))
+        queue = list_manual_arrangements(self.db, SimpleNamespace(username="admin"), data=date(2026, 8, 10))
         task = queue["tasks"][0]
         self.assertEqual([row["id"] for row in task["candidates"]], [same_class.id, same_subject.id])
         result = confirm_manual_cover(ManualCoverRequest(

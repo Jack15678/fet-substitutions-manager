@@ -1544,18 +1544,12 @@ def _manual_cover_candidates(
     return candidates
 
 
-def _manual_arrangements(db: Session) -> dict:
+def _manual_arrangements(db: Session, data: date | None = None) -> dict:
     professor_names = {row.id: row.nom for row in db.query(Professor).all()}
-    open_dates = [
-        row[0]
-        for row in (
-            db.query(AbsenceCase.data)
-            .filter(AbsenceCase.status == "open")
-            .distinct()
-            .order_by(AbsenceCase.data)
-            .all()
-        )
-    ]
+    query = db.query(AbsenceCase.data).filter(AbsenceCase.status == "open")
+    if data is not None:
+        query = query.filter(AbsenceCase.data == data)
+    open_dates = [row[0] for row in query.distinct().order_by(AbsenceCase.data).all()]
     tasks = []
     for target_date in open_dates:
         active_absences = _active_absences_for_date(db, target_date)
@@ -1592,8 +1586,9 @@ def list_manual_arrangements(
     db: Session = Depends(get_db),
     _current_user=Depends(require_permission("manual_arrangement.manage")),
     _workbench_user=Depends(require_permission("workbench.view")),
+    data: Optional[date] = None,
 ):
-    return _manual_arrangements(db)
+    return _manual_arrangements(db, data or hong_kong_today())
 
 
 @router.post("/api/manual-arrangements/cover")
