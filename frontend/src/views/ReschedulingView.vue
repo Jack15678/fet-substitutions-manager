@@ -79,14 +79,31 @@
           <Button icon="pi pi-arrow-left" :aria-label="$t('common.back')" text rounded @click="manualPanelVisible = false" />
           <div><span>{{ $t('rescheduling.manualEyebrow') }}</span><h2>{{ $t('rescheduling.manualArrangement') }}</h2></div>
         </div>
-        <small>{{ $t('rescheduling.manualQueueCount', { count: manualTasks.length }) }}</small>
+        <div>
+          <small>{{ $t('rescheduling.manualQueueCount', { count: visibleManualTasks.length }) }}</small>
+        </div>
       </header>
+
+      <p v-if="!manualLoading && !manualError" class="manual-scope-hint">
+        {{ $t('rescheduling.manualDateRule') }}
+      </p>
+      <div class="manual-queue-filter">
+        <div class="view-switch" role="group" :aria-label="$t('rescheduling.manualQueueScope')">
+          <button v-for="scope in ['pending', 'expired']" :key="scope" type="button"
+            :class="{ active: manualScope === scope }" :aria-pressed="manualScope === scope"
+            :disabled="manualLoading" @click="selectManualScope(scope)">
+            {{ $t(`rescheduling.manualScopes.${scope}`) }}（{{ manualScopeCounts[scope] }}）
+          </button>
+        </div>
+        <small v-if="manualToday">{{ $t('records.today', { date: manualToday }) }}</small>
+      </div>
+      <p v-if="manualScope === 'expired'" class="manual-scope-hint">{{ $t('rescheduling.manualExpiredHint') }}</p>
 
       <div v-if="manualLoading" class="manual-state">{{ $t('common.loading') }}</div>
       <div v-else-if="manualError" class="manual-state error">{{ manualError }}</div>
-      <div v-else-if="!manualTasks.length" class="manual-state success">
-        <strong>{{ $t('rescheduling.manualEmptyTitle') }}</strong>
-        <span>{{ $t('rescheduling.manualEmptyHint') }}</span>
+      <div v-else-if="!visibleManualTasks.length" class="manual-state success">
+        <strong>{{ $t(manualScope === 'expired' ? 'rescheduling.manualExpiredEmpty' : 'rescheduling.manualEmptyTitle') }}</strong>
+        <span>{{ $t(manualScope === 'expired' ? 'rescheduling.manualExpiredHint' : 'rescheduling.manualEmptyHint') }}</span>
         <Button :label="$t('common.back')" outlined @click="manualPanelVisible = false" />
       </div>
       <template v-else>
@@ -94,16 +111,16 @@
           <header><strong>{{ $t('rescheduling.manualQueue') }}</strong><span>{{ $t('rescheduling.manualQueueHint') }}</span></header>
           <TransitionGroup name="motion-list" tag="div" class="manual-queue-scroll">
             <button
-              v-for="task in manualTasks"
+              v-for="task in visibleManualTasks"
               :key="task.task_key"
               type="button"
               :class="['manual-queue-card', { active: task.task_key === selectedManualTaskKey }]"
               @click="selectManualTask(task.task_key)"
             >
-              <span>{{ dateLabel(task.target.date) }} · {{ $t('records.period', { period: task.target.period }) }}</span>
+              <span>{{ task.target.date }} · {{ $t('records.period', { period: task.target.period }) }}</span>
               <strong>{{ task.target.class_code }} · {{ task.target.subject }}</strong>
               <small>{{ task.absent_teacher_name }}</small>
-              <span :class="['status', task.status]">{{ task.status === 'recommended' ? $t('rescheduling.recommendable') : $t('rescheduling.unresolved') }}</span>
+              <span :class="['status', task.expired ? 'expired' : task.status]">{{ task.expired ? $t('rescheduling.manualScopes.expired') : task.status === 'recommended' ? $t('rescheduling.recommendable') : $t('rescheduling.unresolved') }}</span>
             </button>
           </TransitionGroup>
         </section>
@@ -163,7 +180,7 @@
           <aside class="manual-summary">
             <div class="summary-step"><span>{{ $t('rescheduling.manualStep', { step: 2 }) }}</span><h3>{{ $t('rescheduling.confirmManualArrangement') }}</h3></div>
             <dl>
-              <div><dt>{{ $t('rescheduling.lessonToHandle') }}</dt><dd>{{ dateLabel(selectedManualTask.target.date) }} · {{ $t('records.period', { period: selectedManualTask.target.period }) }}</dd></div>
+              <div><dt>{{ $t('rescheduling.lessonToHandle') }}</dt><dd>{{ selectedManualTask.target.date }} · {{ $t('records.period', { period: selectedManualTask.target.period }) }}</dd></div>
               <div><dt>{{ $t('rescheduling.classSubject') }}</dt><dd>{{ selectedManualTask.target.class_code }} · {{ selectedManualTask.target.subject }}</dd></div>
               <div><dt>{{ $t('rescheduling.absentTeacher') }}</dt><dd>{{ selectedManualTask.absent_teacher_name }}</dd></div>
               <div v-if="selectedManualTask.co_teachers?.length"><dt>{{ $t('rescheduling.remainingCoTeacher') }}</dt><dd>{{ coTeacherNames(selectedManualTask) }}</dd></div>
@@ -171,7 +188,7 @@
             </dl>
             <p>{{ $t('rescheduling.manualConfirmHint') }}</p>
             <Button
-              :label="$t('rescheduling.confirmManualCover')"
+              :label="$t(selectedManualTask.expired ? 'rescheduling.manualBackfillCover' : 'rescheduling.confirmManualCover')"
               severity="success"
               :loading="busy === 'manual-confirm'"
               :disabled="!selectedManualCandidate"
@@ -496,6 +513,14 @@ const manualLoading = ref(false)
 const manualError = ref('')
 const manualRevision = ref(0)
 const manualTasks = ref([])
+const manualScope = ref('pending')
+const manualToday = ref('')
+const manualScopeCounts = computed(() => ({
+  pending: manualTasks.value.filter(task => !task.expired).length,
+  expired: manualTasks.value.filter(task => task.expired).length,
+}))
+const visibleManualTasks = computed(() => manualTasks.value.filter(task => Boolean(task.expired) === (manualScope.value === 'expired')))
+let manualRequestId = 0
 const selectedManualTaskKey = ref('')
 const selectedManualTeacherId = ref(null)
 const absenceEntries = ref([])
@@ -525,7 +550,7 @@ const workflowPanelVisible = computed(() => (
   (absencePanelVisible.value && props.can('absence.create'))
   || (manualPanelVisible.value && props.can('manual_arrangement.manage'))
 ))
-const selectedManualTask = computed(() => manualTasks.value.find(task => task.task_key === selectedManualTaskKey.value))
+const selectedManualTask = computed(() => visibleManualTasks.value.find(task => task.task_key === selectedManualTaskKey.value))
 const selectedManualCandidate = computed(() => selectedManualTask.value?.candidates.find(candidate => candidate.id === selectedManualTeacherId.value))
 const coTeacherNames = (task) => joinItems((task?.co_teachers || []).map(teacher => teacher.name))
 const isCoverKind = (kind) => ['emergency_cover', 'co_teacher_solo'].includes(kind)
@@ -577,6 +602,9 @@ const periodLabel = (period) => period ? t('records.period', { period }) : '—'
 watch(() => props.dataGlobal, (value) => {
   const nextDate = iso(value)
   effectiveDate.value = nextDate
+  if (manualPanelVisible.value) {
+    loadManualArrangements()
+  }
   loadDateContext()
   loadEffective()
 })
@@ -664,32 +692,50 @@ const openAbsencePanel = () => {
 
 const selectManualTask = (taskKey) => {
   selectedManualTaskKey.value = taskKey
-  selectedManualTeacherId.value = manualTasks.value.find(task => task.task_key === taskKey)?.candidates[0]?.id || null
+  selectedManualTeacherId.value = visibleManualTasks.value.find(task => task.task_key === taskKey)?.candidates[0]?.id || null
+}
+
+const selectManualScope = (scope) => {
+  manualScope.value = scope
+  selectManualTask(visibleManualTasks.value[0]?.task_key || '')
 }
 
 const loadManualArrangements = async (preferredTaskKey = '') => {
+  const requestId = ++manualRequestId
+  const previousTaskKey = selectedManualTaskKey.value
+  manualTasks.value = []
+  selectedManualTaskKey.value = ''
+  selectedManualTeacherId.value = null
   manualLoading.value = true
   manualError.value = ''
   try {
     const response = (await axios.get('/api/manual-arrangements', { _silent: true })).data
+    if (requestId !== manualRequestId) return
     manualRevision.value = response.revision
+    manualToday.value = response.today
     manualTasks.value = response.tasks || []
-    const nextKey = [preferredTaskKey, selectedManualTaskKey.value]
-      .find(key => manualTasks.value.some(task => task.task_key === key)) || manualTasks.value[0]?.task_key || ''
+    const preferredTask = manualTasks.value.find(task => task.task_key === preferredTaskKey)
+    if (preferredTask) manualScope.value = preferredTask.expired ? 'expired' : 'pending'
+    const nextKey = [preferredTaskKey, previousTaskKey]
+      .find(key => visibleManualTasks.value.some(task => task.task_key === key)) || visibleManualTasks.value[0]?.task_key || ''
     if (nextKey) selectManualTask(nextKey)
     else {
       selectedManualTaskKey.value = ''
       selectedManualTeacherId.value = null
     }
   } catch (error) {
+    if (requestId !== manualRequestId) return
     manualTasks.value = []
     manualError.value = error.response?.data?.detail || t('app.errors.unexpected')
-  } finally { manualLoading.value = false }
+  } finally {
+    if (requestId === manualRequestId) manualLoading.value = false
+  }
 }
 
 const openManualPanel = async (taskKey = '') => {
   absencePanelVisible.value = false
   manualPanelVisible.value = true
+  manualScope.value = 'pending'
   await loadManualArrangements(taskKey)
 }
 
@@ -1000,8 +1046,12 @@ onMounted(async () => {
 .page-actions { display: flex; align-items: center; gap: 1rem; }
 .revision { color: var(--text-color-secondary); font-size: var(--font-supporting); white-space: nowrap; }
 .manual-workspace { display: grid; gap: 1rem; min-width: 0; }
-.manual-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: .8rem; border-bottom: 1px solid var(--border-color); }
-.manual-heading > div { display: flex; align-items: center; gap: .55rem; }
+.manual-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; padding-bottom: .8rem; border-bottom: 1px solid var(--border-color); }
+.manual-heading > div { display: flex; align-items: center; flex-wrap: wrap; gap: .55rem; }
+.manual-scope-hint { margin: 0; color: var(--text-color-secondary); font-size: var(--font-supporting); }
+.manual-queue-filter { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
+.manual-queue-filter small { color: var(--text-color-secondary); }
+.status.expired { background: #eef0f3; color: #576578; }
 .manual-heading h2 { margin: .05rem 0 0; color: var(--primary-color-dark); font-size: clamp(1.45rem, 3vw, 1.85rem); letter-spacing: -.025em; }
 .manual-heading span, .candidate-area-heading span, .summary-step span { color: #58708b; font-size: var(--font-supporting); font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
 .manual-heading small { color: var(--text-color-secondary); }
@@ -1163,8 +1213,8 @@ input[type=file] { padding: .45rem; }
 .candidate-warning { display: block; margin-top: .4rem; color: #8a5b16; font-size: var(--font-supporting); }
 .unresolved-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .effective-filters { display: flex; align-items: center; gap: 1rem; }
-.effective-panel .inline-date { display: flex; align-items: center; gap: .55rem; color: var(--text-color-secondary); font-size: var(--font-ui); }
-.effective-panel .inline-date input { width: auto; }
+.inline-date { display: flex; align-items: center; gap: .55rem; color: var(--text-color-secondary); font-size: var(--font-ui); }
+.inline-date input { width: auto; }
 .affected-view-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .75rem; }
 .view-switch { display: inline-flex; padding: .2rem; border-radius: 4px; background: var(--surface-soft); }
 .view-switch button { padding: .42rem .7rem; border: 0; border-radius: 3px; background: transparent; color: var(--text-color-secondary); cursor: pointer; font-size: var(--font-ui); font-weight: 650; transition: background .15s ease, color .15s ease; }

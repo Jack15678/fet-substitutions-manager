@@ -127,6 +127,8 @@
     "types": { "sick": "長期病假", "maternity": "產假", "other": "其他長期缺席" }
   },
   "rescheduling": {
+    "manualDateRule": "今天及之後的未安排課堂列為「待處理」；昨天或更早的列為「已過期」。",
+    "manualQueueScope": "個案分類", "manualScopes": { "pending": "待處理", "expired": "已過期" }, "manualExpiredHint": "已過期個案保留供查閱；只有需要補錄實際代課時才確認安排。", "manualExpiredEmpty": "沒有已過期的未安排課堂", "manualBackfillCover": "補錄實際代課",
     "eyebrow": "學校代課推薦系統", "title": "調課工作台",
     "revision": "課表版本 {revision}",
     "steps": { "absence": "缺席老師", "recommendations": "查看並人工確認建議", "effective": "調課安排" },

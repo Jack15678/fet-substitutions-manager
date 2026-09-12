@@ -290,6 +290,76 @@ class ReschedulingTests(unittest.TestCase):
             )
         self.assertEqual(self.db.query(AbsenceCase).count(), 3)
 
+    def test_manual_arrangements_classify_all_dates_without_school_year_configuration(self):
+        today = date(2026, 9, 14)
+        days = [date(2026, 6, 8), date(2026, 9, 11), today, date(2026, 9, 15), date(2027, 9, 1)]
+        retired = Professor(nom="離職老師", actiu=False)
+        current = Professor(nom="現任老師", actiu=True)
+        self.db.add_all([retired, current])
+        self.db.flush()
+        cases = []
+        for index, day in enumerate(days):
+            teacher = retired if index == 0 else current
+            version = TimetableVersion(effective_from=day, effective_to=day,
+                                       class_filename="classes.xls", teacher_filename="teachers.xlsx")
+            self.db.add(version)
+            self.db.flush()
+            self.db.add(TimetableLesson(version_id=version.id, weekday=day.weekday(), period=1,
+                                       class_code="1A", subject="中文", teachers_json=json.dumps([teacher.id])))
+            case = AbsenceCase(professor_id=teacher.id, data=day, periods_json="[1]", status="open")
+            self.db.add(case)
+            cases.append(case)
+        self.db.commit()
+
+        self.assertEqual(self.db.query(Curs).count(), 0)
+        with patch("routes.rescheduling.hong_kong_today", return_value=today):
+            queue = list_manual_arrangements(db=self.db)
+        self.assertEqual([task["target"]["date"] for task in queue["tasks"]], [day.isoformat() for day in days])
+        self.assertEqual(queue["today"], today.isoformat())
+        self.assertEqual([task["expired"] for task in queue["tasks"]], [True, True, False, False, False])
+        pending = [task for task in queue["tasks"] if not task["expired"]]
+        self.assertEqual([task["absent_teacher_name"] for task in pending], [current.nom] * 3)
+        self.assertEqual([self.db.get(AbsenceCase, case.id).status for case in cases], ["open"] * 5)
+
+    def test_expired_manual_cases_preserve_confirmed_future_swap_and_absence_history(self):
+        past_day, today, future_day = date(2026, 9, 11), date(2026, 9, 12), date(2026, 9, 14)
+        absent, other = Professor(nom="缺席老師", actiu=True), Professor(nom="互調老師", actiu=True)
+        version = TimetableVersion(effective_from=date(2026, 9, 1), effective_to=date(2027, 7, 9),
+                                   class_filename="classes.xls", teacher_filename="teachers.xlsx")
+        self.db.add_all([absent, other, version])
+        self.db.flush()
+        past_lesson = TimetableLesson(version_id=version.id, weekday=4, period=1,
+            class_code="1A", subject="中文", teachers_json=json.dumps([absent.id]))
+        future_lesson = TimetableLesson(version_id=version.id, weekday=0, period=1,
+            class_code="1A", subject="英文", teachers_json=json.dumps([other.id]))
+        unresolved_lesson = TimetableLesson(version_id=version.id, weekday=4, period=2,
+            class_code="2A", subject="中文", teachers_json=json.dumps([absent.id]))
+        case = AbsenceCase(professor_id=absent.id, data=past_day, periods_json="[1, 2]", status="open")
+        self.db.add_all([past_lesson, future_lesson, unresolved_lesson, case])
+        self.db.flush()
+        confirmed = ScheduleAdjustment(absence_case_id=case.id, kind="direct_swap", status="confirmed")
+        self.db.add(confirmed)
+        self.db.flush()
+        for lesson, origin, destination in ((past_lesson, past_day, future_day), (future_lesson, future_day, past_day)):
+            self.db.add(ScheduleAdjustmentLeg(adjustment_id=confirmed.id, lesson_id=lesson.id,
+                class_code=lesson.class_code, subject=lesson.subject, teachers_json=lesson.teachers_json,
+                from_date=origin, from_period=1, to_date=destination, to_period=1))
+        self.db.commit()
+        before = effective_occurrences(self.db, future_day, future_day)
+        before_export = daily_export_data(self.db, past_day)
+        with patch("routes.rescheduling.hong_kong_today", return_value=today):
+            queue = list_manual_arrangements(db=self.db)
+        self.assertEqual([(task["target"]["period"], task["expired"]) for task in queue["tasks"]], [(2, True)])
+        self.assertEqual(effective_occurrences(self.db, future_day, future_day), before)
+        self.assertEqual(before[0]["teachers"], [absent.id])
+        self.assertEqual(daily_export_data(self.db, past_day), before_export)
+        self.assertEqual(absence_keys(self.db, past_day, past_day), {(absent.id, past_day, 1), (absent.id, past_day, 2)})
+        self.assertEqual(absence_keys(self.db, future_day, future_day), set())
+        self.assertEqual(self.db.get(AbsenceCase, case.id).status, "open")
+        self.assertEqual(self.db.get(ScheduleAdjustment, confirmed.id).status, "confirmed")
+        self.assertEqual(self.db.query(ScheduleAdjustmentLeg).count(), 2)
+        self.assertEqual(get_schedule_revision(self.db), 0)
+
     def test_manual_arrangement_ranks_free_neighbors_and_resolves_absence(self):
         absent, clear, one_busy, two_busy, extra = [
             Professor(nom=f"{name}老師", actiu=True)

@@ -1581,17 +1581,10 @@ def _manual_cover_candidates(
 
 
 def _manual_arrangements(db: Session) -> dict:
+    today = hong_kong_today()
     professor_names = {row.id: row.nom for row in db.query(Professor).all()}
-    open_dates = [
-        row[0]
-        for row in (
-            db.query(AbsenceCase.data)
-            .filter(AbsenceCase.status == "open")
-            .distinct()
-            .order_by(AbsenceCase.data)
-            .all()
-        )
-    ]
+    query = db.query(AbsenceCase.data).filter(AbsenceCase.status == "open")
+    open_dates = [row[0] for row in query.distinct().order_by(AbsenceCase.data).all()]
     tasks = []
     for target_date in open_dates:
         active_absences = _active_absences_for_date(db, target_date)
@@ -1612,6 +1605,7 @@ def _manual_arrangements(db: Session) -> dict:
                 context = _manual_cover_context(db, target_date, occurrences)
             tasks.append({
                 **task,
+                "expired": target_date < today,
                 "absent_teacher_id": absence.professor_id,
                 "absent_teacher_name": professor_names.get(absence.professor_id, str(absence.professor_id)),
                 **_absence_reason_payload(absence),
@@ -1623,7 +1617,7 @@ def _manual_arrangements(db: Session) -> dict:
                     and (teacher_id, target_date, target["period"]) not in unavailable],
                 "candidates": _manual_cover_candidates(db, absence, target, context=context),
             })
-    return {"revision": get_schedule_revision(db), "tasks": tasks}
+    return {"revision": get_schedule_revision(db), "tasks": tasks, "today": today.isoformat()}
 
 
 @router.get("/api/manual-arrangements")

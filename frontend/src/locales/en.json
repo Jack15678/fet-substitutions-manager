@@ -1783,6 +1783,8 @@
     "types": { "sick": "Long-term sick leave", "maternity": "Maternity leave", "other": "Other long-term absence" }
   },
   "rescheduling": {
+    "manualDateRule": "Unarranged lessons for today or later are pending; those for yesterday or earlier are expired.",
+    "manualQueueScope": "Case category", "manualScopes": { "pending": "Pending", "expired": "Expired" }, "manualExpiredHint": "Expired cases are kept for reference. Only confirm an arrangement to record cover that actually took place.", "manualExpiredEmpty": "No expired unarranged lessons", "manualBackfillCover": "Record actual past cover",
     "eyebrow": "School cover recommendation system",
     "title": "Rescheduling workbench",
     "revision": "Timetable revision {revision}",
