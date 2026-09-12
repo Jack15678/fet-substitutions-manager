@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException, UploadFile
 from pydantic import ValidationError
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -112,6 +112,40 @@ class ReschedulingTests(unittest.TestCase):
             with self.subTest(export=export.__name__), self.assertRaises(HTTPException) as raised:
                 export(date(2026, 8, 30), self.db, SimpleNamespace(username="admin"))
             self.assertEqual(raised.exception.status_code, 404)
+
+    def test_daily_pdf_can_download_only_the_selected_teachers_sheet(self):
+        day = date(2026, 8, 10)
+        teachers = [Professor(nom=name, actiu=True) for name in ("甲老師", "乙老師", "待安排老師")]
+        self.db.add_all(teachers)
+        self.db.flush()
+        self.db.add_all([
+            AbsenceCase(professor_id=teacher.id, data=day, periods_json="[1]", status=status)
+            for teacher, status in zip(teachers, ("resolved", "resolved", "open"))
+        ])
+        self.db.commit()
+
+        with patch("routes.rescheduling.build_daily_pdf", wraps=build_daily_pdf) as build:
+            for teacher_id, expected_ids in (
+                (None, [teachers[0].id, teachers[1].id]),
+                (teachers[1].id, [teachers[1].id]),
+            ):
+                response = export_daily_pdf(day, self.db, professor_id=teacher_id)
+                self.assertEqual([entry["teacher_id"] for entry in build.call_args.args[0]], expected_ids)
+                self.assertEqual(response.media_type, "application/pdf")
+                filename = f"daily-substitution-{day}" + (f"-teacher-{teacher_id}" if teacher_id else "")
+                self.assertEqual(response.headers["content-disposition"], f'attachment; filename="{filename}.pdf"')
+                async def read_body():
+                    return b"".join([chunk async for chunk in response.body_iterator])
+                pdf = asyncio.run(read_body())
+                self.assertTrue(pdf.startswith(b"%PDF"))
+                self.assertEqual(len(re.findall(rb"/Type\s*/Page(?!s)", pdf)), 1)
+
+            for teacher_id in (teachers[2].id, -1):
+                build.reset_mock()
+                with self.assertRaises(HTTPException) as raised:
+                    export_daily_pdf(day, self.db, professor_id=teacher_id)
+                self.assertEqual(raised.exception.status_code, 404)
+                build.assert_not_called()
 
     def test_absence_reason_contract_and_legacy_migration(self):
         self.assertEqual(_absence_reason(None, None), "")
@@ -1463,6 +1497,147 @@ class ReschedulingTests(unittest.TestCase):
         self.assertEqual({row["period"]: row["subject"] for row in effective}, {1: "英文", 2: "中文"})
         self.assertEqual(self.db.query(ScheduleAdjustmentLeg).count(), 102)
 
+    def test_effective_window_keeps_cross_boundary_chain_and_skips_unrelated_legs(self):
+        start = date(2026, 8, 10)
+        teacher = Professor(nom="Window teacher", actiu=True)
+        version = TimetableVersion(effective_from=start, class_filename="classes.xls",
+                                   teacher_filename="teachers.xlsx", active=True)
+        self.db.add_all([teacher, version])
+        self.db.flush()
+        lesson = TimetableLesson(version_id=version.id, weekday=0, period=1, class_code="1A",
+                                 subject="中文", teachers_json=json.dumps([teacher.id]))
+        self.db.add(lesson)
+        self.db.flush()
+        positions = [(start, 1), (date(2026, 8, 11), 2), (date(2026, 8, 12), 3), (start, 5)]
+        leg_ids = []
+        for source, destination in zip(positions, positions[1:]):
+            adjustment = ScheduleAdjustment(kind="direct_swap", status="confirmed")
+            self.db.add(adjustment)
+            self.db.flush()
+            leg = ScheduleAdjustmentLeg(
+                adjustment_id=adjustment.id, lesson_id=lesson.id, class_code=lesson.class_code,
+                subject=lesson.subject, teachers_json=lesson.teachers_json,
+                from_date=source[0], from_period=source[1], to_date=destination[0], to_period=destination[1],
+            )
+            self.db.add(leg)
+            self.db.flush()
+            leg_ids.append(leg.id)
+        self.db.commit()
+        self.db.expunge_all()
+        loaded_legs = set()
+
+        def loaded(_session, instance):
+            if isinstance(instance, ScheduleAdjustmentLeg):
+                loaded_legs.add(instance.id)
+
+        event.listen(self.db, "loaded_as_persistent", loaded)
+        try:
+            monday = effective_occurrences(self.db, start, start)
+        finally:
+            event.remove(self.db, "loaded_as_persistent", loaded)
+        self.assertEqual(loaded_legs, {leg_ids[0], leg_ids[2]})
+        self.assertEqual([(row["period"], row["source"]) for row in monday], [(5, "direct_swap")])
+        whole_range = effective_occurrences(self.db, start, date(2026, 8, 12))
+        self.assertEqual(monday, [row for row in whole_range if row["date"] == start])
+        self.assertEqual(effective_occurrences(self.db, date(2026, 8, 11), date(2026, 8, 11)), [])
+
+    def test_manual_arrangements_share_queries_and_refresh_between_requests(self):
+        from benchmark_rescheduling import seed
+
+        start = seed(self.db, history=0)
+        statements = []
+
+        def record_query(_conn, _cursor, statement, *_args):
+            statements.append(statement)
+
+        event.listen(self.db.bind, "before_cursor_execute", record_query)
+        try:
+            queue = list_manual_arrangements(self.db, SimpleNamespace(username="admin"))
+        finally:
+            event.remove(self.db.bind, "before_cursor_execute", record_query)
+        self.assertEqual(len(queue["tasks"]), 17)
+        self.assertLessEqual(len(statements), 45)  # Previously 218 queries for these 17 tasks.
+        task = queue["tasks"][0]
+        candidate_id = task["candidates"][0]["id"]
+        self.db.add(AbsenceCase(professor_id=candidate_id, data=start,
+                               periods_json=json.dumps([task["target"]["period"]]), status="open"))
+        self.db.commit()
+        refreshed = list_manual_arrangements(self.db, SimpleNamespace(username="admin"))
+        updated = next(row for row in refreshed["tasks"] if row["task_key"] == task["task_key"])
+        self.assertNotIn(candidate_id, {row["id"] for row in updated["candidates"]})
+
+    def test_incoming_lessons_from_other_weekdays_are_loaded_in_one_query(self):
+        start, end = date(2026, 8, 10), date(2026, 8, 11)
+        version = TimetableVersion(effective_from=start, class_filename="classes.xls",
+                                   teacher_filename="teachers.xlsx", active=True)
+        adjustment = ScheduleAdjustment(kind="direct_swap", status="confirmed")
+        self.db.add_all([version, adjustment])
+        self.db.flush()
+        for period in (1, 2, 3):
+            lesson = TimetableLesson(version_id=version.id, weekday=0, period=period,
+                                     class_code="1A", subject="中文", teachers_json="[]")
+            self.db.add(lesson)
+            self.db.flush()
+            self.db.add(ScheduleAdjustmentLeg(
+                adjustment_id=adjustment.id, lesson_id=lesson.id, class_code="1A",
+                subject=lesson.subject, teachers_json="[]", from_date=start, from_period=period,
+                to_date=end, to_period=period,
+            ))
+        self.db.commit()
+        self.db.expunge_all()
+        statements = []
+
+        def record_query(_conn, _cursor, statement, *_args):
+            statements.append(statement)
+
+        event.listen(self.db.bind, "before_cursor_execute", record_query)
+        try:
+            rows = effective_occurrences(self.db, end, end)
+        finally:
+            event.remove(self.db.bind, "before_cursor_execute", record_query)
+        self.assertEqual([row["period"] for row in rows], [1, 2, 3])
+        self.assertTrue(all(row["source"] == "direct_swap" for row in rows))
+        self.assertLessEqual(len(statements), 6)
+
+    def test_execution_state_only_reads_period_times_for_today(self):
+        from routes.rescheduling import _adjustment_execution_state, _period_starts
+
+        cases = [
+            (date(2026, 8, 9), date(2026, 8, 9), "completed", 0),
+            (date(2026, 8, 11), date(2026, 8, 11), "pending", 0),
+            (date(2026, 8, 9), date(2026, 8, 11), "partial", 0),
+            (date(2026, 8, 10), date(2026, 8, 10), "partial", 1),
+        ]
+        for source, destination, expected, queries in cases:
+            legs = [SimpleNamespace(from_date=source, from_period=1, to_date=destination, to_period=9)]
+            with self.subTest(expected=expected, source=source), patch(
+                "routes.rescheduling.hong_kong_now", return_value=datetime(2026, 8, 10, 9, 0)
+            ), patch("routes.rescheduling._period_starts", wraps=_period_starts) as periods:
+                self.assertEqual(_adjustment_execution_state(self.db, legs), expected)
+                self.assertEqual(periods.call_count, queries)
+
+    def test_records_share_names_and_skip_checks_for_completed_history(self):
+        from benchmark_rescheduling import seed
+
+        seed(self.db, history=50)
+        statements = []
+
+        def record_query(_conn, _cursor, statement, *_args):
+            statements.append(statement)
+
+        event.listen(self.db.bind, "before_cursor_execute", record_query)
+        try:
+            records = list_records(scope="all", page=1, page_size=20, db=self.db)
+        finally:
+            event.remove(self.db.bind, "before_cursor_execute", record_query)
+        self.assertEqual(records["total"], 54)
+        self.assertEqual(len(records["items"]), 20)
+        self.assertLessEqual(len(statements), 55)
+        adjustments = [row for item in records["items"] for row in item["adjustments"]]
+        self.assertTrue(adjustments)
+        self.assertTrue(all(row["execution_state"] == "completed" and not row["can_revert"]
+                            for row in adjustments))
+
     def test_effective_timetable_uses_version_for_each_date(self):
         teacher = Professor(nom="A老師", actiu=True)
         self.db.add(teacher)
@@ -1572,7 +1747,7 @@ class ReschedulingTests(unittest.TestCase):
         self.assertEqual(task["recommended"]["breaks_consecutive_lessons"], 0)
         self.assertTrue(any(candidate["breaks_consecutive_lessons"] for candidate in task["alternatives"]))
 
-    def test_analysis_deprioritizes_cross_day_special_lessons(self):
+    def test_analysis_excludes_special_lessons_from_all_swaps(self):
         teachers = [Professor(nom=f"{name}老師", actiu=True) for name in "ABC"]
         self.db.add_all(teachers)
         self.db.flush()
@@ -1607,6 +1782,60 @@ class ReschedulingTests(unittest.TestCase):
 
         self.assertEqual(candidate["completion_date"], "2026-08-12")
         self.assertEqual(candidate["special_cross_day_moves"], 0)
+
+        from rescheduling_service import _leg, validate_move_legs
+        special = self.db.query(TimetableLesson).filter_by(special=True).one()
+        for weekday in (0, 1):
+            special.weekday = weekday
+            self.db.commit()
+            task = analyze_absence(self.db, absence)["tasks"][0]
+            self.assertTrue(task["alternatives"])
+            self.assertTrue(all(
+                not leg["special"] for option in task["alternatives"] for leg in option["legs"]
+            ))
+            occurrences = effective_occurrences(self.db, absence.data, date(2026, 8, 12))
+            target = next(row for row in occurrences if row["subject"] == "中文")
+            other = next(row for row in occurrences if row["special"])
+            legs = [_leg(target, other["date"], other["period"]),
+                    _leg(other, target["date"], target["period"])]
+            for leg in legs:
+                leg.pop("special")  # Manual requests need not supply this flag.
+            ok, detail = validate_move_legs(legs, occurrences, set())
+            self.assertFalse(ok)
+            self.assertIn("特殊課程不可調課", detail)
+
+    def test_special_absence_requires_manual_cover_and_prefers_class_teacher(self):
+        absent, same_class, same_subject = [Professor(nom=name, actiu=True)
+                                           for name in ("缺席", "同班", "同科")]
+        version = TimetableVersion(effective_from=date(2026, 8, 10), active=True,
+                                   class_filename="classes.xls", teacher_filename="teachers.xlsx")
+        self.db.add_all([absent, same_class, same_subject, version])
+        self.db.flush()
+        self.db.add_all([
+            TimetableLesson(version_id=version.id, weekday=0, period=3, class_code="1A",
+                            subject="體育", special=True, teachers_json=json.dumps([absent.id])),
+            TimetableLesson(version_id=version.id, weekday=0, period=2, class_code="1A",
+                            subject="中文", teachers_json=json.dumps([same_class.id])),
+            TimetableLesson(version_id=version.id, weekday=0, period=1, class_code="2A",
+                            subject="體育", special=True, teachers_json=json.dumps([same_subject.id])),
+        ])
+        absence = AbsenceCase(professor_id=absent.id, data=date(2026, 8, 10),
+                              periods_json="[3]", status="open")
+        self.db.add(absence)
+        self.db.commit()
+        task = analyze_absence(self.db, absence)["tasks"][0]
+        self.assertIsNone(task["recommended"])
+        self.assertEqual(task["alternatives"], [])
+        self.assertEqual(task["blocking_reason"], "special")
+        queue = list_manual_arrangements(self.db, SimpleNamespace(username="admin"))
+        task = queue["tasks"][0]
+        self.assertEqual([row["id"] for row in task["candidates"]], [same_class.id, same_subject.id])
+        result = confirm_manual_cover(ManualCoverRequest(
+            absence_case_id=absence.id, occurrence_id=task["target"]["occurrence_id"],
+            replacement_teacher_id=same_class.id, expected_revision=queue["revision"],
+        ), self.db, SimpleNamespace(username="admin"))
+        self.assertEqual(result["kind"], "emergency_cover")
+        self.assertEqual(absence.status, "resolved")
 
     def test_analysis_uses_three_lesson_cycle_when_direct_swaps_conflict(self):
         teachers = [Professor(nom=f"{name}老師", actiu=True) for name in "ABC"]

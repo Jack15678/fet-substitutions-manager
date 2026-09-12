@@ -754,15 +754,17 @@ def effective_occurrences(db: Session, start: date, end: date) -> list[dict]:
     lessons_by_version: dict[int, list[TimetableLesson]] = {}
     slots_by_version: dict[int, list[TimetableTeacherSlot]] = {}
     closures = {row.data for row in db.query(SchoolClosure).all()}
+    days = [day for day in _daterange(start, end) if day.weekday() < 5 and day not in closures]
+    weekdays = {day.weekday() for day in days}
     occurrences: list[dict] = []
-    for day in _daterange(start, end):
-        if day.weekday() >= 5 or day in closures:
-            continue
+    for day in days:
         version = _select_version(candidates, day)
         if not version:
             continue
         if version.id not in lessons_by_version:
-            lessons_by_version[version.id] = db.query(TimetableLesson).filter_by(version_id=version.id).all()
+            lessons_by_version[version.id] = (db.query(TimetableLesson)
+                .filter(TimetableLesson.version_id == version.id, TimetableLesson.weekday.in_(weekdays))
+                .order_by(TimetableLesson.class_code, TimetableLesson.id).all())
         lesson_rows = lessons_by_version[version.id]
         for row in lesson_rows:
             if row.weekday != day.weekday():
@@ -782,14 +784,13 @@ def effective_occurrences(db: Session, start: date, end: date) -> list[dict]:
         (teacher, occ["date"], occ["period"])
         for occ in occurrences for teacher in occ["teachers"]
     }
-    for day in _daterange(start, end):
-        if day.weekday() >= 5 or day in closures:
-            continue
+    for day in days:
         version = _select_version(candidates, day)
         if not version:
             continue
         if version.id not in slots_by_version:
-            slots_by_version[version.id] = db.query(TimetableTeacherSlot).filter_by(version_id=version.id).all()
+            slots_by_version[version.id] = (db.query(TimetableTeacherSlot)
+                .filter(TimetableTeacherSlot.version_id == version.id, TimetableTeacherSlot.weekday.in_(weekdays)).all())
         slots = slots_by_version[version.id]
         for slot in slots:
             if slot.weekday != day.weekday() or (slot.professor_id, day, slot.period) in occupied_base:
@@ -812,9 +813,19 @@ def effective_occurrences(db: Session, start: date, end: date) -> list[dict]:
 
     confirmed = (db.query(ScheduleAdjustmentLeg, ScheduleAdjustment)
                  .join(ScheduleAdjustment, ScheduleAdjustmentLeg.adjustment_id == ScheduleAdjustment.id)
-                 .filter(ScheduleAdjustment.status == "confirmed")
+                 .filter(ScheduleAdjustment.status == "confirmed",
+                         or_(ScheduleAdjustmentLeg.from_date.between(start, end),
+                             ScheduleAdjustmentLeg.to_date.between(start, end)))
                  .order_by(ScheduleAdjustment.confirmed_at, ScheduleAdjustment.id, ScheduleAdjustmentLeg.id)
                  .all())
+    lessons_by_id = {row.id: row for rows in lessons_by_version.values() for row in rows}
+    incoming_ids = {leg.lesson_id for leg, adjustment in confirmed
+                    if start <= leg.to_date <= end and not leg.replacement_teacher_id
+                    and adjustment.kind != "co_teacher_solo"}
+    missing_ids = incoming_ids - lessons_by_id.keys()
+    if missing_ids:
+        lessons_by_id.update((row.id, row) for row in db.query(TimetableLesson)
+                             .filter(TimetableLesson.id.in_(missing_ids)).all())
     for leg, adjustment in confirmed:
         if adjustment.kind == "co_teacher_solo":
             for occ in occurrences:
@@ -843,7 +854,7 @@ def effective_occurrences(db: Session, start: date, end: date) -> list[dict]:
                     and occ["period"] == leg.from_period)
         ]
         if start <= leg.to_date <= end:
-            row = db.get(TimetableLesson, leg.lesson_id)
+            row = lessons_by_id.get(leg.lesson_id)
             if not row:
                 continue
             occurrences.append({
@@ -949,6 +960,8 @@ def validate_move_legs(legs: list[dict], occurrences: list[dict], absences: set,
     source_map, occupied_teachers, occupied_classes = occupancy or _occupancy_index(occurrences)
     if len(source_ids) != len(legs) or any(source_id not in source_map for source_id in source_ids):
         return False, "課堂來源已改變，請重新分析"
+    if any(source_map[source_id].get("special") for source_id in source_ids):
+        return False, "特殊課程不可調課，請使用人工代課流程"
     if len({source_map[source_id]["version_id"] for source_id in source_ids}) != 1:
         return False, "不同課表版本的課堂不能互調"
     allowed_locked_ids = allowed_locked_ids or set()
@@ -1147,6 +1160,10 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase], *,
             option_groups.append([])
             blocking_reasons.append("started")
             continue
+        if target.get("special"):
+            option_groups.append([])
+            blocking_reasons.append("special")
+            continue
         repairable_target = (
             not target["locked"]
             or bool(target.get("adjustment_id")) and target.get("source") in REPAIRABLE_SWAP_KINDS
@@ -1156,6 +1173,7 @@ def analyze_absences(db: Session, absence_cases: list[AbsenceCase], *,
             occ for occ in occurrences
             if occ["class_code"] == target["class_code"] and occ["lesson_id"] is not None
             and occ["occurrence_id"] != target["occurrence_id"] and not occ["locked"]
+            and not occ.get("special")
             and occ["date"] in dates
         ]
         same_class.sort(key=lambda occ: (dates.index(occ["date"]), occ["period"], occ["lesson_id"]))

@@ -47,14 +47,14 @@
           <label>{{ $t('rescheduling.candidates') }}
             <select v-model="selectedCandidates[task.task_key]">
               <option v-for="candidate in task.alternatives" :key="candidate.id" :value="candidate.id">
-                {{ optionLabel(candidate) }}{{ candidate.special_cross_day_moves ? ` · ${$t('rescheduling.specialCourseLater')}` : '' }}
+                {{ optionLabel(candidate) }}
               </option>
             </select>
           </label>
           <div class="movement-list" v-for="candidate in selectedForTask(task)" :key="candidate.id">
             <div v-for="(leg, index) in candidate.legs" :key="index">
               <span>{{ leg.class_code }} {{ leg.subject }}（{{ joinItems(leg.teacher_names) }}）</span>
-              <b>{{ leg.from_date }} {{ $t('records.period', { period: leg.from_period }) }} → {{ leg.to_date }} {{ $t('records.period', { period: leg.to_period }) }}</b>
+              <b>{{ britishDate(leg.from_date) }} {{ $t('records.period', { period: leg.from_period }) }} → {{ britishDate(leg.to_date) }} {{ $t('records.period', { period: leg.to_period }) }}</b>
             </div>
             <small v-if="candidate.breaks_consecutive_lessons" class="candidate-warning">{{ $t('rescheduling.breaksConsecutiveLesson') }}</small>
           </div>
@@ -65,7 +65,7 @@
           </div>
         </template>
         <div v-else class="unresolved-actions">
-          <p class="unresolved-copy">{{ $t(task.blocking_reason === 'started' ? 'rescheduling.startedLesson' : 'rescheduling.noCandidate') }}</p>
+          <p class="unresolved-copy">{{ $t(task.blocking_reason === 'started' ? 'rescheduling.startedLesson' : task.target.special ? 'rescheduling.specialManualOnly' : 'rescheduling.noCandidate') }}</p>
           <Button v-if="can('manual_arrangement.manage')" :label="$t('rescheduling.arrangeThisLesson')" severity="secondary" outlined @click="openManualPanel(task.task_key)" />
         </div>
       </article>
@@ -112,7 +112,7 @@
           <section class="candidate-area">
             <header class="candidate-area-heading">
               <div><span>{{ $t('rescheduling.manualStep', { step: 1 }) }}</span><h3>{{ $t('rescheduling.chooseCoverTeacher') }}</h3></div>
-              <small>{{ $t('rescheduling.candidateRule') }}</small>
+              <small>{{ $t(selectedManualTask.target.special ? 'rescheduling.specialCandidateRule' : 'rescheduling.candidateRule') }}</small>
             </header>
             <div v-if="selectedManualTask.co_teachers?.length" class="co-teacher-option">
               <div>
@@ -143,6 +143,7 @@
                   <i aria-hidden="true"></i>
                 </div>
                 <div class="candidate-badges">
+                  <span v-if="selectedManualTask.target.special && candidate.same_class" class="same-subject">{{ $t('rescheduling.sameClass') }}</span>
                   <span v-if="candidate.same_subject" class="same-subject">{{ $t('rescheduling.sameSubject') }}</span>
                   <span>{{ adjacentLabel(candidate) }}</span>
                 </div>
@@ -199,7 +200,7 @@
             @click="activeAbsenceEntryId = entry.id"
           >
             <strong>{{ entryTeacherName(entry) || $t('rescheduling.newAbsenceRecord') }}</strong>
-            <span>{{ entry.data }}</span>
+            <span>{{ britishDate(entry.data) }}</span>
             <small>{{ entryPeriodSummary(entry) }}</small>
           </button>
         </TransitionGroup>
@@ -234,8 +235,8 @@
                 <option v-for="teacher in activeAbsenceEntry.teachers" :key="teacher.id" :value="teacher.id">{{ teacher.name }}</option>
               </select>
             </label>
-            <label>{{ $t('rescheduling.absenceDate') }}
-              <input v-model="activeAbsenceEntry.data" type="date" required @change="loadAbsenceEntryContext(activeAbsenceEntry)" />
+            <label for="absence-date">{{ $t('rescheduling.absenceDate') }}
+              <Calendar inputId="absence-date" :modelValue="parseIsoLocal(activeAbsenceEntry.data)" dateFormat="dd/mm/yy" showIcon :inputProps="{ required: true }" @update:modelValue="activeAbsenceEntry.data = formatDateLocal($event) || ''; loadAbsenceEntryContext(activeAbsenceEntry)" />
             </label>
             <label>
               <span>{{ $t('rescheduling.absenceReason') }} <span class="required-marker" aria-hidden="true">*</span></span>
@@ -326,7 +327,7 @@
           <div class="title-copy"><h3>{{ $t('rescheduling.steps.effective') }}</h3><small>{{ $t('rescheduling.affectedHint') }}</small></div>
         </div>
         <div class="effective-filters">
-          <label class="inline-date">{{ $t('rescheduling.date') }}<input v-model="effectiveDate" type="date" @change="loadEffective" /></label>
+          <label for="effective-date" class="inline-date">{{ $t('rescheduling.date') }}<Calendar inputId="effective-date" :modelValue="parseIsoLocal(effectiveDate)" dateFormat="dd/mm/yy" showIcon @update:modelValue="effectiveDate = formatDateLocal($event) || ''; loadEffective()" /></label>
         </div>
       </div>
       <div>
@@ -359,7 +360,7 @@
               </div>
             </header>
             <div v-if="isCoverKind(group.source)" class="cover-link">
-              <div><small>{{ $t('rescheduling.coverAt') }}</small><b>{{ group.legs[0].from_date }} · {{ periodLabel(group.legs[0].from_period) }}</b></div>
+              <div><small>{{ $t('rescheduling.coverAt') }}</small><b>{{ britishDate(group.legs[0].from_date) }} · {{ periodLabel(group.legs[0].from_period) }}</b></div>
               <span aria-hidden="true">→</span>
               <div><strong>{{ group.legs[0].class_code }} · {{ group.legs[0].subject }}</strong><span>{{ joinItems(adjustmentTeacherNames(group.source, group.legs[0])) }}</span></div>
             </div>
@@ -378,9 +379,9 @@
                     <td class="cycle-order"><span>{{ index + 1 }}</span></td>
                     <td><strong>{{ leg.class_code }} · {{ leg.subject }}</strong></td>
                     <td class="cycle-teacher">{{ joinItems(leg.teacher_names) }}</td>
-                    <td class="cycle-time">{{ leg.from_date }} · {{ periodLabel(leg.from_period) }}</td>
+                    <td class="cycle-time">{{ britishDate(leg.from_date) }} · {{ periodLabel(leg.from_period) }}</td>
                     <td class="cycle-table-arrow" aria-hidden="true">→</td>
-                    <td class="cycle-time">{{ leg.to_date }} · {{ periodLabel(leg.to_period) }}</td>
+                    <td class="cycle-time">{{ britishDate(leg.to_date) }} · {{ periodLabel(leg.to_period) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -432,13 +433,13 @@
             <option value="other">{{ $t('leave.types.other') }}</option>
           </select>
         </label>
-        <label>{{ $t('leave.startDate') }}<input v-model="leave.start_date" type="date" required /></label>
-        <label>{{ $t('leave.endDate') }}<input v-model="leave.end_date" type="date" required /></label>
+        <label for="leave-start-date">{{ $t('leave.startDate') }}<Calendar inputId="leave-start-date" :modelValue="parseIsoLocal(leave.start_date)" dateFormat="dd/mm/yy" showIcon :inputProps="{ required: true }" @update:modelValue="leave.start_date = formatDateLocal($event) || ''" /></label>
+        <label for="leave-end-date">{{ $t('leave.endDate') }}<Calendar inputId="leave-end-date" :modelValue="parseIsoLocal(leave.end_date)" dateFormat="dd/mm/yy" showIcon :inputProps="{ required: true }" @update:modelValue="leave.end_date = formatDateLocal($event) || ''" /></label>
         <Button type="submit" :label="editingLeaveId ? $t('leave.update') : $t('leave.add')" :loading="leaveBusy" />
       </form>
       <TransitionGroup v-if="leaves.length" name="motion-list" tag="div" class="leave-list">
         <article v-for="item in leaves" :key="item.id">
-          <div><strong>{{ item.teacher_name }}</strong><span>{{ leaveTypeLabel(item.leave_type) }} · {{ item.start_date }} → {{ item.end_date }}</span></div>
+          <div><strong>{{ item.teacher_name }}</strong><span>{{ leaveTypeLabel(item.leave_type) }} · {{ britishDate(item.start_date) }} → {{ britishDate(item.end_date) }}</span></div>
           <div><Button :label="$t('common.edit')" text @click="editLeave(item)" /><Button :label="$t('common.delete')" severity="danger" text @click="removeLeave(item.id)" /></div>
         </article>
       </TransitionGroup>
@@ -453,8 +454,10 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Button from 'primevue/button'
+import Calendar from 'primevue/calendar'
 import Dialog from 'primevue/dialog'
 import { candidateOptionLabel } from './rescheduling/candidateLabel.js'
+import { formatDateLocal, parseIsoLocal } from './scheduler/dateUtils.js'
 
 const props = defineProps({ dataGlobal: Date, isAdmin: Boolean, can: { type: Function, required: true } })
 const { t, locale } = useI18n()
@@ -836,17 +839,12 @@ const selectAnalysisDate = async (targetDate, refresh = true) => {
 }
 
 const selectedForTask = (task) => task.alternatives.filter(item => item.id === selectedCandidates[task.task_key])
-const dateLabel = (value) => new Intl.DateTimeFormat(locale.value === 'en' ? 'en-HK' : 'zh-HK', {
-  month: 'numeric', day: 'numeric', weekday: 'short'
-}).format(new Date(`${value}T12:00:00`))
-const optionDateLabel = (value) => {
-  const day = new Date(`${value}T12:00:00`)
-  return locale.value === 'en'
-    ? new Intl.DateTimeFormat('en-HK', { month: 'numeric', day: 'numeric', weekday: 'short' }).format(day)
-    : `${day.getMonth() + 1}/${day.getDate()}（${'日一二三四五六'[day.getDay()]}）`
-}
+const britishDate = (value) => (value || '').split('-').reverse().join('/')
+const dateLabel = (value) => `${britishDate(value)}（${new Intl.DateTimeFormat(locale.value === 'en' ? 'en-GB' : 'zh-HK', {
+  weekday: 'short'
+}).format(parseIsoLocal(value))}）`
 const optionLabel = (candidate) => candidateOptionLabel(candidate, {
-  date: optionDateLabel, period: periodLabel, join: joinItems, kind: kindLabel,
+  date: dateLabel, period: periodLabel, join: joinItems, kind: kindLabel,
 })
 const arrangementLabel = (lessons) => lessons.length
   ? joinItems([...new Set(lessons.map(lesson => `${lesson.class_code} ${lesson.subject}`))])
@@ -1104,7 +1102,9 @@ onMounted(async () => {
 .entry-error, .absence-form-error { margin: .55rem 0 0; color: #9b3b30; font-size: var(--font-ui); }
 .absence-form-error { padding: 0 2rem; }
 .absence-form-actions { display: flex; justify-content: flex-end; gap: .65rem; margin-top: auto; padding: 1rem 2rem; border-top: 1px solid var(--border-color); background: #fbfcfd; }
-select, input[type=date], input[type=file], input[type=text], textarea { width: 100%; min-height: 2.55rem; border: 1px solid #c8d2dd; border-radius: 4px; padding: .6rem .7rem; background: #fff; color: var(--text-color-primary); }
+.p-calendar { width: 100%; min-width: 0; }
+.p-calendar :deep(input) { width: 100%; min-width: 0; }
+select, input[type=file], input[type=text], textarea, .p-calendar :deep(input) { width: 100%; min-height: 2.55rem; border: 1px solid #c8d2dd; border-radius: 4px; padding: .6rem .7rem; background: #fff; color: var(--text-color-primary); }
 select:hover, input:hover, textarea:hover { border-color: #aeb8c5; }
 select:focus, input:focus, textarea:focus { border-color: var(--primary-color); }
 input[type=checkbox] { accent-color: var(--primary-color); }

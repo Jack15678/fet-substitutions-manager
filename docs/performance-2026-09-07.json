@@ -1,0 +1,699 @@
+{
+  "measured_at_local": "2026-09-07 Asia/Shanghai",
+  "status": "verified_on_school_linux_in_isolated_containers_not_deployed",
+  "baseline_commit": "06c614227b34121ada68adf64e98f712761bb39f",
+  "image_id": "sha256:dfcfea966729081a34db6a89164595d62214a5cc8fb28f4ad59211e2fdbb8e92",
+  "host": {
+    "os": "Ubuntu 20.04.6 LTS",
+    "kernel": "5.15.0-67-generic",
+    "cpu": "Intel Pentium G3240 @ 3.10GHz",
+    "logical_cpus": 2,
+    "memory_kib": 3939448,
+    "uvicorn_workers": 1,
+    "container_cpu_memory_limits": "none"
+  },
+  "method": "Same production image, sequential isolated containers, one warmup then seven samples, authenticated loopback HTTP; database and auth isolated; fixture clock fixed; production service unchanged.",
+  "validation": {
+    "linux_rescheduling_tests": 53,
+    "linux_timetable_range_tests": 8,
+    "local_full_suite_passed": 118,
+    "local_full_suite_skipped": 8,
+    "exact_output_comparison": "passed for both datasets, all four service paths and all four HTTP endpoints"
+  },
+  "school": {
+    "before": {
+      "python": "3.13.15",
+      "platform": "Linux-5.15.0-67-generic-x86_64-with-glibc2.41",
+      "sqlalchemy": "2.0.51",
+      "sqlite": "3.46.1",
+      "dataset": "snapshot",
+      "date": "2026-06-10",
+      "counts": {
+        "professors": 63,
+        "timetable_lessons": 2725,
+        "timetable_teacher_slots": 3212,
+        "absence_cases": 11,
+        "schedule_adjustment_legs": 58
+      },
+      "repeats": 7,
+      "benchmarks": {
+        "effective_day": {
+          "median_ms": 40.963,
+          "min_ms": 38.726,
+          "max_ms": 99.854,
+          "samples_ms": [
+            38.726,
+            99.854,
+            38.861,
+            40.963,
+            41.045,
+            43.649,
+            40.536
+          ],
+          "queries": [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        },
+        "effective_week": {
+          "median_ms": 82.194,
+          "min_ms": 79.233,
+          "max_ms": 143.003,
+          "samples_ms": [
+            79.233,
+            79.92,
+            79.782,
+            87.164,
+            143.003,
+            82.194,
+            82.251
+          ],
+          "queries": [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        },
+        "analyze_absences": {
+          "median_ms": 149.197,
+          "min_ms": 145.596,
+          "max_ms": 220.853,
+          "samples_ms": [
+            146.391,
+            220.853,
+            150.075,
+            145.596,
+            148.771,
+            149.197,
+            208.4
+          ],
+          "queries": [
+            18,
+            18,
+            18,
+            18,
+            18,
+            18,
+            18
+          ]
+        },
+        "manual_arrangements": {
+          "median_ms": 590.586,
+          "min_ms": 530.645,
+          "max_ms": 599.979,
+          "samples_ms": [
+            594.855,
+            585.101,
+            597.361,
+            530.645,
+            589.469,
+            599.979,
+            590.586
+          ],
+          "queries": [
+            97,
+            97,
+            97,
+            97,
+            97,
+            97,
+            97
+          ]
+        }
+      },
+      "http_benchmarks": {
+        "effective_timetable": {
+          "median_ms": 130.401,
+          "min_ms": 126.793,
+          "max_ms": 144.39,
+          "samples_ms": [
+            129.509,
+            144.39,
+            126.793,
+            130.009,
+            130.401,
+            131.168,
+            135.26
+          ]
+        },
+        "analyze_absences": {
+          "median_ms": 161.464,
+          "min_ms": 156.994,
+          "max_ms": 237.808,
+          "samples_ms": [
+            230.899,
+            161.021,
+            161.464,
+            156.994,
+            166.237,
+            237.808,
+            157.138
+          ]
+        },
+        "manual_arrangements": {
+          "median_ms": 640.333,
+          "min_ms": 572.191,
+          "max_ms": 646.509,
+          "samples_ms": [
+            635.461,
+            641.169,
+            644.317,
+            636.044,
+            572.191,
+            640.333,
+            646.509
+          ]
+        },
+        "records": {
+          "median_ms": 144.709,
+          "min_ms": 142.971,
+          "max_ms": 153.218,
+          "samples_ms": [
+            144.278,
+            153.218,
+            149.716,
+            142.971,
+            144.709,
+            143.396,
+            146.3
+          ]
+        }
+      }
+    },
+    "after": {
+      "python": "3.13.15",
+      "platform": "Linux-5.15.0-67-generic-x86_64-with-glibc2.41",
+      "sqlalchemy": "2.0.51",
+      "sqlite": "3.46.1",
+      "dataset": "snapshot",
+      "date": "2026-06-10",
+      "counts": {
+        "professors": 63,
+        "timetable_lessons": 2725,
+        "timetable_teacher_slots": 3212,
+        "absence_cases": 11,
+        "schedule_adjustment_legs": 58
+      },
+      "repeats": 7,
+      "benchmarks": {
+        "effective_day": {
+          "median_ms": 16.876,
+          "min_ms": 16.582,
+          "max_ms": 21.194,
+          "samples_ms": [
+            21.194,
+            17.014,
+            16.756,
+            16.582,
+            16.819,
+            16.893,
+            16.876
+          ],
+          "queries": [
+            6,
+            6,
+            6,
+            6,
+            6,
+            6,
+            6
+          ]
+        },
+        "effective_week": {
+          "median_ms": 69.071,
+          "min_ms": 67.694,
+          "max_ms": 70.983,
+          "samples_ms": [
+            67.694,
+            68.335,
+            68.793,
+            70.983,
+            70.041,
+            69.725,
+            69.071
+          ],
+          "queries": [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        },
+        "analyze_absences": {
+          "median_ms": 141.081,
+          "min_ms": 135.034,
+          "max_ms": 196.122,
+          "samples_ms": [
+            141.571,
+            135.034,
+            138.114,
+            141.081,
+            196.122,
+            136.835,
+            142.416
+          ],
+          "queries": [
+            18,
+            18,
+            18,
+            18,
+            18,
+            18,
+            18
+          ]
+        },
+        "manual_arrangements": {
+          "median_ms": 214.792,
+          "min_ms": 209.141,
+          "max_ms": 281.305,
+          "samples_ms": [
+            209.141,
+            211.099,
+            281.305,
+            210.26,
+            214.792,
+            279.844,
+            216.381
+          ],
+          "queries": [
+            42,
+            42,
+            42,
+            42,
+            42,
+            42,
+            42
+          ]
+        }
+      },
+      "http_benchmarks": {
+        "effective_timetable": {
+          "median_ms": 75.643,
+          "min_ms": 73.633,
+          "max_ms": 144.767,
+          "samples_ms": [
+            76.61,
+            144.767,
+            74.139,
+            75.387,
+            73.633,
+            75.643,
+            88.262
+          ]
+        },
+        "analyze_absences": {
+          "median_ms": 150.566,
+          "min_ms": 148.348,
+          "max_ms": 223.632,
+          "samples_ms": [
+            150.566,
+            148.348,
+            150.219,
+            223.632,
+            154.518,
+            149.873,
+            157.279
+          ]
+        },
+        "manual_arrangements": {
+          "median_ms": 264.965,
+          "min_ms": 257.764,
+          "max_ms": 336.103,
+          "samples_ms": [
+            257.764,
+            264.418,
+            336.103,
+            260.333,
+            264.965,
+            328.577,
+            266.091
+          ]
+        },
+        "records": {
+          "median_ms": 68.633,
+          "min_ms": 67.486,
+          "max_ms": 76.086,
+          "samples_ms": [
+            68.188,
+            67.503,
+            68.633,
+            76.086,
+            74.376,
+            67.486,
+            69.075
+          ]
+        }
+      }
+    }
+  },
+  "synthetic": {
+    "before": {
+      "python": "3.13.15",
+      "platform": "Linux-5.15.0-67-generic-x86_64-with-glibc2.41",
+      "sqlalchemy": "2.0.51",
+      "sqlite": "3.46.1",
+      "dataset": "synthetic",
+      "date": "2026-09-07",
+      "counts": {
+        "professors": 60,
+        "timetable_lessons": 1350,
+        "timetable_teacher_slots": 1350,
+        "absence_cases": 4,
+        "schedule_adjustment_legs": 1000
+      },
+      "repeats": 7,
+      "benchmarks": {
+        "effective_day": {
+          "median_ms": 159.93,
+          "min_ms": 156.942,
+          "max_ms": 226.2,
+          "samples_ms": [
+            160.802,
+            159.93,
+            157.866,
+            226.2,
+            156.942,
+            157.57,
+            164.248
+          ],
+          "queries": [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        },
+        "effective_week": {
+          "median_ms": 638.03,
+          "min_ms": 628.844,
+          "max_ms": 709.898,
+          "samples_ms": [
+            637.644,
+            634.506,
+            638.03,
+            641.07,
+            709.898,
+            628.844,
+            643.121
+          ],
+          "queries": [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        },
+        "analyze_absences": {
+          "median_ms": 1153.9,
+          "min_ms": 1134.213,
+          "max_ms": 1229.629,
+          "samples_ms": [
+            1134.213,
+            1153.9,
+            1207.005,
+            1153.045,
+            1229.629,
+            1147.132,
+            1174.034
+          ],
+          "queries": [
+            18,
+            18,
+            18,
+            18,
+            18,
+            18,
+            18
+          ]
+        },
+        "manual_arrangements": {
+          "median_ms": 2758.383,
+          "min_ms": 2694.464,
+          "max_ms": 2824.874,
+          "samples_ms": [
+            2694.464,
+            2751.107,
+            2823.734,
+            2824.874,
+            2758.383,
+            2792.625,
+            2721.466
+          ],
+          "queries": [
+            218,
+            218,
+            218,
+            218,
+            218,
+            218,
+            218
+          ]
+        }
+      },
+      "http_benchmarks": {
+        "effective_timetable": {
+          "median_ms": 191.244,
+          "min_ms": 189.185,
+          "max_ms": 262.188,
+          "samples_ms": [
+            189.443,
+            189.185,
+            193.257,
+            189.996,
+            262.188,
+            192.544,
+            191.244
+          ]
+        },
+        "analyze_absences": {
+          "median_ms": 1263.229,
+          "min_ms": 1255.184,
+          "max_ms": 1339.955,
+          "samples_ms": [
+            1322.311,
+            1263.229,
+            1320.439,
+            1255.299,
+            1255.583,
+            1339.955,
+            1255.184
+          ]
+        },
+        "manual_arrangements": {
+          "median_ms": 2939.661,
+          "min_ms": 2759.49,
+          "max_ms": 2951.722,
+          "samples_ms": [
+            2939.661,
+            2939.741,
+            2951.722,
+            2944.473,
+            2819.232,
+            2832.319,
+            2759.49
+          ]
+        },
+        "records": {
+          "median_ms": 47305.437,
+          "min_ms": 47159.455,
+          "max_ms": 47750.457,
+          "samples_ms": [
+            47677.066,
+            47425.231,
+            47305.437,
+            47159.455,
+            47277.147,
+            47750.457,
+            47230.546
+          ]
+        }
+      }
+    },
+    "after": {
+      "python": "3.13.15",
+      "platform": "Linux-5.15.0-67-generic-x86_64-with-glibc2.41",
+      "sqlalchemy": "2.0.51",
+      "sqlite": "3.46.1",
+      "dataset": "synthetic",
+      "date": "2026-09-07",
+      "counts": {
+        "professors": 60,
+        "timetable_lessons": 1350,
+        "timetable_teacher_slots": 1350,
+        "absence_cases": 4,
+        "schedule_adjustment_legs": 1000
+      },
+      "repeats": 7,
+      "benchmarks": {
+        "effective_day": {
+          "median_ms": 13.354,
+          "min_ms": 13.22,
+          "max_ms": 13.897,
+          "samples_ms": [
+            13.403,
+            13.691,
+            13.295,
+            13.22,
+            13.897,
+            13.286,
+            13.354
+          ],
+          "queries": [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        },
+        "effective_week": {
+          "median_ms": 58.581,
+          "min_ms": 58.367,
+          "max_ms": 131.421,
+          "samples_ms": [
+            58.439,
+            58.581,
+            58.373,
+            58.879,
+            59.962,
+            131.421,
+            58.367
+          ],
+          "queries": [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            5
+          ]
+        },
+        "analyze_absences": {
+          "median_ms": 553.771,
+          "min_ms": 548.611,
+          "max_ms": 621.901,
+          "samples_ms": [
+            553.645,
+            617.094,
+            553.771,
+            548.611,
+            621.901,
+            583.431,
+            550.767
+          ],
+          "queries": [
+            18,
+            18,
+            18,
+            18,
+            18,
+            18,
+            18
+          ]
+        },
+        "manual_arrangements": {
+          "median_ms": 772.517,
+          "min_ms": 693.618,
+          "max_ms": 778.274,
+          "samples_ms": [
+            694.37,
+            773.688,
+            773.586,
+            772.517,
+            693.618,
+            770.349,
+            778.274
+          ],
+          "queries": [
+            42,
+            42,
+            42,
+            42,
+            42,
+            42,
+            42
+          ]
+        }
+      },
+      "http_benchmarks": {
+        "effective_timetable": {
+          "median_ms": 42.179,
+          "min_ms": 41.235,
+          "max_ms": 115.371,
+          "samples_ms": [
+            41.436,
+            115.371,
+            43.399,
+            42.179,
+            43.12,
+            41.235,
+            41.942
+          ]
+        },
+        "analyze_absences": {
+          "median_ms": 620.184,
+          "min_ms": 602.565,
+          "max_ms": 691.697,
+          "samples_ms": [
+            602.565,
+            691.697,
+            616.974,
+            618.885,
+            620.184,
+            690.797,
+            623.304
+          ]
+        },
+        "manual_arrangements": {
+          "median_ms": 814.995,
+          "min_ms": 808.949,
+          "max_ms": 893.667,
+          "samples_ms": [
+            810.575,
+            885.776,
+            814.995,
+            893.667,
+            808.949,
+            892.436,
+            811.05
+          ]
+        },
+        "records": {
+          "median_ms": 551.334,
+          "min_ms": 539.258,
+          "max_ms": 632.313,
+          "samples_ms": [
+            632.313,
+            554.027,
+            539.258,
+            554.325,
+            544.128,
+            551.334,
+            542.798
+          ]
+        }
+      }
+    }
+  }
+}

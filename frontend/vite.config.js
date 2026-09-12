@@ -3,6 +3,8 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
+  // ponytail: retain chunks for open tabs; prune old assets during downtime if disk use grows.
+  build: { emptyOutDir: false },
   server: {
     port: 5173,
     allowedHosts: ['.trycloudflare.com'],

@@ -40,7 +40,6 @@ from daily_exports import (
 )
 from rescheduling_service import (
     MAX_CYCLE_LESSONS_KEY,
-    adjacent_teaching_count,
     analyze_absences,
     apply_import_resolutions,
     build_import_preview,
@@ -232,17 +231,22 @@ def _adjustment_execution_state(db: Session, legs: list[ScheduleAdjustmentLeg]) 
         for leg in legs
         for day, period in ((leg.from_date, leg.from_period), (leg.to_date, leg.to_period))
     }
-    started = sum(schedule_slot_started(day, period, now, _period_starts(db, day)) for day, period in slots)
+    today = now.date()
+    starts = _period_starts(db, today) if any(day == today for day, _ in slots) else None
+    started = sum(day < today or (day == today and schedule_slot_started(day, period, now, starts))
+                  for day, period in slots)
     if not started:
         return "pending"
     return "completed" if started == len(slots) else "partial"
 
 
-def _serialize_adjustment(db: Session, adjustment: ScheduleAdjustment) -> dict:
-    professor_names = {row.id: row.nom for row in db.query(Professor).all()}
+def _serialize_adjustment(db: Session, adjustment: ScheduleAdjustment,
+                          professor_names: dict[int, str] | None = None) -> dict:
+    if professor_names is None:
+        professor_names = {row.id: row.nom for row in db.query(Professor).all()}
     legs = db.query(ScheduleAdjustmentLeg).filter_by(adjustment_id=adjustment.id).order_by(ScheduleAdjustmentLeg.id).all()
     execution_state = _adjustment_execution_state(db, legs)
-    has_downstream = adjustment.status == "confirmed" and _has_confirmed_downstream_adjustment(
+    has_downstream = adjustment.status == "confirmed" and execution_state == "pending" and _has_confirmed_downstream_adjustment(
         db, adjustment, legs
     )
     return {
@@ -1032,14 +1036,20 @@ def export_daily_pdf(
     data: date,
     db: Session = Depends(get_db),
     _current_user=Depends(require_permission("exports.download")),
+    professor_id: Optional[int] = None,
 ):
     entries = daily_export_data(db, data)
+    if professor_id is not None:
+        entries = [entry for entry in entries if entry["teacher_id"] == professor_id]
     if not entries:
         raise HTTPException(404, "所選日期沒有可匯出的調課／代課記錄")
     content = build_daily_pdf(entries, get_period_times(db, data))
+    filename = f"daily-substitution-{data.isoformat()}"
+    if professor_id is not None:
+        filename += f"-teacher-{professor_id}"
     return StreamingResponse(
         BytesIO(content), media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="daily-substitution-{data.isoformat()}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}.pdf"'},
     )
 
 
@@ -1096,16 +1106,21 @@ def _has_confirmed_downstream_adjustment(
     db: Session, adjustment: ScheduleAdjustment, legs: list[ScheduleAdjustmentLeg]
 ) -> bool:
     destinations = {(leg.lesson_id, leg.to_date, leg.to_period) for leg in legs}
-    later_legs = (
-        db.query(ScheduleAdjustmentLeg)
+    if not destinations:
+        return False
+    return (
+        db.query(ScheduleAdjustmentLeg.id)
         .join(ScheduleAdjustment, ScheduleAdjustmentLeg.adjustment_id == ScheduleAdjustment.id)
         .filter(
             ScheduleAdjustment.status == "confirmed",
             ScheduleAdjustment.id > adjustment.id,
+            or_(*(and_(ScheduleAdjustmentLeg.lesson_id == lesson_id,
+                       ScheduleAdjustmentLeg.from_date == day,
+                       ScheduleAdjustmentLeg.from_period == period)
+                  for lesson_id, day, period in destinations)),
         )
-        .all()
-    )
-    return any((leg.lesson_id, leg.from_date, leg.from_period) in destinations for leg in later_legs)
+        .first()
+    ) is not None
 
 
 def _can_manage_records(current_user) -> bool:
@@ -1444,18 +1459,12 @@ def _save_candidate(db: Session, candidate: dict, absence_case_id: int | None,
     return adjustment
 
 
-def _manual_cover_candidates(
-    db: Session,
-    absence: AbsenceCase,
-    target: dict,
-    occurrences: list[dict] | None = None,
-) -> list[dict]:
-    """Return free teachers ranked by how clear the periods around the target are."""
-    version = version_for_date(db, absence.data)
+def _manual_cover_context(db: Session, target_date: date, occurrences: list[dict]) -> dict:
+    """Load shared ranking data once per date within the current request."""
+    version = version_for_date(db, target_date)
     if not version:
-        return []
-    occurrences = occurrences or effective_occurrences(db, absence.data, absence.data)
-    absences = absence_keys(db, absence.data, absence.data)
+        return {"teachers": {}}
+    absences = absence_keys(db, target_date, target_date)
     teacher_ids = professor_ids_for_version(db, version)
     teachers = {
         row.id: row.nom
@@ -1463,10 +1472,12 @@ def _manual_cover_candidates(
         .filter(Professor.id.in_(teacher_ids), Professor.actiu.is_(True)).all()
     }
     subjects_by_teacher: dict[int, set[str]] = {}
+    classes_by_teacher: dict[int, set[str]] = {}
     for lesson in db.query(TimetableLesson).filter_by(version_id=version.id).all():
         subject = normalize_subject(lesson.subject)
         for teacher_id in json.loads(lesson.teachers_json or "[]"):
             subjects_by_teacher.setdefault(int(teacher_id), set()).add(subject)
+            classes_by_teacher.setdefault(int(teacher_id), set()).add(lesson.class_code)
 
     cover_counts = {
         int(teacher_id): int(count)
@@ -1487,8 +1498,36 @@ def _manual_cover_candidates(
         for teacher_id in occurrence["teachers"]:
             busy_by_teacher.setdefault(int(teacher_id), {}).setdefault(occurrence["period"], []).append(occurrence)
 
+    return {
+        "teachers": teachers, "absences": absences, "subjects_by_teacher": subjects_by_teacher,
+        "classes_by_teacher": classes_by_teacher,
+        "cover_counts": cover_counts, "busy_by_teacher": busy_by_teacher,
+        "max_period": len(get_period_times(db, target_date)),
+    }
+
+
+def _manual_cover_candidates(
+    db: Session,
+    absence: AbsenceCase,
+    target: dict,
+    occurrences: list[dict] | None = None,
+    *,
+    context: dict | None = None,
+) -> list[dict]:
+    """Return free teachers ranked by how clear the periods around the target are."""
+    if context is None:
+        if occurrences is None:
+            occurrences = effective_occurrences(db, absence.data, absence.data)
+        context = _manual_cover_context(db, absence.data, occurrences)
+    teachers = context["teachers"]
+    if not teachers:
+        return []
+    absences = context["absences"]
+    subjects_by_teacher = context["subjects_by_teacher"]
+    cover_counts = context["cover_counts"]
+    busy_by_teacher = context["busy_by_teacher"]
     target_period = int(target["period"])
-    max_period = len(get_period_times(db, absence.data))
+    max_period = context["max_period"]
     adjacent_periods = [period for period in (target_period - 1, target_period + 1) if 1 <= period <= max_period]
     target_subject = normalize_subject(target["subject"])
     candidates = []
@@ -1504,9 +1543,8 @@ def _manual_cover_candidates(
             or (teacher_id, absence.data, period) in absences
             for period in adjacent_periods
         )
-        adjacent_teaching = adjacent_teaching_count(
-            occurrences, teacher_id, absence.data, target_period
-        )
+        adjacent_teaching = sum(bool(busy_by_teacher.get(teacher_id, {}).get(period))
+                                for period in (target_period - 1, target_period + 1) if 1 <= period <= 9)
         slots = []
         for period in range(1, max_period + 1):
             lessons = busy_by_teacher.get(teacher_id, {}).get(period, [])
@@ -1524,6 +1562,7 @@ def _manual_cover_candidates(
             "id": teacher_id,
             "name": teacher_name,
             "same_subject": target_subject in subjects_by_teacher.get(teacher_id, set()),
+            "same_class": target["class_code"] in context["classes_by_teacher"].get(teacher_id, set()),
             "cover_count": cover_counts.get(teacher_id, 0),
             "adjacent_busy_count": adjacent_busy_count,
             "adjacent_teaching_count": adjacent_teaching,
@@ -1531,6 +1570,7 @@ def _manual_cover_candidates(
             "slots": slots,
         })
     candidates.sort(key=lambda item: (
+        not item["same_class"] if target.get("special") else False,
         item["adjacent_teaching_count"],
         item["adjacent_busy_count"],
         not item["same_subject"],
@@ -1560,6 +1600,7 @@ def _manual_arrangements(db: Session) -> dict:
         occurrence_map = {row["occurrence_id"]: row for row in occurrences}
         unavailable = absence_keys(db, target_date, target_date)
         absences_by_id = {row.id: row for row in active_absences}
+        context = None
         for task in analysis["tasks"]:
             if task["status"] not in {"recommended", "unresolved"}:
                 continue
@@ -1567,6 +1608,8 @@ def _manual_arrangements(db: Session) -> dict:
             target = occurrence_map.get(task["target"]["occurrence_id"])
             if not absence or not target:
                 continue
+            if context is None:
+                context = _manual_cover_context(db, target_date, occurrences)
             tasks.append({
                 **task,
                 "absent_teacher_id": absence.professor_id,
@@ -1578,7 +1621,7 @@ def _manual_arrangements(db: Session) -> dict:
                 } for teacher_id in target["teachers"]
                     if teacher_id != absence.professor_id
                     and (teacher_id, target_date, target["period"]) not in unavailable],
-                "candidates": _manual_cover_candidates(db, absence, target, occurrences),
+                "candidates": _manual_cover_candidates(db, absence, target, context=context),
             })
     return {"revision": get_schedule_revision(db), "tasks": tasks}
 
@@ -1758,7 +1801,8 @@ def list_adjustments(
     _current_user=Depends(require_permission("records.view")),
 ):
     rows = db.query(ScheduleAdjustment).order_by(ScheduleAdjustment.id.desc()).limit(min(limit, 200)).all()
-    return [_serialize_adjustment(db, row) for row in rows]
+    names = {row.id: row.nom for row in db.query(Professor).all()} if rows else {}
+    return [_serialize_adjustment(db, row, names) for row in rows]
 
 
 @router.put("/api/adjustments/{adjustment_id}")
@@ -1847,12 +1891,12 @@ def list_records(
             "status": absence.status,
             "needs_review": any(row.needs_review for row in by_absence.get(absence.id, [])),
             "created_by": absence.created_by,
-            "adjustments": [_serialize_adjustment(db, row) for row in by_absence.get(absence.id, [])],
+            "adjustments": [_serialize_adjustment(db, row, names) for row in by_absence.get(absence.id, [])],
             "_sort_id": absence.id,
         })
 
     for adjustment in (row for row in adjustments if row.absence_case_id is None):
-        serialized = _serialize_adjustment(db, adjustment)
+        serialized = _serialize_adjustment(db, adjustment, names)
         leg_dates = [date.fromisoformat(leg["from_date"]) for leg in serialized["legs"]]
         if not leg_dates:
             continue
@@ -2103,7 +2147,7 @@ def get_effective_timetable(
         "revision": get_schedule_revision(db),
         "lessons": lessons,
         "adjustments": [
-            _serialize_adjustment(db, adjustment)
+            _serialize_adjustment(db, adjustment, professor_names)
             for adjustment in (
                 db.query(ScheduleAdjustment)
                 .filter(ScheduleAdjustment.id.in_(touching_ids))

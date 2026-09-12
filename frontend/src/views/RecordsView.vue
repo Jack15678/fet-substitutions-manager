@@ -115,7 +115,12 @@
             </section>
           </div>
 
-          <div v-if="selectedRecord.record_type === 'absence' && editingAbsenceId !== selectedRecord.entity_id && (can('records.manage') || (can('absence.create') && selectedRecord.status === 'open'))" class="admin-actions">
+          <div v-if="selectedRecord.record_type === 'absence' && editingAbsenceId !== selectedRecord.entity_id && (can('records.manage') || (can('absence.create') && selectedRecord.status === 'open') || (can('exports.download') && selectedRecord.status === 'resolved'))" class="admin-actions">
+            <a v-if="can('exports.download') && selectedRecord.status === 'resolved'"
+              :href="`/api/rescheduling/exports/daily.pdf?data=${selectedRecord.date}&professor_id=${selectedRecord.professor_id}`"
+              download class="p-button p-component">
+              <i class="pi pi-download p-button-icon p-button-icon-left" aria-hidden="true"></i><span class="p-button-label">{{ $t('records.downloadCoverSheet') }}</span>
+            </a>
             <Button v-if="can('absence.create') && selectedRecord.status === 'open'" :label="$t('records.resume')" @click="resumeSelected" />
             <Button v-if="can('records.manage')" :label="$t('records.editAbsence')" outlined @click="editAbsence(selectedRecord)" />
             <Button v-if="can('records.manage')" :label="$t('common.delete')" severity="danger" text @click="removeAbsence(selectedRecord)" />
@@ -331,7 +336,8 @@ onMounted(loadRecords)
 .leg span { display: flex; min-width: 0; flex-direction: column; gap: .15rem; }
 .leg b { color: var(--primary-color-dark); text-align: right; overflow-wrap: anywhere; }
 .adjustment-actions { display: flex; justify-content: flex-end; gap: .25rem; margin-top: .35rem; }
-.admin-actions { position: sticky; bottom: 0; z-index: 1; min-height: 4.75rem; justify-content: flex-end; padding: 1rem 1.5rem; border-top: 1px solid var(--border-color); background: rgba(255, 255, 255, .96); }
+.admin-actions { position: sticky; bottom: 0; z-index: 1; min-height: 4.75rem; justify-content: flex-end; flex-wrap: wrap; padding: 1rem 1.5rem; border-top: 1px solid var(--border-color); background: rgba(255, 255, 255, .96); }
+.admin-actions a { gap: .5rem; text-decoration: none; }
 .record-edit { display: grid; grid-template-columns: 1fr 180px; gap: .7rem; margin: 1.5rem; padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 10px; background: #fff; }
 .record-edit h4, .edit-periods, .edit-actions { grid-column: 1 / -1; }
 .record-edit > label { display: flex; flex-direction: column; gap: .35rem; font-size: var(--font-ui); font-weight: 650; }

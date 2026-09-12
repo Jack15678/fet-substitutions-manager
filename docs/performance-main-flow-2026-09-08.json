@@ -1,0 +1,524 @@
+{
+  "environment": "School Linux production image, isolated snapshot replay; not deployed",
+  "repeats": 3,
+  "warmup_per_scenario": 1,
+  "timestamp_fields_excluded": [
+    "created_at",
+    "updated_at",
+    "confirmed_at"
+  ],
+  "runs": {
+    "school_before": {
+      "single": {
+        "create_and_analyze": {
+          "median_ms": 625.018,
+          "samples_ms": [
+            625.018,
+            623.901,
+            651.054
+          ]
+        },
+        "verify_timetables": {
+          "median_ms": 249.729,
+          "samples_ms": [
+            262.153,
+            249.729,
+            236.84
+          ]
+        },
+        "confirm": {
+          "median_ms": 611.409,
+          "samples_ms": [
+            614.893,
+            611.409,
+            607.067
+          ]
+        },
+        "refresh": {
+          "median_ms": 212.832,
+          "samples_ms": [
+            212.832,
+            208.057,
+            224.725
+          ]
+        },
+        "total": {
+          "median_ms": 1714.896,
+          "samples_ms": [
+            1714.896,
+            1693.096,
+            1719.687
+          ]
+        }
+      },
+      "same_day_three": {
+        "create_and_analyze": {
+          "median_ms": 743.119,
+          "samples_ms": [
+            738.597,
+            743.119,
+            773.792
+          ]
+        },
+        "verify_timetables": {
+          "median_ms": 273.887,
+          "samples_ms": [
+            274.285,
+            259.479,
+            273.887
+          ]
+        },
+        "confirm": {
+          "median_ms": 637.353,
+          "samples_ms": [
+            630.9,
+            637.353,
+            662.678
+          ]
+        },
+        "refresh": {
+          "median_ms": 137.347,
+          "samples_ms": [
+            142.066,
+            135.051,
+            137.347
+          ]
+        },
+        "total": {
+          "median_ms": 1785.847,
+          "samples_ms": [
+            1785.847,
+            1775.002,
+            1847.704
+          ]
+        }
+      },
+      "three_dates": {
+        "create_and_analyze": {
+          "median_ms": 1455.104,
+          "samples_ms": [
+            1433.389,
+            1497.954,
+            1455.104
+          ]
+        },
+        "verify_timetables": {
+          "median_ms": 268.979,
+          "samples_ms": [
+            268.431,
+            268.979,
+            277.733
+          ]
+        },
+        "confirm": {
+          "median_ms": 540.066,
+          "samples_ms": [
+            660.634,
+            540.066,
+            526.892
+          ]
+        },
+        "refresh": {
+          "median_ms": 138.375,
+          "samples_ms": [
+            136.509,
+            138.375,
+            141.822
+          ]
+        },
+        "total": {
+          "median_ms": 2445.374,
+          "samples_ms": [
+            2498.963,
+            2445.374,
+            2401.551
+          ]
+        }
+      }
+    },
+    "school_after": {
+      "single": {
+        "create_and_analyze": {
+          "median_ms": 579.174,
+          "samples_ms": [
+            579.174,
+            577.71,
+            580.984
+          ]
+        },
+        "verify_timetables": {
+          "median_ms": 130.354,
+          "samples_ms": [
+            132.532,
+            130.354,
+            126.5
+          ]
+        },
+        "confirm": {
+          "median_ms": 579.541,
+          "samples_ms": [
+            579.541,
+            569.822,
+            583.585
+          ]
+        },
+        "refresh": {
+          "median_ms": 82.677,
+          "samples_ms": [
+            85.689,
+            82.677,
+            80.861
+          ]
+        },
+        "total": {
+          "median_ms": 1371.929,
+          "samples_ms": [
+            1376.936,
+            1360.563,
+            1371.929
+          ]
+        }
+      },
+      "same_day_three": {
+        "create_and_analyze": {
+          "median_ms": 667.814,
+          "samples_ms": [
+            667.814,
+            676.276,
+            651.28
+          ]
+        },
+        "verify_timetables": {
+          "median_ms": 128.2,
+          "samples_ms": [
+            128.2,
+            128.331,
+            119.625
+          ]
+        },
+        "confirm": {
+          "median_ms": 535.746,
+          "samples_ms": [
+            535.746,
+            534.672,
+            538.983
+          ]
+        },
+        "refresh": {
+          "median_ms": 78.564,
+          "samples_ms": [
+            76.85,
+            78.564,
+            85.638
+          ]
+        },
+        "total": {
+          "median_ms": 1408.61,
+          "samples_ms": [
+            1408.61,
+            1417.842,
+            1395.526
+          ]
+        }
+      },
+      "three_dates": {
+        "create_and_analyze": {
+          "median_ms": 1247.629,
+          "samples_ms": [
+            1238.269,
+            1247.629,
+            1285.897
+          ]
+        },
+        "verify_timetables": {
+          "median_ms": 135.811,
+          "samples_ms": [
+            136.004,
+            135.811,
+            133.037
+          ]
+        },
+        "confirm": {
+          "median_ms": 587.417,
+          "samples_ms": [
+            587.417,
+            600.721,
+            583.758
+          ]
+        },
+        "refresh": {
+          "median_ms": 83.831,
+          "samples_ms": [
+            81.396,
+            83.831,
+            83.933
+          ]
+        },
+        "total": {
+          "median_ms": 2067.992,
+          "samples_ms": [
+            2043.087,
+            2067.992,
+            2086.624
+          ]
+        }
+      }
+    },
+    "synthetic_before": {
+      "single": {
+        "create_and_analyze": {
+          "median_ms": 1395.729,
+          "samples_ms": [
+            1378.715,
+            1403.981,
+            1395.729
+          ]
+        },
+        "verify_timetables": {
+          "median_ms": 544.344,
+          "samples_ms": [
+            522.928,
+            544.344,
+            586.625
+          ]
+        },
+        "confirm": {
+          "median_ms": 2019.446,
+          "samples_ms": [
+            2044.851,
+            2019.446,
+            1992.941
+          ]
+        },
+        "refresh": {
+          "median_ms": 221.39,
+          "samples_ms": [
+            221.39,
+            225.722,
+            220.613
+          ]
+        },
+        "total": {
+          "median_ms": 4193.493,
+          "samples_ms": [
+            4167.885,
+            4193.493,
+            4195.908
+          ]
+        }
+      },
+      "same_day_three": {
+        "create_and_analyze": {
+          "median_ms": 2059.462,
+          "samples_ms": [
+            2033.545,
+            2059.462,
+            2064.433
+          ]
+        },
+        "verify_timetables": {
+          "median_ms": 413.018,
+          "samples_ms": [
+            413.018,
+            409.72,
+            511.441
+          ]
+        },
+        "confirm": {
+          "median_ms": 2440.1,
+          "samples_ms": [
+            2530.571,
+            2405.556,
+            2440.1
+          ]
+        },
+        "refresh": {
+          "median_ms": 224.345,
+          "samples_ms": [
+            220.543,
+            224.345,
+            227.0
+          ]
+        },
+        "total": {
+          "median_ms": 5197.678,
+          "samples_ms": [
+            5197.678,
+            5099.083,
+            5242.974
+          ]
+        }
+      },
+      "three_dates": {
+        "create_and_analyze": {
+          "median_ms": 3535.918,
+          "samples_ms": [
+            3535.918,
+            3545.449,
+            3506.327
+          ]
+        },
+        "verify_timetables": {
+          "median_ms": 521.138,
+          "samples_ms": [
+            490.63,
+            587.875,
+            521.138
+          ]
+        },
+        "confirm": {
+          "median_ms": 1820.211,
+          "samples_ms": [
+            1820.211,
+            1829.268,
+            1815.289
+          ]
+        },
+        "refresh": {
+          "median_ms": 225.654,
+          "samples_ms": [
+            218.307,
+            227.287,
+            225.654
+          ]
+        },
+        "total": {
+          "median_ms": 6068.408,
+          "samples_ms": [
+            6065.065,
+            6189.879,
+            6068.408
+          ]
+        }
+      }
+    },
+    "synthetic_after": {
+      "single": {
+        "create_and_analyze": {
+          "median_ms": 629.31,
+          "samples_ms": [
+            608.971,
+            629.31,
+            635.663
+          ]
+        },
+        "verify_timetables": {
+          "median_ms": 91.617,
+          "samples_ms": [
+            92.439,
+            88.443,
+            91.617
+          ]
+        },
+        "confirm": {
+          "median_ms": 769.602,
+          "samples_ms": [
+            762.999,
+            773.196,
+            769.602
+          ]
+        },
+        "refresh": {
+          "median_ms": 64.818,
+          "samples_ms": [
+            66.538,
+            64.818,
+            63.496
+          ]
+        },
+        "total": {
+          "median_ms": 1555.768,
+          "samples_ms": [
+            1530.946,
+            1555.768,
+            1560.377
+          ]
+        }
+      },
+      "same_day_three": {
+        "create_and_analyze": {
+          "median_ms": 899.037,
+          "samples_ms": [
+            886.851,
+            905.699,
+            899.037
+          ]
+        },
+        "verify_timetables": {
+          "median_ms": 95.167,
+          "samples_ms": [
+            102.829,
+            95.167,
+            92.284
+          ]
+        },
+        "confirm": {
+          "median_ms": 1230.544,
+          "samples_ms": [
+            1230.544,
+            1290.871,
+            1229.158
+          ]
+        },
+        "refresh": {
+          "median_ms": 66.344,
+          "samples_ms": [
+            64.474,
+            66.834,
+            66.344
+          ]
+        },
+        "total": {
+          "median_ms": 2286.822,
+          "samples_ms": [
+            2284.698,
+            2358.572,
+            2286.822
+          ]
+        }
+      },
+      "three_dates": {
+        "create_and_analyze": {
+          "median_ms": 1293.333,
+          "samples_ms": [
+            1306.672,
+            1276.556,
+            1293.333
+          ]
+        },
+        "verify_timetables": {
+          "median_ms": 90.491,
+          "samples_ms": [
+            90.491,
+            89.737,
+            94.09
+          ]
+        },
+        "confirm": {
+          "median_ms": 479.856,
+          "samples_ms": [
+            479.856,
+            476.703,
+            502.562
+          ]
+        },
+        "refresh": {
+          "median_ms": 68.79,
+          "samples_ms": [
+            68.7,
+            71.469,
+            68.79
+          ]
+        },
+        "total": {
+          "median_ms": 1945.718,
+          "samples_ms": [
+            1945.718,
+            1914.465,
+            1958.775
+          ]
+        }
+      }
+    }
+  }
+}
